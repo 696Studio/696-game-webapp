@@ -42,19 +42,37 @@ function calcLevel(totalPower: number) {
   };
 }
 
-export async function GET(request: Request) {
+async function handleBootstrap(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const telegramId = searchParams.get("telegram_id");
+    // 1) Достаём telegramId из body (POST) или query (GET)
+    let telegramId: string | null = null;
 
-    if (!telegramId) {
-      return NextResponse.json(
-        { error: "telegram_id is required" },
-        { status: 400 }
-      );
+    if (request.method === "POST") {
+      try {
+        const body = await request.json();
+        if (body && typeof body.telegramId === "string") {
+          telegramId = body.telegramId;
+        }
+      } catch {
+        // тело могло быть пустым — не страшно
+      }
     }
 
-    // 1) Находим или создаём пользователя
+    if (!telegramId) {
+      const { searchParams } = new URL(request.url);
+      const fromQuery = searchParams.get("telegram_id");
+      if (fromQuery) {
+        telegramId = fromQuery;
+      }
+    }
+
+    // временно: если вообще ничего нет — используем тестовый id,
+    // чтобы можно было открыть сайт просто в браузере
+    if (!telegramId) {
+      telegramId = "123456789";
+    }
+
+    // 2) Находим или создаём пользователя
     let { data: user, error: userError } = await supabase
       .from("users")
       .select("*")
@@ -86,7 +104,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // 2) Находим или создаём баланс
+    // 3) Находим или создаём баланс
     let { data: balance, error: balanceError } = await supabase
       .from("balances")
       .select("*")
@@ -115,7 +133,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // 3) Предметы → totalPower + itemsCount
+    // 4) Предметы → totalPower + itemsCount
     const { data: userItems, error: itemsError } = await supabase
       .from("user_items")
       .select("id, item:items(power_value)")
@@ -137,10 +155,9 @@ export async function GET(request: Request) {
       ) ?? 0;
 
     const itemsCount = itemsArray.length;
-
     const levelData = calcLevel(totalPower);
 
-    // 4) Спины
+    // 5) Спины
     const { data: spinsRows, error: spinsError } = await supabase
       .from("chest_spins")
       .select("id, created_at")
@@ -158,7 +175,7 @@ export async function GET(request: Request) {
     const lastSpinAt =
       spinsRows && spinsRows.length > 0 ? spinsRows[0].created_at : null;
 
-    // 5) Валюта: сколько Shards потрачено
+    // 6) Валюта: Shards потрачено
     const { data: currencyEvents, error: currencyError } = await supabase
       .from("currency_events")
       .select("type, currency, amount")
@@ -180,7 +197,7 @@ export async function GET(request: Request) {
       }
     });
 
-    // 6) Daily status (быстро, как в /api/daily/status)
+    // 7) Daily status
     const { data: daily, error: dailyError } = await supabase
       .from("daily_rewards")
       .select("*")
@@ -218,31 +235,42 @@ export async function GET(request: Request) {
       }
     }
 
-    // 7) Финальный ответ — всё, что нужно для загрузки игры
+    // 8) Финальный ответ — заворачиваем всё в bootstrap
     return NextResponse.json({
-      user,
-      balance,
-      totalPower,
-      itemsCount,
-      level: levelData.level,
-      currentLevelPower: levelData.currentLevelPower,
-      nextLevelPower: levelData.nextLevelPower,
-      progress: levelData.progress,
-      spinsCount,
-      lastSpinAt,
-      totalShardsSpent,
-      daily: {
-        canClaim: dailyCanClaim,
-        remainingSeconds: dailyRemainingSeconds,
-        streak: dailyStreak,
-        amount: DAILY_REWARD_AMOUNT,
+      bootstrap: {
+        user,
+        balance,
+        totalPower,
+        itemsCount,
+        level: levelData.level,
+        currentLevelPower: levelData.currentLevelPower,
+        nextLevelPower: levelData.nextLevelPower,
+        progress: levelData.progress,
+        spinsCount,
+        lastSpinAt,
+        totalShardsSpent,
+        daily: {
+          canClaim: dailyCanClaim,
+          remainingSeconds: dailyRemainingSeconds,
+          streak: dailyStreak,
+          amount: DAILY_REWARD_AMOUNT,
+        },
       },
     });
   } catch (err: any) {
-    console.error("GET /api/bootstrap error:", err);
+    console.error("GET/POST /api/bootstrap error:", err);
     return NextResponse.json(
       { error: "Unexpected error", details: String(err) },
       { status: 500 }
     );
   }
+}
+
+// Поддерживаем оба метода, чтобы не было 405 и HTML-ответов
+export async function GET(request: Request) {
+  return handleBootstrap(request);
+}
+
+export async function POST(request: Request) {
+  return handleBootstrap(request);
 }
