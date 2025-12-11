@@ -24,13 +24,12 @@ const GameSessionContext = createContext<GameSessionContextValue | undefined>(
 );
 
 export function GameSessionProvider({ children }: { children: ReactNode }) {
-  const {
-    loading: tgLoading,
-    error: tgError,
-    user,
-    initDataRaw,
-    isTelegramEnv,
-  } = useTelegramWebApp();
+  // Твой текущий хук: webApp / initData / telegramUser
+  const { webApp, initData, telegramUser } = useTelegramWebApp() as any;
+
+  const isTelegramEnv = !!webApp;
+  const user = telegramUser || null;
+  const initDataRaw = initData || "";
 
   const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,9 +37,6 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
   const [telegramId, setTelegramId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Ждём, пока хук телеги закончит инициализацию
-    if (tgLoading) return;
-
     let cancelled = false;
 
     async function runBootstrap() {
@@ -55,7 +51,7 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
           effectiveTelegramId = String(user.id);
           payload.initData = initDataRaw;
         } else {
-          // Фоллбек: веб-режим без телеги — тестовый юзер
+          // Фоллбек — обычный веб, без телеги: тестовый юзер
           effectiveTelegramId = "123456789";
         }
 
@@ -97,11 +93,11 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [tgLoading, user, initDataRaw, isTelegramEnv]);
+  }, [isTelegramEnv, user, initDataRaw]);
 
   const value: GameSessionContextValue = {
     loading,
-    error: error || (tgError ?? null),
+    error,
     telegramId,
     initDataRaw,
     bootstrap,
