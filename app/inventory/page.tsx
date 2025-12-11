@@ -51,8 +51,9 @@ export default function InventoryPage() {
     async function loadInventory() {
       try {
         setLoading(true);
+        const safeTelegramId = telegramId ?? "";
         const res = await fetch(
-          `/api/inventory?telegram_id=${encodeURIComponent(telegramId ?? "")}`
+          `/api/inventory?telegram_id=${encodeURIComponent(safeTelegramId)}`
         );
         const data: InventoryResponse = await res.json();
         if (cancelled) return;
