@@ -42,7 +42,7 @@ export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Тянем инвентарь, когда есть telegramId
+  // Загружаем инвентарь
   useEffect(() => {
     if (!telegramId) return;
 
@@ -51,22 +51,25 @@ export default function InventoryPage() {
     async function loadInventory() {
       try {
         setLoading(true);
+
+        // 🔥 ВАЖНО: гарантия, что тут строка, а не null
         const safeTelegramId = telegramId ?? "";
+
         const res = await fetch(
           `/api/inventory?telegram_id=${encodeURIComponent(safeTelegramId)}`
         );
+
         const data: InventoryResponse = await res.json();
         if (cancelled) return;
+
         setInventory(data);
-      } catch (e) {
-        console.error(e);
+      } catch (err) {
+        console.error("Inventory load error:", err);
         if (!cancelled) {
           setInventory({ error: "Request failed" });
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
 
@@ -77,6 +80,7 @@ export default function InventoryPage() {
     };
   }, [telegramId]);
 
+  // Пока bootstrap грузится
   if (sessionLoading || !bootstrap) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-black text-white">
@@ -98,16 +102,15 @@ export default function InventoryPage() {
     );
   }
 
-  const totalPowerFromBootstrap = bootstrap.totalPower ?? 0;
-  const totalPowerFromInventory = inventory?.totalPower ?? undefined;
+  // Power
+  const totalPowerFromBackend = inventory?.totalPower;
   const totalPower =
-    totalPowerFromInventory !== undefined
-      ? totalPowerFromInventory
-      : totalPowerFromBootstrap;
+    typeof totalPowerFromBackend === "number"
+      ? totalPowerFromBackend
+      : bootstrap.totalPower ?? 0;
 
   const items = inventory?.items ?? [];
   const rarityStats = inventory?.rarityStats ?? {};
-  const isError = inventory?.error;
 
   return (
     <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4">
@@ -115,47 +118,41 @@ export default function InventoryPage() {
         Inventory
       </h1>
 
-      {/* Хедер с общими статами */}
+      {/* Общие статы */}
       <div className="flex flex-wrap gap-4 mb-6 justify-center">
         <div className="p-4 border border-zinc-700 rounded-xl min-w-[160px]">
           <div className="text-xs text-zinc-500 mb-1">TOTAL POWER</div>
           <div className="text-xl font-semibold">{totalPower}</div>
         </div>
+
         <div className="p-4 border border-zinc-700 rounded-xl min-w-[160px]">
           <div className="text-xs text-zinc-500 mb-1">ITEMS</div>
           <div className="text-xl font-semibold">{items.length}</div>
         </div>
+
         <div className="p-4 border border-zinc-700 rounded-xl min-w-[160px]">
           <div className="text-xs text-zinc-500 mb-1">RARITY</div>
-          <div className="text-xs text-zinc-400">
-            Common: {rarityStats.common ?? 0}
-          </div>
-          <div className="text-xs text-zinc-400">
-            Rare: {rarityStats.rare ?? 0}
-          </div>
-          <div className="text-xs text-zinc-400">
-            Epic: {rarityStats.epic ?? 0}
-          </div>
-          <div className="text-xs text-zinc-400">
-            Legendary: {rarityStats.legendary ?? 0}
-          </div>
+          <div className="text-xs text-zinc-400">Common: {rarityStats.common ?? 0}</div>
+          <div className="text-xs text-zinc-400">Rare: {rarityStats.rare ?? 0}</div>
+          <div className="text-xs text-zinc-400">Epic: {rarityStats.epic ?? 0}</div>
+          <div className="text-xs text-zinc-400">Legendary: {rarityStats.legendary ?? 0}</div>
         </div>
       </div>
 
-      {/* Лоадер / ошибка по инвентарю */}
+      {/* Лоадер / ошибка */}
       {loading && (
         <div className="text-sm text-zinc-400 mb-4">Loading items...</div>
       )}
 
-      {isError && (
+      {inventory?.error && (
         <div className="text-red-400 mb-4">
-          Error loading inventory: {inventory?.error}
+          Error loading inventory: {inventory.error}
         </div>
       )}
 
       {/* Грид предметов */}
       <div className="grid gap-4 w-full max-w-3xl sm:grid-cols-2 md:grid-cols-3">
-        {items.length === 0 && !loading && !isError && (
+        {items.length === 0 && !loading && !inventory?.error && (
           <div className="col-span-full text-center text-zinc-500 text-sm">
             У тебя пока нет предметов. Открой пару сундуков 😈
           </div>
@@ -189,13 +186,11 @@ export default function InventoryPage() {
               </div>
 
               {imageUrl && (
-                <div className="mt-1">
-                  <img
-                    src={imageUrl}
-                    alt={name}
-                    className="w-full h-24 object-cover rounded-md border border-zinc-700"
-                  />
-                </div>
+                <img
+                  src={imageUrl}
+                  alt={name}
+                  className="w-full h-24 object-cover rounded-md border border-zinc-700"
+                />
               )}
 
               {ui.created_at && (
