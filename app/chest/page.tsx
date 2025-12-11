@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useGameSessionContext } from "../context/GameSessionContext";
 
 type DropItem = {
   id: string;
@@ -30,32 +29,47 @@ type ProfileState = {
   totalPower: number;
 };
 
-export default function ChestPage() {
-  const { loading: sessionLoading, error: sessionError, telegramId, bootstrap } =
-    useGameSessionContext();
+const TEST_TELEGRAM_ID = "123456789";
 
+export default function ChestPage() {
   const [profile, setProfile] = useState<ProfileState | null>(null);
   const [result, setResult] = useState<ChestResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Инициализируем локальный стейт из bootstrap, когда он появится
+  // Подтягиваем баланс и power с /api/profile
   useEffect(() => {
-    if (!bootstrap) return;
-    setProfile({
-      balance: {
-        soft_balance: bootstrap.balance.soft_balance,
-        hard_balance: bootstrap.balance.hard_balance,
-      },
-      totalPower: bootstrap.totalPower ?? 0,
-    });
-  }, [bootstrap]);
+    fetch(`/api/profile?telegram_id=${TEST_TELEGRAM_ID}`)
+      .then((res) => res.json())
+      .then((data) => {
+        // Нормализуем ответ в строгий ProfileState
+        if (data?.balance) {
+          setProfile({
+            balance: {
+              soft_balance: data.balance.soft_balance ?? 0,
+              hard_balance: data.balance.hard_balance ?? 0,
+            },
+            totalPower: data.totalPower ?? 0,
+          });
+        } else {
+          setProfile({
+            balance: {
+              soft_balance: 0,
+              hard_balance: 0,
+            },
+            totalPower: 0,
+          });
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        setProfile({
+          balance: { soft_balance: 0, hard_balance: 0 },
+          totalPower: 0,
+        });
+      });
+  }, []);
 
   const handleOpenChest = async () => {
-    if (!telegramId) {
-      setResult({ error: "No telegramId available" });
-      return;
-    }
-
     setLoading(true);
     setResult(null);
 
@@ -64,7 +78,7 @@ export default function ChestPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          telegramId,
+          telegramId: TEST_TELEGRAM_ID,
           chestCode: "soft_basic",
         }),
       });
@@ -74,22 +88,12 @@ export default function ChestPage() {
 
       // Обновляем локальный баланс и power, если сервер их вернул
       if (data.newBalance && typeof data.totalPowerAfter === "number") {
-        setProfile((prev) => {
-          const prevState =
-            prev ||
-            ({
-              balance: {
-                soft_balance: 0,
-                hard_balance: 0,
-              },
-              totalPower: 0,
-            } as ProfileState);
-
-          return {
-            ...prevState,
-            balance: data.newBalance,
-            totalPower: data.totalPowerAfter ?? prevState.totalPower,
-          };
+        setProfile({
+          balance: {
+            soft_balance: data.newBalance.soft_balance,
+            hard_balance: data.newBalance.hard_balance,
+          },
+          totalPower: data.totalPowerAfter,
         });
       }
     } catch (e) {
@@ -100,31 +104,9 @@ export default function ChestPage() {
     }
   };
 
-  // Пока грузится сессия или ещё нет bootstrap — общий лоадер
-  if (sessionLoading || !bootstrap || !profile) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <span>Loading chest...</span>
-      </main>
-    );
-  }
-
-  if (sessionError) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <div>
-          <div className="mb-2 text-red-400">Error loading session</div>
-          <pre className="text-xs max-w-sm overflow-auto">
-            {JSON.stringify({ sessionError, telegramId }, null, 2)}
-          </pre>
-        </div>
-      </main>
-    );
-  }
-
-  const soft = profile.balance.soft_balance ?? 0;
-  const hard = profile.balance.hard_balance ?? 0;
-  const totalPower = profile.totalPower ?? 0;
+  const soft = profile?.balance.soft_balance ?? 0;
+  const hard = profile?.balance.hard_balance ?? 0;
+  const totalPower = profile?.totalPower ?? 0;
 
   return (
     <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4">
@@ -181,7 +163,7 @@ export default function ChestPage() {
                 Power: {result.drop.power_value}
               </div>
               <div className="text-xs text-zinc-500 mt-2">
-                Total Power after drop: {result.totalPowerAfter}
+                Total Power after drop: {result.totalPowerAfter ?? totalPower}
               </div>
             </div>
           ) : null}
