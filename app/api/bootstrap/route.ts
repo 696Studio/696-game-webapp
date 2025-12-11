@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
-const NO_ROWS_CODE = "PGRST116";
-
 const DAILY_REWARD_AMOUNT = 50;
 const DAILY_COOLDOWN_HOURS = 24;
 
@@ -44,7 +42,7 @@ function calcLevel(totalPower: number) {
 
 async function handleBootstrap(request: Request) {
   try {
-    // 1) Достаём telegramId из body (POST) или query (GET)
+    // 1) Достаём telegramId: POST body -> query -> fallback
     let telegramId: string | null = null;
 
     if (request.method === "POST") {
@@ -64,34 +62,47 @@ async function handleBootstrap(request: Request) {
       if (fromQuery) telegramId = fromQuery;
     }
 
-    // fallback, чтобы сайт открывался в браузере
     if (!telegramId) {
+      // fallback, чтобы сайт просто открывался в браузере
       telegramId = "123456789";
     }
 
-    // 2) Находим пользователя
-    let { data: user, error: userError } = await supabase
+    // 2) Находим пользователя (0 строк — НЕ ошибка)
+    const {
+      data: userRow,
+      error: userError,
+    } = await supabase
       .from("users")
       .select("*")
       .eq("telegram_id", telegramId)
-      .single();
+      .maybeSingle();
 
-    // 2.1 Если пользователя нет ИЛИ произошла ошибка — пробуем создать
+    if (userError) {
+      console.error("bootstrap: user select error", userError);
+    }
+
+    let user = userRow;
+
+    // 2.1. Если юзера нет — создаём
     if (!user) {
-      const { data: newUser, error: createError } = await supabase
+      const {
+        data: newUser,
+        error: createError,
+      } = await supabase
         .from("users")
         .insert({
           telegram_id: telegramId,
           username: `user_${telegramId.slice(-4)}`,
         })
         .select("*")
-        .single();
+        .maybeSingle();
 
       if (createError || !newUser) {
-        // тут уже реально фатал — отдадим обе ошибки наружу
+        console.error("bootstrap: user create error", createError);
         return NextResponse.json(
           {
             error: "Failed to fetch/create user",
+            telegramId,
             userError,
             createError,
           },
@@ -102,23 +113,40 @@ async function handleBootstrap(request: Request) {
       user = newUser;
     }
 
-    // 3) Находим или создаём баланс
-    let { data: balance, error: balanceError } = await supabase
+    // 3) Баланс
+    const {
+      data: balanceRow,
+      error: balanceError,
+    } = await supabase
       .from("balances")
       .select("*")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
+
+    if (balanceError) {
+      console.error("bootstrap: balance select error", balanceError);
+    }
+
+    let balance = balanceRow;
 
     if (!balance) {
-      const { data: newBalance, error: createBalError } = await supabase
+      const {
+        data: newBalance,
+        error: createBalError,
+      } = await supabase
         .from("balances")
         .insert({ user_id: user.id, soft_balance: 0, hard_balance: 0 })
         .select("*")
-        .single();
+        .maybeSingle();
 
       if (createBalError || !newBalance) {
+        console.error("bootstrap: balance create error", createBalError);
         return NextResponse.json(
-          { error: "Failed to fetch/create balance", balanceError, createBalError },
+          {
+            error: "Failed to fetch/create balance",
+            balanceError,
+            createBalError,
+          },
           { status: 500 }
         );
       }
@@ -126,13 +154,14 @@ async function handleBootstrap(request: Request) {
       balance = newBalance;
     }
 
-    // 4) Предметы → totalPower + itemsCount
+    // 4) Предметы → power + count
     const { data: userItems, error: itemsError } = await supabase
       .from("user_items")
       .select("id, item:items(power_value)")
       .eq("user_id", user.id);
 
     if (itemsError) {
+      console.error("bootstrap: items error", itemsError);
       return NextResponse.json(
         { error: "Failed to fetch user items", details: itemsError },
         { status: 500 }
@@ -158,6 +187,7 @@ async function handleBootstrap(request: Request) {
       .order("created_at", { ascending: false });
 
     if (spinsError) {
+      console.error("bootstrap: spins error", spinsError);
       return NextResponse.json(
         { error: "Failed to fetch chest spins", details: spinsError },
         { status: 500 }
@@ -168,13 +198,14 @@ async function handleBootstrap(request: Request) {
     const lastSpinAt =
       spinsRows && spinsRows.length > 0 ? spinsRows[0].created_at : null;
 
-    // 6) Валюта: Shards потрачено
+    // 6) Валюта
     const { data: currencyEvents, error: currencyError } = await supabase
       .from("currency_events")
       .select("type, currency, amount")
       .eq("user_id", user.id);
 
     if (currencyError) {
+      console.error("bootstrap: currency events error", currencyError);
       return NextResponse.json(
         { error: "Failed to fetch currency events", details: currencyError },
         { status: 500 }
@@ -190,23 +221,20 @@ async function handleBootstrap(request: Request) {
       }
     });
 
-    // 7) Daily status
+    // 7) Daily
     const { data: daily, error: dailyError } = await supabase
       .from("daily_rewards")
       .select("*")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
+
+    if (dailyError) {
+      console.error("bootstrap: daily error", dailyError);
+    }
 
     let dailyCanClaim = true;
     let dailyRemainingSeconds = 0;
     let dailyStreak = 0;
-
-    if (dailyError && dailyError.code !== NO_ROWS_CODE) {
-      return NextResponse.json(
-        { error: "Failed to fetch daily_rewards", details: dailyError },
-        { status: 500 }
-      );
-    }
 
     if (daily) {
       const lastClaimAt = new Date(daily.last_claim_at);
@@ -226,8 +254,9 @@ async function handleBootstrap(request: Request) {
       }
     }
 
-    // 8) Финальный ответ
+    // 8) Ответ
     return NextResponse.json({
+      telegramId,
       bootstrap: {
         user,
         balance,
@@ -249,7 +278,7 @@ async function handleBootstrap(request: Request) {
       },
     });
   } catch (err: any) {
-    console.error("GET/POST /api/bootstrap error:", err);
+    console.error("GET/POST /api/bootstrap unexpected error:", err);
     return NextResponse.json(
       { error: "Unexpected error", details: String(err) },
       { status: 500 }
