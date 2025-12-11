@@ -150,7 +150,8 @@ export async function POST(request: Request) {
       return true;
     });
 
-    const finalPool = availableChestItems.length > 0 ? availableChestItems : chestItems;
+    const finalPool =
+      availableChestItems.length > 0 ? availableChestItems : chestItems;
 
     // 6) Выбираем предмет по весам chest_items.drop_weight
     const totalWeight = finalPool.reduce(
@@ -177,7 +178,8 @@ export async function POST(request: Request) {
       rand -= weight;
     }
 
-    const selectedItem = selectedChestItem.item;
+    // В типах Supabase item может считаться массивом — принудительно берём как объект
+    const selectedItem = (selectedChestItem.item as any) || null;
 
     if (!selectedItem) {
       return NextResponse.json(
