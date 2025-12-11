@@ -52,7 +52,7 @@ export default function InventoryPage() {
       try {
         setLoading(true);
         const res = await fetch(
-          `/api/inventory?telegram_id=${encodeURIComponent(telegramId)}`
+          `/api/inventory?telegram_id=${encodeURIComponent(telegramId ?? "")}`
         );
         const data: InventoryResponse = await res.json();
         if (cancelled) return;
@@ -65,7 +65,7 @@ export default function InventoryPage() {
       } finally {
         if (!cancelled) {
           setLoading(false);
-      }
+        }
       }
     }
 
@@ -143,9 +143,7 @@ export default function InventoryPage() {
 
       {/* Лоадер / ошибка по инвентарю */}
       {loading && (
-        <div className="text-sm text-zinc-400 mb-4">
-          Loading items...
-        </div>
+        <div className="text-sm text-zinc-400 mb-4">Loading items...</div>
       )}
 
       {isError && (
@@ -175,9 +173,7 @@ export default function InventoryPage() {
               className="border border-zinc-700 rounded-xl p-3 bg-zinc-900/40 flex flex-col gap-2"
             >
               <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold truncate">
-                  {name}
-                </div>
+                <div className="text-sm font-semibold truncate">{name}</div>
                 <div className="text-[10px] px-2 py-0.5 rounded-full border border-zinc-700 uppercase text-zinc-300">
                   {rarity}
                 </div>
@@ -203,8 +199,7 @@ export default function InventoryPage() {
 
               {ui.created_at && (
                 <div className="mt-1 text-[10px] text-zinc-500">
-                  Obtained:{" "}
-                  {new Date(ui.created_at).toLocaleString()}
+                  Obtained: {new Date(ui.created_at).toLocaleString()}
                 </div>
               )}
             </div>
