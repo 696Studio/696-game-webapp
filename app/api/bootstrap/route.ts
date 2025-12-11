@@ -6,7 +6,7 @@ const NO_ROWS_CODE = "PGRST116";
 const DAILY_REWARD_AMOUNT = 50;
 const DAILY_COOLDOWN_HOURS = 24;
 
-// та же формула уровней, что мы уже используем
+// формула уровней
 function calcLevel(totalPower: number) {
   const BASE = 100;
 
@@ -54,32 +54,30 @@ async function handleBootstrap(request: Request) {
           telegramId = body.telegramId;
         }
       } catch {
-        // тело могло быть пустым — не страшно
+        // тело могло быть пустым — ок
       }
     }
 
     if (!telegramId) {
       const { searchParams } = new URL(request.url);
       const fromQuery = searchParams.get("telegram_id");
-      if (fromQuery) {
-        telegramId = fromQuery;
-      }
+      if (fromQuery) telegramId = fromQuery;
     }
 
-    // временно: если вообще ничего нет — используем тестовый id,
-    // чтобы можно было открыть сайт просто в браузере
+    // fallback, чтобы сайт открывался в браузере
     if (!telegramId) {
       telegramId = "123456789";
     }
 
-    // 2) Находим или создаём пользователя
+    // 2) Находим пользователя
     let { data: user, error: userError } = await supabase
       .from("users")
       .select("*")
       .eq("telegram_id", telegramId)
       .single();
 
-    if (userError && userError.code === NO_ROWS_CODE) {
+    // 2.1 Если пользователя нет ИЛИ произошла ошибка — пробуем создать
+    if (!user) {
       const { data: newUser, error: createError } = await supabase
         .from("users")
         .insert({
@@ -90,18 +88,18 @@ async function handleBootstrap(request: Request) {
         .single();
 
       if (createError || !newUser) {
+        // тут уже реально фатал — отдадим обе ошибки наружу
         return NextResponse.json(
-          { error: "Failed to create user", details: createError },
+          {
+            error: "Failed to fetch/create user",
+            userError,
+            createError,
+          },
           { status: 500 }
         );
       }
 
       user = newUser;
-    } else if (userError) {
-      return NextResponse.json(
-        { error: "Failed to fetch user", details: userError },
-        { status: 500 }
-      );
     }
 
     // 3) Находим или создаём баланс
@@ -111,7 +109,7 @@ async function handleBootstrap(request: Request) {
       .eq("user_id", user.id)
       .single();
 
-    if (balanceError && balanceError.code === NO_ROWS_CODE) {
+    if (!balance) {
       const { data: newBalance, error: createBalError } = await supabase
         .from("balances")
         .insert({ user_id: user.id, soft_balance: 0, hard_balance: 0 })
@@ -120,17 +118,12 @@ async function handleBootstrap(request: Request) {
 
       if (createBalError || !newBalance) {
         return NextResponse.json(
-          { error: "Failed to create balance", details: createBalError },
+          { error: "Failed to fetch/create balance", balanceError, createBalError },
           { status: 500 }
         );
       }
 
       balance = newBalance;
-    } else if (balanceError) {
-      return NextResponse.json(
-        { error: "Failed to fetch balance", details: balanceError },
-        { status: 500 }
-      );
     }
 
     // 4) Предметы → totalPower + itemsCount
@@ -208,16 +201,14 @@ async function handleBootstrap(request: Request) {
     let dailyRemainingSeconds = 0;
     let dailyStreak = 0;
 
-    if (dailyError && dailyError.code === NO_ROWS_CODE) {
-      dailyCanClaim = true;
-      dailyRemainingSeconds = 0;
-      dailyStreak = 0;
-    } else if (dailyError) {
+    if (dailyError && dailyError.code !== NO_ROWS_CODE) {
       return NextResponse.json(
         { error: "Failed to fetch daily_rewards", details: dailyError },
         { status: 500 }
       );
-    } else if (daily) {
+    }
+
+    if (daily) {
       const lastClaimAt = new Date(daily.last_claim_at);
       const now = new Date();
       const diffMs = now.getTime() - lastClaimAt.getTime();
@@ -235,7 +226,7 @@ async function handleBootstrap(request: Request) {
       }
     }
 
-    // 8) Финальный ответ — заворачиваем всё в bootstrap
+    // 8) Финальный ответ
     return NextResponse.json({
       bootstrap: {
         user,
@@ -266,7 +257,6 @@ async function handleBootstrap(request: Request) {
   }
 }
 
-// Поддерживаем оба метода, чтобы не было 405 и HTML-ответов
 export async function GET(request: Request) {
   return handleBootstrap(request);
 }
