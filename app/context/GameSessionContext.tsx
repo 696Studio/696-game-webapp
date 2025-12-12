@@ -20,7 +20,7 @@ type GameSessionContextValue = {
   bootstrap: BootstrapResponse | null;
   isTelegramEnv: boolean;
 
-  // optional: удобно дебажить, но не обязателен
+  // optional debug
   authLoading: boolean;
   authError: string | null;
   authData: any | null;
@@ -30,8 +30,18 @@ const GameSessionContext = createContext<GameSessionContextValue | undefined>(
   undefined
 );
 
+function pickTelegramId(webApp: any, telegramUser: any): string | null {
+  // 1) verified user (после /api/auth/telegram)
+  if (telegramUser?.id) return String(telegramUser.id);
+
+  // 2) fallback (самое надёжное на Desktop): initDataUnsafe.user.id
+  const unsafeId = webApp?.initDataUnsafe?.user?.id;
+  if (unsafeId) return String(unsafeId);
+
+  return null;
+}
+
 export function GameSessionProvider({ children }: { children: ReactNode }) {
-  // ✅ новый хук теперь делает server-side auth
   const {
     webApp,
     initData,
@@ -42,8 +52,7 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
   } = useTelegramWebApp() as any;
 
   const isTelegramEnv = !!webApp;
-  const user = telegramUser || null;
-  const initDataRaw = initData || "";
+  const initDataRaw = typeof initData === "string" ? initData : initData || "";
 
   const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
   const [bootstrapLoading, setBootstrapLoading] = useState(true);
@@ -58,7 +67,6 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
         setBootstrapLoading(true);
         setBootstrapError(null);
 
-        // 1) Не Telegram среда — ничего не делаем
         if (!isTelegramEnv) {
           setTelegramId(null);
           setBootstrap(null);
@@ -66,35 +74,21 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // 2) Ждём auth
-        if (authLoading) {
-          return; // просто ждём
-        }
-
-        // 3) Auth упал — bootstrap запрещён
-        if (authError) {
-          setTelegramId(null);
-          setBootstrap(null);
-          setBootstrapError(authError);
-          return;
-        }
-
-        // 4) Нет verified user — bootstrap запрещён
-        if (!user?.id) {
-          setTelegramId(null);
-          setBootstrap(null);
-          setBootstrapError("Telegram auth required");
-          return;
-        }
-
-        const effectiveTelegramId = String(user.id);
+        const effectiveTelegramId = pickTelegramId(webApp, telegramUser);
         setTelegramId(effectiveTelegramId);
+
+        if (!effectiveTelegramId) {
+          setBootstrap(null);
+          setBootstrapError("Telegram user not found");
+          return;
+        }
 
         const res = await fetch("/api/bootstrap", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             telegramId: effectiveTelegramId,
+            initData: initDataRaw, // пусть уходит, даже если сервер пока не использует
           }),
         });
 
@@ -115,9 +109,7 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
           setBootstrapError(err?.message ? String(err.message) : String(err));
         }
       } finally {
-        if (!cancelled) {
-          setBootstrapLoading(false);
-        }
+        if (!cancelled) setBootstrapLoading(false);
       }
     }
 
@@ -126,16 +118,18 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isTelegramEnv, authLoading, authError, user?.id]);
+  }, [isTelegramEnv, webApp, telegramUser?.id, initDataRaw]);
 
   // единое состояние для UI
   const loading = authLoading || bootstrapLoading;
 
   const error = useMemo(() => {
-    // приоритет: authError -> bootstrapError
     if (!isTelegramEnv) return "Telegram WebApp environment required";
-    return authError || bootstrapError || null;
-  }, [isTelegramEnv, authError, bootstrapError]);
+
+    // показываем bootstrap ошибку как основную (она важнее для игрока)
+    // authError оставим как debug, но не блокируем игру из-за него
+    return bootstrapError || null;
+  }, [isTelegramEnv, bootstrapError]);
 
   const value: GameSessionContextValue = useMemo(
     () => ({
