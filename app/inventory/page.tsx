@@ -17,17 +17,10 @@ type InventoryItem = {
   };
 };
 
-type RarityStats = {
-  common?: number;
-  rare?: number;
-  epic?: number;
-  legendary?: number;
-};
-
 type InventoryResponse = {
   items?: InventoryItem[];
   totalPower?: number;
-  rarityStats?: RarityStats;
+  rarityStats?: any;
   error?: string;
 };
 
@@ -57,9 +50,7 @@ type RarityFilter = "all" | "common" | "rare" | "epic" | "legendary";
 type SortMode = "power_desc" | "power_asc" | "newest";
 
 function normalizeRarity(rarity: string | null | undefined): RarityFilter {
-  const r = String(rarity || "")
-    .trim()
-    .toLowerCase();
+  const r = String(rarity || "").trim().toLowerCase();
   if (r === "common" || r === "rare" || r === "epic" || r === "legendary")
     return r;
   return "common";
@@ -114,17 +105,22 @@ export default function InventoryPage() {
     refreshSession,
   } = useGameSessionContext() as any;
 
+  // ✅ grace delay
+  const [showGate, setShowGate] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setShowGate(true), 900);
+    return () => clearTimeout(t);
+  }, []);
+
   const core = useMemo(() => unwrapCore(bootstrap), [bootstrap]);
   const hasCore = !!core;
 
   const [inventory, setInventory] = useState<InventoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // ✅ Inventory UX state
   const [rarityFilter, setRarityFilter] = useState<RarityFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("power_desc");
 
-  // ✅ hooks ВСЕГДА наверху
   useEffect(() => {
     if (!telegramId) return;
 
@@ -162,8 +158,95 @@ export default function InventoryPage() {
     refreshSession?.();
   };
 
-  // ✅ ВАЖНО: вычисления/мемо — ДО любых return (чтобы не ломать порядок хуков)
-  const items: InventoryItem[] = inventory?.items ?? [];
+  if (!isTelegramEnv) {
+    return (
+      <>
+        <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 pb-24">
+          <div className="max-w-md text-center">
+            <div className="text-lg font-semibold mb-2">Open in Telegram</div>
+            <div className="text-sm text-zinc-400">
+              This page works only inside Telegram WebApp.
+            </div>
+          </div>
+        </main>
+        <BottomNav active="inventory" />
+      </>
+    );
+  }
+
+  // ✅ пока core нет — сначала только Loading, потом уже fallback
+  if (!hasCore) {
+    if (!showGate || sessionLoading || !telegramId) {
+      return (
+        <>
+          <main className="min-h-screen flex items-center justify-center bg-black text-white px-4 pb-24">
+            <div className="text-center">
+              <div className="text-lg font-semibold">Loading inventory...</div>
+              <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
+            </div>
+          </main>
+          <BottomNav active="inventory" />
+        </>
+      );
+    }
+
+    if (timedOut || !!sessionError) {
+      return (
+        <>
+          <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 pb-24">
+            <div className="max-w-md w-full">
+              <div className="text-lg font-semibold">
+                {timedOut ? "Connection timeout" : "Couldn’t load your session"}
+              </div>
+
+              <div className="mt-2 text-sm text-zinc-400">
+                {timedOut
+                  ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
+                  : "Something went wrong while syncing your profile."}
+              </div>
+
+              {sessionError && (
+                <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
+                  <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
+                  <div className="text-xs text-zinc-200 break-words">
+                    {String(sessionError)}
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 flex flex-col gap-3">
+                <button
+                  onClick={handleResync}
+                  className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
+                >
+                  Re-sync
+                </button>
+
+                <div className="text-[11px] text-zinc-500 text-center">
+                  If it keeps failing, reopen the Mini App from the bot menu.
+                </div>
+              </div>
+            </div>
+          </main>
+          <BottomNav active="inventory" />
+        </>
+      );
+    }
+
+    return (
+      <>
+        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4 pb-24">
+          <div className="text-center">
+            <div className="text-lg font-semibold">Loading...</div>
+            <div className="mt-2 text-sm text-zinc-400">Still syncing.</div>
+          </div>
+        </main>
+        <BottomNav active="inventory" />
+      </>
+    );
+  }
+
+  const items = inventory?.items ?? [];
   const totalPower =
     typeof inventory?.totalPower === "number"
       ? inventory.totalPower
@@ -203,100 +286,6 @@ export default function InventoryPage() {
     { key: "epic", label: "Epic" },
     { key: "legendary", label: "Legendary" },
   ];
-
-  // ---------- UI ----------
-
-  if (!isTelegramEnv) {
-    return (
-      <>
-        <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 pb-24">
-          <div className="max-w-md text-center">
-            <div className="text-lg font-semibold mb-2">Open in Telegram</div>
-            <div className="text-sm text-zinc-400">
-              This page works only inside Telegram WebApp.
-            </div>
-          </div>
-        </main>
-        <BottomNav active="inventory" />
-      </>
-    );
-  }
-
-  if (
-    (sessionLoading && !hasCore) ||
-    (!hasCore && (timedOut || !!sessionError))
-  ) {
-    return (
-      <>
-        <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 pb-24">
-          <div className="max-w-md w-full">
-            <div className="text-lg font-semibold">
-              {timedOut ? "Connection timeout" : "Couldn’t load your session"}
-            </div>
-
-            <div className="mt-2 text-sm text-zinc-400">
-              {timedOut
-                ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
-                : "Something went wrong while syncing your profile."}
-            </div>
-
-            {sessionError && (
-              <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
-                <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
-                <div className="text-xs text-zinc-200 break-words">
-                  {String(sessionError)}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-6 flex flex-col gap-3">
-              <button
-                onClick={handleResync}
-                className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
-              >
-                Re-sync
-              </button>
-
-              <div className="text-[11px] text-zinc-500 text-center">
-                If it keeps failing, reopen the Mini App from the bot menu.
-              </div>
-            </div>
-          </div>
-        </main>
-        <BottomNav active="inventory" />
-      </>
-    );
-  }
-
-  if (sessionLoading || !telegramId) {
-    return (
-      <>
-        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4 pb-24">
-          <div className="text-center">
-            <div className="text-lg font-semibold">Loading inventory...</div>
-            <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
-          </div>
-        </main>
-        <BottomNav active="inventory" />
-      </>
-    );
-  }
-
-  if (!core) {
-    return (
-      <>
-        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4 pb-24">
-          <div className="text-center">
-            <div className="text-lg font-semibold">Loading profile...</div>
-            <div className="mt-2 text-sm text-zinc-400">
-              Please wait a moment.
-            </div>
-          </div>
-        </main>
-        <BottomNav active="inventory" />
-      </>
-    );
-  }
 
   return (
     <>
