@@ -67,58 +67,10 @@ export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // честно: только Telegram
-  if (!isTelegramEnv) {
-    return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
-        <div className="max-w-md text-center">
-          <div className="text-lg font-semibold mb-2">Open in Telegram</div>
-          <div className="text-sm text-zinc-400">
-            This page works only inside Telegram WebApp.
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  // Пока сессия грузится / нет telegramId
-  if (sessionLoading || !telegramId) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <span>Loading inventory...</span>
-      </main>
-    );
-  }
-
-  if (sessionError) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <div>
-          <div className="mb-2 text-red-400">Error loading session</div>
-          <pre className="text-xs max-w-sm overflow-auto">
-            {JSON.stringify({ sessionError, telegramId }, null, 2)}
-          </pre>
-        </div>
-      </main>
-    );
-  }
-
-  // core нужен, иначе нечего рендерить (и power fallback некуда взять)
-  if (!core) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <div>
-          <div className="mb-2 text-red-400">Error loading bootstrap</div>
-          <pre className="text-xs max-w-sm overflow-auto">
-            {JSON.stringify({ telegramId, bootstrap }, null, 2)}
-          </pre>
-        </div>
-      </main>
-    );
-  }
-
-  // Загружаем инвентарь
+  // ✅ hooks ВСЕГДА наверху
   useEffect(() => {
+    if (!telegramId) return;
+
     let cancelled = false;
 
     async function loadInventory() {
@@ -150,15 +102,51 @@ export default function InventoryPage() {
     };
   }, [telegramId]);
 
-  // Power
-  const totalPowerFromBackend = inventory?.totalPower;
-  const totalPower =
-    typeof totalPowerFromBackend === "number"
-      ? totalPowerFromBackend
-      : core.totalPower ?? 0;
+  // ---------- UI ----------
+
+  if (!isTelegramEnv) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+        <div className="max-w-md text-center">
+          <div className="text-lg font-semibold mb-2">Open in Telegram</div>
+          <div className="text-sm text-zinc-400">
+            This page works only inside Telegram WebApp.
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (sessionLoading || !telegramId) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white">
+        <span>Loading inventory...</span>
+      </main>
+    );
+  }
+
+  if (sessionError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white">
+        <pre className="text-xs">{sessionError}</pre>
+      </main>
+    );
+  }
+
+  if (!core) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white">
+        <span>Loading profile...</span>
+      </main>
+    );
+  }
 
   const items = inventory?.items ?? [];
   const rarityStats = inventory?.rarityStats ?? {};
+  const totalPower =
+    typeof inventory?.totalPower === "number"
+      ? inventory.totalPower
+      : core.totalPower ?? 0;
 
   return (
     <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4">
@@ -166,7 +154,6 @@ export default function InventoryPage() {
         Inventory
       </h1>
 
-      {/* Общие статы */}
       <div className="flex flex-wrap gap-4 mb-6 justify-center">
         <div className="p-4 border border-zinc-700 rounded-xl min-w-[160px]">
           <div className="text-xs text-zinc-500 mb-1">TOTAL POWER</div>
@@ -177,21 +164,8 @@ export default function InventoryPage() {
           <div className="text-xs text-zinc-500 mb-1">ITEMS</div>
           <div className="text-xl font-semibold">{items.length}</div>
         </div>
-
-        <div className="p-4 border border-zinc-700 rounded-xl min-w-[160px]">
-          <div className="text-xs text-zinc-500 mb-1">RARITY</div>
-          <div className="text-xs text-zinc-400">
-            Common: {rarityStats.common ?? 0}
-          </div>
-          <div className="text-xs text-zinc-400">Rare: {rarityStats.rare ?? 0}</div>
-          <div className="text-xs text-zinc-400">Epic: {rarityStats.epic ?? 0}</div>
-          <div className="text-xs text-zinc-400">
-            Legendary: {rarityStats.legendary ?? 0}
-          </div>
-        </div>
       </div>
 
-      {/* Лоадер / ошибка */}
       {loading && (
         <div className="text-sm text-zinc-400 mb-4">Loading items...</div>
       )}
@@ -202,73 +176,24 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* Грид предметов */}
       <div className="grid gap-4 w-full max-w-3xl sm:grid-cols-2 md:grid-cols-3">
         {items.length === 0 && !loading && !inventory?.error && (
           <div className="col-span-full text-center text-zinc-500 text-sm">
-            У тебя пока нет предметов. Открой пару сундуков 😈
+            У тебя пока нет предметов. Открой сундук 😈
           </div>
         )}
 
-        {items.map((ui) => {
-          const rarity = ui.item?.rarity?.toUpperCase?.() ?? "UNKNOWN";
-          const type = ui.item?.type ?? "item";
-          const power = ui.item?.power_value ?? 0;
-          const name = ui.item?.name ?? "Unnamed";
-          const imageUrl = ui.item?.image_url ?? null;
-
-          return (
-            <div
-              key={ui.id}
-              className="border border-zinc-700 rounded-xl p-3 bg-zinc-900/40 flex flex-col gap-2"
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold truncate">{name}</div>
-                <div className="text-[10px] px-2 py-0.5 rounded-full border border-zinc-700 uppercase text-zinc-300">
-                  {rarity}
-                </div>
-              </div>
-
-              <div className="text-[11px] text-zinc-500">
-                Type: <span className="uppercase">{type}</span>
-              </div>
-
-              <div className="text-sm text-zinc-300">
-                Power: <span className="font-semibold">{power}</span>
-              </div>
-
-              {imageUrl && (
-                <img
-                  src={imageUrl}
-                  alt={name}
-                  className="w-full h-24 object-cover rounded-md border border-zinc-700"
-                />
-              )}
-
-              {ui.created_at && (
-                <div className="mt-1 text-[10px] text-zinc-500">
-                  Obtained: {new Date(ui.created_at).toLocaleString()}
-                </div>
-              )}
+        {items.map((ui) => (
+          <div
+            key={ui.id}
+            className="border border-zinc-700 rounded-xl p-3 bg-zinc-900/40"
+          >
+            <div className="font-semibold">{ui.item.name}</div>
+            <div className="text-xs text-zinc-400">
+              Power: {ui.item.power_value}
             </div>
-          );
-        })}
-      </div>
-
-      {/* Навигация */}
-      <div className="mt-8 flex gap-4">
-        <a
-          href="/"
-          className="px-4 py-2 rounded-full border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-900"
-        >
-          Home
-        </a>
-        <a
-          href="/chest"
-          className="px-4 py-2 rounded-full border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-900"
-        >
-          Chest
-        </a>
+          </div>
+        ))}
       </div>
     </main>
   );
