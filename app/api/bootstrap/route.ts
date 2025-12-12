@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const DAILY_REWARD_AMOUNT = 50;
 const DAILY_COOLDOWN_HOURS = 24;
 
+// формула уровней
 function calcLevel(totalPower: number) {
   const BASE = 100;
 
@@ -22,17 +23,27 @@ function calcLevel(totalPower: number) {
   const currentLevelPower = BASE * Math.pow(level - 1, 2);
   const nextLevelPower = BASE * Math.pow(level, 2);
 
+  let progress = 0;
   const span = nextLevelPower - currentLevelPower;
-  const progress =
-    span > 0 ? Math.min(1, Math.max(0, (totalPower - currentLevelPower) / span)) : 0;
+  if (span > 0) {
+    progress = Math.min(
+      1,
+      Math.max(0, (totalPower - currentLevelPower) / span)
+    );
+  }
 
-  return { level, currentLevelPower, nextLevelPower, progress };
+  return {
+    level,
+    currentLevelPower,
+    nextLevelPower,
+    progress,
+  };
 }
 
 async function extractTelegramId(request: Request): Promise<string | null> {
   let telegramId: string | null = null;
 
-  // POST body
+  // 1) POST body
   if (request.method === "POST") {
     try {
       const body = await request.json();
@@ -43,11 +54,11 @@ async function extractTelegramId(request: Request): Promise<string | null> {
 
       if (fromBody) telegramId = String(fromBody).trim();
     } catch {
-      // ignore
+      // пустое тело — ок
     }
   }
 
-  // query
+  // 2) query params
   if (!telegramId) {
     const { searchParams } = new URL(request.url);
     const fromQuery =
@@ -60,7 +71,7 @@ async function extractTelegramId(request: Request): Promise<string | null> {
 
   if (!telegramId) return null;
 
-  // Telegram id обычно число
+  // простая валидация (Telegram id обычно число)
   if (!/^\d+$/.test(telegramId)) return null;
 
   return telegramId;
@@ -68,6 +79,7 @@ async function extractTelegramId(request: Request): Promise<string | null> {
 
 async function handleBootstrap(request: Request) {
   try {
+    // 1) Достаём telegramId (БЕЗ fallback)
     const telegramId = await extractTelegramId(request);
 
     if (!telegramId) {
@@ -77,8 +89,8 @@ async function handleBootstrap(request: Request) {
       );
     }
 
-    // 1) user (maybeSingle => 0 rows НЕ ошибка)
-    const { data: userRow, error: userSelectError } = await supabase
+    // 2) Находим пользователя (0 строк — НЕ ошибка)
+    const { data: userRow, error: userSelectError } = await supabaseAdmin
       .from("users")
       .select("*")
       .eq("telegram_id", telegramId)
@@ -94,9 +106,9 @@ async function handleBootstrap(request: Request) {
 
     let user = userRow;
 
-    // create user if missing
+    // 2.1. Если юзера нет — создаём
     if (!user) {
-      const { data: newUser, error: userCreateError } = await supabase
+      const { data: newUser, error: userCreateError } = await supabaseAdmin
         .from("users")
         .insert({
           telegram_id: telegramId,
@@ -116,8 +128,8 @@ async function handleBootstrap(request: Request) {
       user = newUser;
     }
 
-    // 2) balance
-    const { data: balanceRow, error: balanceSelectError } = await supabase
+    // 3) Баланс
+    const { data: balanceRow, error: balanceSelectError } = await supabaseAdmin
       .from("balances")
       .select("*")
       .eq("user_id", user.id)
@@ -134,7 +146,7 @@ async function handleBootstrap(request: Request) {
     let balance = balanceRow;
 
     if (!balance) {
-      const { data: newBalance, error: balanceCreateError } = await supabase
+      const { data: newBalance, error: balanceCreateError } = await supabaseAdmin
         .from("balances")
         .insert({ user_id: user.id, soft_balance: 0, hard_balance: 0 })
         .select("*")
@@ -151,8 +163,8 @@ async function handleBootstrap(request: Request) {
       balance = newBalance;
     }
 
-    // 3) items power + count
-    const { data: userItems, error: itemsError } = await supabase
+    // 4) Предметы → power + count
+    const { data: userItems, error: itemsError } = await supabaseAdmin
       .from("user_items")
       .select("id, item:items(power_value)")
       .eq("user_id", user.id);
@@ -174,8 +186,8 @@ async function handleBootstrap(request: Request) {
     const itemsCount = userItems?.length ?? 0;
     const levelData = calcLevel(totalPower);
 
-    // 4) spins
-    const { data: spinsRows, error: spinsError } = await supabase
+    // 5) Спины
+    const { data: spinsRows, error: spinsError } = await supabaseAdmin
       .from("chest_spins")
       .select("id, created_at")
       .eq("user_id", user.id)
@@ -192,8 +204,8 @@ async function handleBootstrap(request: Request) {
     const spinsCount = spinsRows?.length ?? 0;
     const lastSpinAt = spinsRows?.[0]?.created_at ?? null;
 
-    // 5) currency events (spent shards)
-    const { data: currencyEvents, error: currencyError } = await supabase
+    // 6) Валюта (сколько потратил)
+    const { data: currencyEvents, error: currencyError } = await supabaseAdmin
       .from("currency_events")
       .select("type, currency, amount")
       .eq("user_id", user.id);
@@ -214,8 +226,8 @@ async function handleBootstrap(request: Request) {
       }
     });
 
-    // 6) daily
-    const { data: daily, error: dailyError } = await supabase
+    // 7) Daily
+    const { data: daily, error: dailyError } = await supabaseAdmin
       .from("daily_rewards")
       .select("*")
       .eq("user_id", user.id)
@@ -253,6 +265,7 @@ async function handleBootstrap(request: Request) {
       dailyStreak = daily.streak ?? 1;
     }
 
+    // 8) Ответ
     return NextResponse.json({
       telegramId,
       bootstrap: {
