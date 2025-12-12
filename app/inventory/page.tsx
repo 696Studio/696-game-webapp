@@ -14,34 +14,24 @@ type InventoryItem = {
     type: string;
     power_value: number;
     image_url?: string | null;
-  } | null; // может быть null
-};
-
-type RarityStats = {
-  common?: number;
-  rare?: number;
-  epic?: number;
-  legendary?: number;
+  };
 };
 
 type InventoryResponse = {
   items?: InventoryItem[];
   totalPower?: number;
-  rarityStats?: RarityStats;
+  rarityStats?: {
+    common?: number;
+    rare?: number;
+    epic?: number;
+    legendary?: number;
+  };
   error?: string;
 };
 
 type CoreBootstrap = {
-  user: {
-    id: string;
-    telegram_id: string;
-    username: string | null;
-  };
-  balance: {
-    user_id: string;
-    soft_balance: number;
-    hard_balance: number;
-  };
+  user: { id: string; telegram_id: string; username: string | null };
+  balance: { user_id: string; soft_balance: number; hard_balance: number };
   totalPower: number;
   level: number;
   progress: number;
@@ -62,23 +52,6 @@ function normalizeRarity(rarity: string | null | undefined): Exclude<RarityFilte
   return "common";
 }
 
-async function safeReadJson(res: Response): Promise<{ ok: boolean; json: any; raw: string }> {
-  const ct = res.headers.get("content-type") || "";
-  const raw = await res.text();
-
-  // если не похоже на json — не пытаемся парсить
-  if (!ct.includes("application/json")) {
-    return { ok: false, json: null, raw };
-  }
-
-  try {
-    const json = raw ? JSON.parse(raw) : null;
-    return { ok: res.ok, json, raw };
-  } catch {
-    return { ok: false, json: null, raw };
-  }
-}
-
 export default function InventoryPage() {
   const {
     loading: sessionLoading,
@@ -89,13 +62,6 @@ export default function InventoryPage() {
     timedOut,
     refreshSession,
   } = useGameSessionContext() as any;
-
-  // ✅ grace delay чтобы “Couldn’t load…” не мигало
-  const [showGate, setShowGate] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setShowGate(true), 1200);
-    return () => clearTimeout(t);
-  }, []);
 
   const core = useMemo(() => unwrapCore(bootstrap), [bootstrap]);
   const hasCore = !!core;
@@ -116,35 +82,13 @@ export default function InventoryPage() {
         setLoading(true);
 
         const res = await fetch(
-          `/api/inventory?telegram_id=${encodeURIComponent(String(telegramId))}`,
-          { method: "GET" }
+          `/api/inventory?telegram_id=${encodeURIComponent(telegramId)}`
         );
 
-        const parsed = await safeReadJson(res);
-
+        const data: InventoryResponse = await res.json();
         if (cancelled) return;
 
-        if (!parsed.ok || !parsed.json) {
-          // ✅ никогда не крашим UI — просто показываем ошибку
-          setInventory({
-            error: `Inventory API returned non-JSON or error (status ${res.status}).`,
-          });
-          console.error("Inventory API bad response:", {
-            status: res.status,
-            contentType: res.headers.get("content-type"),
-            rawPreview: parsed.raw?.slice(0, 200),
-          });
-          return;
-        }
-
-        const data: InventoryResponse = parsed.json;
-
-        // ✅ Санитизация items: убираем записи без item
-        const safeItems = Array.isArray(data.items)
-          ? data.items.filter((x: any) => x && x.item && x.item.name)
-          : [];
-
-        setInventory({ ...data, items: safeItems });
+        setInventory(data);
       } catch (err) {
         console.error("Inventory load error:", err);
         if (!cancelled) setInventory({ error: "Request failed" });
@@ -154,7 +98,6 @@ export default function InventoryPage() {
     }
 
     loadInventory();
-
     return () => {
       cancelled = true;
     };
@@ -165,94 +108,7 @@ export default function InventoryPage() {
     refreshSession?.();
   };
 
-  // ---------- UI ----------
-
-  if (!isTelegramEnv) {
-    return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
-        <div className="max-w-md text-center">
-          <div className="text-lg font-semibold mb-2">Open in Telegram</div>
-          <div className="text-sm text-zinc-400">
-            This page works only inside Telegram WebApp.
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (!hasCore) {
-    if (!showGate || sessionLoading) {
-      return (
-        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
-          <div className="text-center">
-            <div className="text-lg font-semibold">Loading inventory...</div>
-            <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
-          </div>
-        </main>
-      );
-    }
-
-    if (timedOut || !!sessionError) {
-      return (
-        <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
-          <div className="max-w-md w-full">
-            <div className="text-lg font-semibold">
-              {timedOut ? "Connection timeout" : "Couldn’t load your session"}
-            </div>
-
-            <div className="mt-2 text-sm text-zinc-400">
-              {timedOut
-                ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
-                : "Something went wrong while syncing your profile."}
-            </div>
-
-            {sessionError && (
-              <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
-                <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
-                <div className="text-xs text-zinc-200 break-words">
-                  {String(sessionError)}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-6 flex flex-col gap-3">
-              <button
-                onClick={handleResync}
-                className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
-              >
-                Re-sync
-              </button>
-
-              <div className="text-[11px] text-zinc-500 text-center">
-                If it keeps failing, reopen the Mini App from the bot menu.
-              </div>
-            </div>
-          </div>
-        </main>
-      );
-    }
-
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
-        <div className="text-center">
-          <div className="text-lg font-semibold">Loading...</div>
-          <div className="mt-2 text-sm text-zinc-400">Still syncing.</div>
-        </div>
-      </main>
-    );
-  }
-
-  if (sessionLoading || !telegramId) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
-        <div className="text-center">
-          <div className="text-lg font-semibold">Loading inventory...</div>
-          <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
-        </div>
-      </main>
-    );
-  }
-
+  // ✅ ВАЖНО: вычисления ДО любых return (фикс React #310)
   const items = inventory?.items ?? [];
   const totalPower =
     typeof inventory?.totalPower === "number"
@@ -283,6 +139,83 @@ export default function InventoryPage() {
   }, [items, rarityFilter, sortMode]);
 
   const shownCount = filteredSortedItems.length;
+
+  // ---------- UI ----------
+
+  if (!isTelegramEnv) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+        <div className="max-w-md text-center">
+          <div className="text-lg font-semibold mb-2">Open in Telegram</div>
+          <div className="text-sm text-zinc-400">
+            This page works only inside Telegram WebApp.
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if ((sessionLoading && !hasCore) || (!hasCore && (timedOut || !!sessionError))) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+        <div className="max-w-md w-full">
+          <div className="text-lg font-semibold">
+            {timedOut ? "Connection timeout" : "Couldn’t load your session"}
+          </div>
+
+          <div className="mt-2 text-sm text-zinc-400">
+            {timedOut
+              ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
+              : "Something went wrong while syncing your profile."}
+          </div>
+
+          {sessionError && (
+            <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
+              <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
+              <div className="text-xs text-zinc-200 break-words">
+                {String(sessionError)}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-col gap-3">
+            <button
+              onClick={handleResync}
+              className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
+            >
+              Re-sync
+            </button>
+
+            <div className="text-[11px] text-zinc-500 text-center">
+              If it keeps failing, reopen the Mini App from the bot menu.
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (sessionLoading || !telegramId) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Loading inventory...</div>
+          <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!core) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Loading profile...</div>
+          <div className="mt-2 text-sm text-zinc-400">Please wait a moment.</div>
+        </div>
+      </main>
+    );
+  }
 
   const rarityOptions: { key: RarityFilter; label: string }[] = [
     { key: "all", label: "All" },
@@ -382,18 +315,10 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {loading && (
-        <div className="text-sm text-zinc-400 mb-4">Loading items...</div>
-      )}
+      {loading && <div className="text-sm text-zinc-400 mb-4">Loading items...</div>}
 
       {inventory?.error && (
-        <div className="w-full max-w-3xl border border-red-900/60 bg-red-950/30 rounded-xl p-4 mb-4">
-          <div className="text-red-300 font-semibold">Inventory error</div>
-          <div className="text-red-200 text-sm mt-1">{inventory.error}</div>
-          <div className="text-[11px] text-zinc-400 mt-2">
-            Tip: check Vercel logs for <span className="font-semibold">/api/inventory</span>
-          </div>
-        </div>
+        <div className="text-red-400 mb-4">Error loading inventory: {inventory.error}</div>
       )}
 
       {!loading && !inventory?.error && filteredSortedItems.length === 0 && (
@@ -419,22 +344,20 @@ export default function InventoryPage() {
               className="border border-zinc-700 rounded-xl p-3 bg-zinc-900/40"
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="font-semibold leading-snug">
-                  {ui.item?.name ?? "Unknown item"}
-                </div>
+                <div className="font-semibold leading-snug">{ui.item.name}</div>
                 <div className="text-[10px] px-2 py-1 rounded-full border border-zinc-800 text-zinc-300">
-                  {String(ui.item?.rarity || "unknown").toUpperCase()}
+                  {String(ui.item.rarity || "").toUpperCase()}
                 </div>
               </div>
 
               <div className="mt-2 text-xs text-zinc-400">
-                Type: {String(ui.item?.type || "—").toUpperCase()}
+                Type: {String(ui.item.type || "").toUpperCase()}
               </div>
 
               <div className="mt-1 text-xs text-zinc-400">
                 Power:{" "}
                 <span className="text-zinc-100 font-semibold">
-                  {Number(ui.item?.power_value ?? 0)}
+                  {ui.item.power_value}
                 </span>
               </div>
             </div>
