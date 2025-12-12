@@ -84,6 +84,19 @@ function formatCompact(n: number) {
   return `${x}`;
 }
 
+function formatDate(iso?: string) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const d = new Date(t);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+}
+
 export default function InventoryPage() {
   const {
     loading: sessionLoading,
@@ -105,6 +118,9 @@ export default function InventoryPage() {
   const [rarityFilter, setRarityFilter] = useState<RarityFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("power_desc");
 
+  // ✅ modal state (Inventory v2)
+  const [selected, setSelected] = useState<InventoryItem | null>(null);
+
   // grace delay for gate UI
   const [showGate, setShowGate] = useState(false);
   useEffect(() => {
@@ -114,6 +130,7 @@ export default function InventoryPage() {
 
   const handleResync = () => {
     setInventory(null);
+    setSelected(null);
     refreshSession?.();
   };
 
@@ -149,6 +166,24 @@ export default function InventoryPage() {
       cancelled = true;
     };
   }, [telegramId]);
+
+  // lock body scroll when modal open (prevents iOS bounce)
+  useEffect(() => {
+    if (!selected) return;
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelected(null);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [selected]);
 
   // derived values (SAFE even if data not ready yet)
   const items: InventoryItem[] = inventory?.items ?? [];
@@ -193,7 +228,8 @@ export default function InventoryPage() {
   ];
 
   // active class helpers (UI only)
-  const pillBase = "ui-pill transition-transform duration-150 active:translate-y-[1px]";
+  const pillBase =
+    "ui-pill transition-transform duration-150 active:translate-y-[1px]";
   const pillActive =
     "border-[rgba(255,255,255,0.38)] text-[color:var(--text)] bg-[rgba(255,255,255,0.07)]";
   const pillIdle = "hover:bg-[rgba(255,255,255,0.06)]";
@@ -245,12 +281,17 @@ export default function InventoryPage() {
             {sessionError && (
               <div className="mt-4 p-3 rounded-[var(--r-md)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.03)]">
                 <div className="ui-subtitle mb-1">Details</div>
-                <div className="text-xs break-words">{String(sessionError)}</div>
+                <div className="text-xs break-words">
+                  {String(sessionError)}
+                </div>
               </div>
             )}
 
             <div className="mt-6 flex flex-col gap-3">
-              <button onClick={handleResync} className="ui-btn ui-btn-primary w-full">
+              <button
+                onClick={handleResync}
+                className="ui-btn ui-btn-primary w-full"
+              >
                 Re-sync
               </button>
 
@@ -321,13 +362,16 @@ export default function InventoryPage() {
           <div className="ui-card p-4">
             <div className="flex items-center justify-between">
               <div className="ui-subtitle">Items</div>
-              <span className="ui-pill">{shownCount}/{items.length}</span>
+              <span className="ui-pill">
+                {shownCount}/{items.length}
+              </span>
             </div>
             <div className="text-3xl font-semibold mt-3 tabular-nums">
               {formatCompact(items.length)}
             </div>
             <div className="text-xs ui-subtle mt-2">
-              Showing: <span className="text-[color:var(--text)]">{shownCount}</span>
+              Showing:{" "}
+              <span className="text-[color:var(--text)]">{shownCount}</span>
             </div>
           </div>
         </div>
@@ -342,10 +386,9 @@ export default function InventoryPage() {
                   <button
                     key={opt.key}
                     onClick={() => setRarityFilter(opt.key)}
-                    className={[
-                      pillBase,
-                      active ? pillActive : pillIdle,
-                    ].join(" ")}
+                    className={[pillBase, active ? pillActive : pillIdle].join(
+                      " "
+                    )}
                     aria-pressed={active}
                   >
                     {opt.label}
@@ -395,7 +438,9 @@ export default function InventoryPage() {
 
         {/* status */}
         {loading && (
-          <div className="mb-4 ui-subtle text-sm text-center">Loading items...</div>
+          <div className="mb-4 ui-subtle text-sm text-center">
+            Loading items...
+          </div>
         )}
 
         {inventory?.error && (
@@ -428,10 +473,13 @@ export default function InventoryPage() {
               const border = rarityBorder(ui.item?.rarity);
 
               return (
-                <div
+                <button
                   key={ui.id}
+                  type="button"
+                  onClick={() => setSelected(ui)}
                   className={[
-                    "ui-card p-3 transition-transform duration-150 active:translate-y-[1px]",
+                    "ui-card p-3 text-left w-full",
+                    "transition-transform duration-150 active:translate-y-[1px]",
                     "hover:bg-[rgba(255,255,255,0.055)]",
                     border,
                   ].join(" ")}
@@ -494,12 +542,128 @@ export default function InventoryPage() {
                       </span>
                     </div>
                   ) : null}
-                </div>
+
+                  <div className="mt-2 text-[11px] ui-subtle">
+                    Tap to preview
+                  </div>
+                </button>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Modal */}
+      {selected && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center px-4 pb-6 sm:pb-0"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Item preview"
+        >
+          {/* backdrop */}
+          <button
+            type="button"
+            onClick={() => setSelected(null)}
+            className="absolute inset-0 bg-black/70"
+            aria-label="Close preview"
+          />
+
+          {/* panel */}
+          <div
+            className={[
+              "relative w-full max-w-md ui-card-strong p-4",
+              "rounded-[var(--r-xl)]",
+              "motion-safe:animate-[invModalIn_180ms_ease-out_1]",
+              rarityBorder(selected.item?.rarity),
+            ].join(" ")}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-lg font-semibold truncate">
+                  {selected.item.name}
+                </div>
+                <div className="mt-1 flex items-center gap-2 flex-wrap">
+                  <span className="ui-pill">{rarityLabel(selected.item.rarity)}</span>
+                  <span className="ui-pill">
+                    {String(selected.item.type || "").toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="ui-btn ui-btn-ghost"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* image */}
+            {selected.item.image_url ? (
+              <div className="mt-4 rounded-[var(--r-lg)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.02)] overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={selected.item.image_url}
+                  alt={selected.item.name}
+                  className="w-full h-56 object-cover"
+                />
+              </div>
+            ) : (
+              <div className="mt-4 h-56 rounded-[var(--r-lg)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.02)] flex items-center justify-center">
+                <div className="ui-subtitle">No image</div>
+              </div>
+            )}
+
+            {/* stats */}
+            <div className="mt-4 ui-card p-4">
+              <div className="flex items-center justify-between">
+                <div className="ui-subtitle">Power</div>
+                <div className="text-2xl font-semibold tabular-nums">
+                  {formatCompact(Number(selected.item.power_value ?? 0))}
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <div className="ui-subtitle">Obtained</div>
+                  <div className="text-sm ui-muted mt-1">
+                    {formatDate(selected.created_at) || "Unknown"}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="ui-subtitle">Source</div>
+                  <div className="text-sm ui-muted mt-1 break-words">
+                    {selected.obtained_from ? String(selected.obtained_from) : "Unknown"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <a href="/chest" className="ui-btn ui-btn-primary flex-1">
+                Open more
+              </a>
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="ui-btn ui-btn-ghost flex-1"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+
+          <style jsx global>{`
+            @keyframes invModalIn {
+              0% { transform: translateY(8px) scale(0.99); opacity: 0; }
+              100% { transform: translateY(0) scale(1); opacity: 1; }
+            }
+          `}</style>
+        </div>
+      )}
     </main>
   );
 }
