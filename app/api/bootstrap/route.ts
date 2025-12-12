@@ -1,114 +1,75 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-const DAILY_REWARD_AMOUNT = 50;
-const DAILY_COOLDOWN_HOURS = 24;
+type Body = { telegramId?: string };
 
-// формула уровней
 function calcLevel(totalPower: number) {
-  const BASE = 100;
-
-  if (totalPower <= 0) {
-    return {
-      level: 1,
-      currentLevelPower: 0,
-      nextLevelPower: BASE,
-      progress: 0,
-    };
-  }
-
-  const raw = Math.floor(Math.sqrt(totalPower / BASE)) + 1;
-  const level = Math.max(raw, 1);
-
-  const currentLevelPower = BASE * Math.pow(level - 1, 2);
-  const nextLevelPower = BASE * Math.pow(level, 2);
-
-  let progress = 0;
-  const span = nextLevelPower - currentLevelPower;
-  if (span > 0) {
-    progress = Math.min(
-      1,
-      Math.max(0, (totalPower - currentLevelPower) / span)
-    );
-  }
+  // простая формула под MVP
+  const level = Math.max(1, Math.floor(totalPower / 100) + 1);
+  const currentLevelPower = (level - 1) * 100;
+  const nextLevelPower = level * 100;
+  const progress =
+    nextLevelPower === currentLevelPower
+      ? 0
+      : (totalPower - currentLevelPower) / (nextLevelPower - currentLevelPower);
 
   return {
     level,
     currentLevelPower,
     nextLevelPower,
-    progress,
+    progress: Math.max(0, Math.min(1, progress)),
   };
 }
 
-async function extractTelegramId(request: Request): Promise<string | null> {
-  let telegramId: string | null = null;
+function computeDaily(dailyRow: any | null) {
+  const DAILY_COOLDOWN_HOURS = 24;
+  const amount = 50;
 
-  // 1) POST body
-  if (request.method === "POST") {
-    try {
-      const body = await request.json();
-      const fromBody =
-        (typeof body?.telegramId === "string" && body.telegramId.trim()) ||
-        (typeof body?.telegram_id === "string" && body.telegram_id.trim()) ||
-        null;
-
-      if (fromBody) telegramId = String(fromBody).trim();
-    } catch {
-      // пустое тело — ок
-    }
+  if (!dailyRow?.last_claim_at) {
+    return { canClaim: true, remainingSeconds: 0, streak: dailyRow?.streak ?? 0, amount };
   }
 
-  // 2) query params
-  if (!telegramId) {
-    const { searchParams } = new URL(request.url);
-    const fromQuery =
-      searchParams.get("telegramId") ||
-      searchParams.get("telegram_id") ||
-      searchParams.get("tg");
+  const now = new Date();
+  const last = new Date(dailyRow.last_claim_at);
+  const diffMs = now.getTime() - last.getTime();
+  const diffHours = diffMs / (1000 * 60 * 60);
 
-    if (fromQuery) telegramId = fromQuery.trim();
+  if (diffHours >= DAILY_COOLDOWN_HOURS) {
+    return { canClaim: true, remainingSeconds: 0, streak: dailyRow?.streak ?? 1, amount };
   }
 
-  if (!telegramId) return null;
-
-  // простая валидация (Telegram id обычно число)
-  if (!/^\d+$/.test(telegramId)) return null;
-
-  return telegramId;
+  const remainingMs = DAILY_COOLDOWN_HOURS * 3600 * 1000 - diffMs;
+  const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  return { canClaim: false, remainingSeconds, streak: dailyRow?.streak ?? 1, amount };
 }
 
-async function handleBootstrap(request: Request) {
+export async function POST(req: Request) {
   try {
-    // 1) Достаём telegramId (БЕЗ fallback)
-    const telegramId = await extractTelegramId(request);
+    const body = (await req.json().catch(() => ({}))) as Body;
+    const telegramId = typeof body.telegramId === "string" ? body.telegramId.trim() : "";
 
     if (!telegramId) {
-      return NextResponse.json(
-        { error: "telegramId is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "telegramId is required" }, { status: 400 });
     }
 
-    // 2) Находим пользователя (0 строк — НЕ ошибка)
-    const { data: userRow, error: userSelectError } = await supabaseAdmin
+    // 1) user
+    const { data: userRow, error: userErr } = await supabaseAdmin
       .from("users")
       .select("*")
       .eq("telegram_id", telegramId)
       .maybeSingle();
 
-    if (userSelectError) {
-      console.error("bootstrap: user select error", userSelectError);
+    if (userErr) {
       return NextResponse.json(
-        { error: "Failed to fetch user", details: userSelectError },
+        { error: "Failed to fetch user", details: userErr },
         { status: 500 }
       );
     }
 
     let user = userRow;
 
-    // 2.1. Если юзера нет — создаём
     if (!user) {
-      const { data: newUser, error: userCreateError } = await supabaseAdmin
+      const { data: newUser, error: createUserErr } = await supabaseAdmin
         .from("users")
         .insert({
           telegram_id: telegramId,
@@ -117,10 +78,9 @@ async function handleBootstrap(request: Request) {
         .select("*")
         .maybeSingle();
 
-      if (userCreateError || !newUser) {
-        console.error("bootstrap: user create error", userCreateError);
+      if (createUserErr || !newUser) {
         return NextResponse.json(
-          { error: "Failed to create user", details: userCreateError },
+          { error: "Failed to create user", details: createUserErr },
           { status: 500 }
         );
       }
@@ -128,179 +88,153 @@ async function handleBootstrap(request: Request) {
       user = newUser;
     }
 
-    // 3) Баланс
-    const { data: balanceRow, error: balanceSelectError } = await supabaseAdmin
+    // 2) balance
+    const { data: balRow, error: balErr } = await supabaseAdmin
       .from("balances")
       .select("*")
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (balanceSelectError) {
-      console.error("bootstrap: balance select error", balanceSelectError);
+    if (balErr) {
       return NextResponse.json(
-        { error: "Failed to fetch balance", details: balanceSelectError },
+        { error: "Failed to fetch balance", details: balErr },
         { status: 500 }
       );
     }
 
-    let balance = balanceRow;
+    let balance = balRow;
 
     if (!balance) {
-      const { data: newBalance, error: balanceCreateError } = await supabaseAdmin
+      const { data: newBal, error: newBalErr } = await supabaseAdmin
         .from("balances")
         .insert({ user_id: user.id, soft_balance: 0, hard_balance: 0 })
         .select("*")
         .maybeSingle();
 
-      if (balanceCreateError || !newBalance) {
-        console.error("bootstrap: balance create error", balanceCreateError);
+      if (newBalErr || !newBal) {
         return NextResponse.json(
-          { error: "Failed to create balance", details: balanceCreateError },
+          { error: "Failed to create balance", details: newBalErr },
           { status: 500 }
         );
       }
 
-      balance = newBalance;
+      balance = newBal;
     }
 
-    // 4) Предметы → power + count
-    const { data: userItems, error: itemsError } = await supabaseAdmin
+    // 3) items / power
+    const { data: userItems, error: itemsErr } = await supabaseAdmin
       .from("user_items")
       .select("id, item:items(power_value)")
       .eq("user_id", user.id);
 
-    if (itemsError) {
-      console.error("bootstrap: items error", itemsError);
+    if (itemsErr) {
       return NextResponse.json(
-        { error: "Failed to fetch user items", details: itemsError },
+        { error: "Failed to fetch items", details: itemsErr },
         { status: 500 }
       );
     }
-
-    const totalPower =
-      (userItems || []).reduce(
-        (sum: number, ui: any) => sum + (ui.item?.power_value || 0),
-        0
-      ) ?? 0;
 
     const itemsCount = userItems?.length ?? 0;
-    const levelData = calcLevel(totalPower);
+    const totalPower =
+      userItems?.reduce((sum: number, ui: any) => sum + (ui.item?.power_value || 0), 0) ?? 0;
 
-    // 5) Спины
-    const { data: spinsRows, error: spinsError } = await supabaseAdmin
+    const levelInfo = calcLevel(totalPower);
+
+    // 4) spins stats
+    const { count: spinsCount, error: spinsErr } = await supabaseAdmin
       .from("chest_spins")
-      .select("id, created_at")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
-
-    if (spinsError) {
-      console.error("bootstrap: spins error", spinsError);
-      return NextResponse.json(
-        { error: "Failed to fetch chest spins", details: spinsError },
-        { status: 500 }
-      );
-    }
-
-    const spinsCount = spinsRows?.length ?? 0;
-    const lastSpinAt = spinsRows?.[0]?.created_at ?? null;
-
-    // 6) Валюта (сколько потратил)
-    const { data: currencyEvents, error: currencyError } = await supabaseAdmin
-      .from("currency_events")
-      .select("type, currency, amount")
+      .select("id", { count: "exact", head: true })
       .eq("user_id", user.id);
 
-    if (currencyError) {
-      console.error("bootstrap: currency events error", currencyError);
+    if (spinsErr) {
       return NextResponse.json(
-        { error: "Failed to fetch currency events", details: currencyError },
+        { error: "Failed to fetch spins", details: spinsErr },
         { status: 500 }
       );
     }
 
-    let totalShardsSpent = 0;
-    (currencyEvents || []).forEach((ev: any) => {
-      if (ev.currency === "soft" && ev.type === "spend") {
-        const amount = typeof ev.amount === "number" ? ev.amount : 0;
-        totalShardsSpent += Math.abs(amount);
-      }
-    });
+    // lastSpinAt
+    const { data: lastSpinRow, error: lastSpinErr } = await supabaseAdmin
+      .from("chest_spins")
+      .select("created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    // 7) Daily
-    const { data: daily, error: dailyError } = await supabaseAdmin
+    if (lastSpinErr) {
+      return NextResponse.json(
+        { error: "Failed to fetch lastSpinAt", details: lastSpinErr },
+        { status: 500 }
+      );
+    }
+
+    // totalShardsSpent (из currency_events spend soft)
+    const { data: spentRows, error: spentErr } = await supabaseAdmin
+      .from("currency_events")
+      .select("amount")
+      .eq("user_id", user.id)
+      .eq("currency", "soft")
+      .eq("type", "spend");
+
+    if (spentErr) {
+      return NextResponse.json(
+        { error: "Failed to fetch currency history", details: spentErr },
+        { status: 500 }
+      );
+    }
+
+    const totalShardsSpent =
+      spentRows?.reduce((sum: number, r: any) => sum + Math.abs(r.amount || 0), 0) ?? 0;
+
+    // 5) daily
+    const { data: dailyRow, error: dailyErr } = await supabaseAdmin
       .from("daily_rewards")
       .select("*")
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (dailyError) {
-      console.error("bootstrap: daily error", dailyError);
+    if (dailyErr) {
       return NextResponse.json(
-        { error: "Failed to fetch daily_rewards", details: dailyError },
+        { error: "Failed to fetch daily_rewards", details: dailyErr },
         { status: 500 }
       );
     }
 
-    let dailyCanClaim = true;
-    let dailyRemainingSeconds = 0;
-    let dailyStreak = 1;
+    const daily = computeDaily(dailyRow);
 
-    if (daily?.last_claim_at) {
-      const lastClaimAt = new Date(daily.last_claim_at);
-      const now = new Date();
-      const diffMs = now.getTime() - lastClaimAt.getTime();
-      const diffHours = diffMs / (1000 * 60 * 60);
-
-      if (diffHours >= DAILY_COOLDOWN_HOURS) {
-        dailyCanClaim = true;
-        dailyRemainingSeconds = 0;
-        dailyStreak = daily.streak ?? 1;
-      } else {
-        dailyCanClaim = false;
-        const remainingMs = DAILY_COOLDOWN_HOURS * 3600 * 1000 - diffMs;
-        dailyRemainingSeconds = Math.ceil(remainingMs / 1000);
-        dailyStreak = daily.streak ?? 1;
-      }
-    } else if (daily?.streak != null) {
-      dailyStreak = daily.streak ?? 1;
-    }
-
-    // 8) Ответ
     return NextResponse.json({
       telegramId,
       bootstrap: {
-        user,
-        balance,
+        user: {
+          id: user.id,
+          telegram_id: user.telegram_id,
+          username: user.username ?? null,
+          first_name: user.first_name ?? null,
+          avatar_url: user.avatar_url ?? null,
+        },
+        balance: {
+          user_id: user.id,
+          soft_balance: balance.soft_balance ?? 0,
+          hard_balance: balance.hard_balance ?? 0,
+        },
         totalPower,
         itemsCount,
-        level: levelData.level,
-        currentLevelPower: levelData.currentLevelPower,
-        nextLevelPower: levelData.nextLevelPower,
-        progress: levelData.progress,
-        spinsCount,
-        lastSpinAt,
+        level: levelInfo.level,
+        currentLevelPower: levelInfo.currentLevelPower,
+        nextLevelPower: levelInfo.nextLevelPower,
+        progress: levelInfo.progress,
+        spinsCount: spinsCount ?? 0,
+        lastSpinAt: lastSpinRow?.created_at ?? null,
         totalShardsSpent,
-        daily: {
-          canClaim: dailyCanClaim,
-          remainingSeconds: dailyRemainingSeconds,
-          streak: dailyStreak,
-          amount: DAILY_REWARD_AMOUNT,
-        },
+        daily,
       },
     });
-  } catch (err: any) {
-    console.error("GET/POST /api/bootstrap unexpected error:", err);
+  } catch (e: any) {
+    console.error("POST /api/bootstrap error:", e);
     return NextResponse.json(
-      { error: "Unexpected error", details: String(err) },
+      { error: "Unexpected error", details: String(e?.message || e) },
       { status: 500 }
     );
   }
-}
-
-export async function GET(request: Request) {
-  return handleBootstrap(request);
-}
-
-export async function POST(request: Request) {
-  return handleBootstrap(request);
 }
