@@ -49,10 +49,9 @@ function unwrapCore(bootstrap: any): CoreBootstrap | null {
 type RarityFilter = "all" | "common" | "rare" | "epic" | "legendary";
 type SortMode = "power_desc" | "power_asc" | "newest";
 
-function normalizeRarity(rarity: string | null | undefined): RarityFilter {
+function normalizeRarity(rarity: string | null | undefined): Exclude<RarityFilter, "all"> {
   const r = String(rarity || "").trim().toLowerCase();
-  if (r === "common" || r === "rare" || r === "epic" || r === "legendary")
-    return r;
+  if (r === "common" || r === "rare" || r === "epic" || r === "legendary") return r;
   return "common";
 }
 
@@ -105,7 +104,7 @@ export default function InventoryPage() {
     refreshSession,
   } = useGameSessionContext() as any;
 
-  // ✅ grace delay
+  // ✅ grace delay (чтобы фоллбек не мигал мгновенно)
   const [showGate, setShowGate] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setShowGate(true), 900);
@@ -118,9 +117,11 @@ export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // ✅ фильтры
   const [rarityFilter, setRarityFilter] = useState<RarityFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("power_desc");
 
+  // ✅ загрузка инвентаря
   useEffect(() => {
     if (!telegramId) return;
 
@@ -158,6 +159,48 @@ export default function InventoryPage() {
     refreshSession?.();
   };
 
+  // ✅ ВАЖНО: вычисления/хуки — ДО любых return
+  const items = inventory?.items ?? [];
+  const totalPower =
+    typeof inventory?.totalPower === "number"
+      ? inventory.totalPower
+      : core?.totalPower ?? 0;
+
+  const filteredSortedItems = useMemo(() => {
+    const base =
+      rarityFilter === "all"
+        ? items
+        : items.filter((ui) => normalizeRarity(ui.item?.rarity) === rarityFilter);
+
+    const copy = [...base];
+
+    copy.sort((a, b) => {
+      const ap = Number(a?.item?.power_value ?? 0);
+      const bp = Number(b?.item?.power_value ?? 0);
+
+      if (sortMode === "power_asc") return ap - bp;
+      if (sortMode === "power_desc") return bp - ap;
+
+      const at = a.created_at ? Date.parse(a.created_at) : 0;
+      const bt = b.created_at ? Date.parse(b.created_at) : 0;
+      return bt - at;
+    });
+
+    return copy;
+  }, [items, rarityFilter, sortMode]);
+
+  const shownCount = filteredSortedItems.length;
+
+  const rarityOptions: { key: RarityFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "common", label: "Common" },
+    { key: "rare", label: "Rare" },
+    { key: "epic", label: "Epic" },
+    { key: "legendary", label: "Legendary" },
+  ];
+
+  // ---------- UI ----------
+
   if (!isTelegramEnv) {
     return (
       <>
@@ -174,7 +217,7 @@ export default function InventoryPage() {
     );
   }
 
-  // ✅ пока core нет — сначала только Loading, потом уже fallback
+  // пока core нет — сначала Loading, потом fallback
   if (!hasCore) {
     if (!showGate || sessionLoading || !telegramId) {
       return (
@@ -245,47 +288,6 @@ export default function InventoryPage() {
       </>
     );
   }
-
-  const items = inventory?.items ?? [];
-  const totalPower =
-    typeof inventory?.totalPower === "number"
-      ? inventory.totalPower
-      : core?.totalPower ?? 0;
-
-  const filteredSortedItems = useMemo(() => {
-    const base =
-      rarityFilter === "all"
-        ? items
-        : items.filter(
-            (ui) => normalizeRarity(ui.item?.rarity) === rarityFilter
-          );
-
-    const copy = [...base];
-
-    copy.sort((a, b) => {
-      const ap = Number(a?.item?.power_value ?? 0);
-      const bp = Number(b?.item?.power_value ?? 0);
-
-      if (sortMode === "power_asc") return ap - bp;
-      if (sortMode === "power_desc") return bp - ap;
-
-      const at = a.created_at ? Date.parse(a.created_at) : 0;
-      const bt = b.created_at ? Date.parse(b.created_at) : 0;
-      return bt - at;
-    });
-
-    return copy;
-  }, [items, rarityFilter, sortMode]);
-
-  const shownCount = filteredSortedItems.length;
-
-  const rarityOptions: { key: RarityFilter; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "common", label: "Common" },
-    { key: "rare", label: "Rare" },
-    { key: "epic", label: "Epic" },
-    { key: "legendary", label: "Legendary" },
-  ];
 
   return (
     <>
