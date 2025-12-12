@@ -17,21 +17,31 @@ type InventoryItem = {
   };
 };
 
+type RarityStats = {
+  common?: number;
+  rare?: number;
+  epic?: number;
+  legendary?: number;
+};
+
 type InventoryResponse = {
   items?: InventoryItem[];
   totalPower?: number;
-  rarityStats?: {
-    common?: number;
-    rare?: number;
-    epic?: number;
-    legendary?: number;
-  };
+  rarityStats?: RarityStats;
   error?: string;
 };
 
 type CoreBootstrap = {
-  user: { id: string; telegram_id: string; username: string | null };
-  balance: { user_id: string; soft_balance: number; hard_balance: number };
+  user: {
+    id: string;
+    telegram_id: string;
+    username: string | null;
+  };
+  balance: {
+    user_id: string;
+    soft_balance: number;
+    hard_balance: number;
+  };
   totalPower: number;
   level: number;
   progress: number;
@@ -46,9 +56,12 @@ function unwrapCore(bootstrap: any): CoreBootstrap | null {
 type RarityFilter = "all" | "common" | "rare" | "epic" | "legendary";
 type SortMode = "power_desc" | "power_asc" | "newest";
 
-function normalizeRarity(rarity: string | null | undefined): Exclude<RarityFilter, "all"> {
-  const r = String(rarity || "").trim().toLowerCase();
-  if (r === "common" || r === "rare" || r === "epic" || r === "legendary") return r;
+function normalizeRarity(rarity: string | null | undefined): RarityFilter {
+  const r = String(rarity || "")
+    .trim()
+    .toLowerCase();
+  if (r === "common" || r === "rare" || r === "epic" || r === "legendary")
+    return r;
   return "common";
 }
 
@@ -69,9 +82,23 @@ export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // ✅ Inventory UX state
   const [rarityFilter, setRarityFilter] = useState<RarityFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("power_desc");
 
+  // ✅ grace delay: не показываем “Couldn’t load…” сразу
+  const [showGate, setShowGate] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setShowGate(true), 900);
+    return () => clearTimeout(t);
+  }, []);
+
+  const handleResync = () => {
+    setInventory(null);
+    refreshSession?.();
+  };
+
+  // ✅ грузим инвентарь только когда есть telegramId
   useEffect(() => {
     if (!telegramId) return;
 
@@ -98,28 +125,116 @@ export default function InventoryPage() {
     }
 
     loadInventory();
+
     return () => {
       cancelled = true;
     };
   }, [telegramId]);
 
-  const handleResync = () => {
-    setInventory(null);
-    refreshSession?.();
-  };
+  // ---------- UI ----------
 
-  // ✅ ВАЖНО: вычисления ДО любых return (фикс React #310)
+  if (!isTelegramEnv) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+        <div className="max-w-md text-center">
+          <div className="text-lg font-semibold mb-2">Open in Telegram</div>
+          <div className="text-sm text-zinc-400">
+            This page works only inside Telegram WebApp.
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // ✅ Gate with delay: сначала loader, потом уже timeout/error
+  if (!hasCore) {
+    if (!showGate || sessionLoading) {
+      return (
+        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+          <div className="text-center">
+            <div className="text-lg font-semibold">Loading inventory...</div>
+            <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
+          </div>
+        </main>
+      );
+    }
+
+    if (timedOut || !!sessionError) {
+      return (
+        <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+          <div className="max-w-md w-full">
+            <div className="text-lg font-semibold">
+              {timedOut ? "Connection timeout" : "Couldn’t load your session"}
+            </div>
+
+            <div className="mt-2 text-sm text-zinc-400">
+              {timedOut
+                ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
+                : "Something went wrong while syncing your profile."}
+            </div>
+
+            {sessionError && (
+              <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
+                <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
+                <div className="text-xs text-zinc-200 break-words">
+                  {String(sessionError)}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                onClick={handleResync}
+                className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
+              >
+                Re-sync
+              </button>
+
+              <div className="text-[11px] text-zinc-500 text-center">
+                If it keeps failing, reopen the Mini App from the bot menu.
+              </div>
+            </div>
+          </div>
+        </main>
+      );
+    }
+
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Loading...</div>
+          <div className="mt-2 text-sm text-zinc-400">Still syncing.</div>
+        </div>
+      </main>
+    );
+  }
+
+  // если телеграмId ещё не готов — мягкий лоадер
+  if (!telegramId) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Loading inventory...</div>
+          <div className="mt-2 text-sm text-zinc-400">Getting Telegram ID.</div>
+        </div>
+      </main>
+    );
+  }
+
   const items = inventory?.items ?? [];
   const totalPower =
     typeof inventory?.totalPower === "number"
       ? inventory.totalPower
-      : core?.totalPower ?? 0;
+      : core.totalPower ?? 0;
 
+  // Filter + sort
   const filteredSortedItems = useMemo(() => {
     const base =
       rarityFilter === "all"
         ? items
-        : items.filter((ui) => normalizeRarity(ui.item?.rarity) === rarityFilter);
+        : items.filter(
+            (ui) => normalizeRarity(ui.item?.rarity) === rarityFilter
+          );
 
     const copy = [...base];
 
@@ -140,83 +255,6 @@ export default function InventoryPage() {
 
   const shownCount = filteredSortedItems.length;
 
-  // ---------- UI ----------
-
-  if (!isTelegramEnv) {
-    return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
-        <div className="max-w-md text-center">
-          <div className="text-lg font-semibold mb-2">Open in Telegram</div>
-          <div className="text-sm text-zinc-400">
-            This page works only inside Telegram WebApp.
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if ((sessionLoading && !hasCore) || (!hasCore && (timedOut || !!sessionError))) {
-    return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
-        <div className="max-w-md w-full">
-          <div className="text-lg font-semibold">
-            {timedOut ? "Connection timeout" : "Couldn’t load your session"}
-          </div>
-
-          <div className="mt-2 text-sm text-zinc-400">
-            {timedOut
-              ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
-              : "Something went wrong while syncing your profile."}
-          </div>
-
-          {sessionError && (
-            <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
-              <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
-              <div className="text-xs text-zinc-200 break-words">
-                {String(sessionError)}
-              </div>
-            </div>
-          )}
-
-          <div className="mt-6 flex flex-col gap-3">
-            <button
-              onClick={handleResync}
-              className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
-            >
-              Re-sync
-            </button>
-
-            <div className="text-[11px] text-zinc-500 text-center">
-              If it keeps failing, reopen the Mini App from the bot menu.
-            </div>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (sessionLoading || !telegramId) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
-        <div className="text-center">
-          <div className="text-lg font-semibold">Loading inventory...</div>
-          <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
-        </div>
-      </main>
-    );
-  }
-
-  if (!core) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
-        <div className="text-center">
-          <div className="text-lg font-semibold">Loading profile...</div>
-          <div className="mt-2 text-sm text-zinc-400">Please wait a moment.</div>
-        </div>
-      </main>
-    );
-  }
-
   const rarityOptions: { key: RarityFilter; label: string }[] = [
     { key: "all", label: "All" },
     { key: "common", label: "Common" },
@@ -226,7 +264,7 @@ export default function InventoryPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4 pb-24">
+    <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4 pb-28">
       <h1 className="text-3xl font-bold tracking-[0.3em] uppercase mb-6">
         Inventory
       </h1>
@@ -253,6 +291,7 @@ export default function InventoryPage() {
         </div>
       </div>
 
+      {/* Filters */}
       <div className="w-full max-w-3xl mb-6 flex flex-col gap-3">
         <div className="flex flex-wrap gap-2 justify-center">
           {rarityOptions.map((opt) => {
@@ -315,12 +354,17 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {loading && <div className="text-sm text-zinc-400 mb-4">Loading items...</div>}
-
-      {inventory?.error && (
-        <div className="text-red-400 mb-4">Error loading inventory: {inventory.error}</div>
+      {loading && (
+        <div className="text-sm text-zinc-400 mb-4">Loading items...</div>
       )}
 
+      {inventory?.error && (
+        <div className="text-red-400 mb-4">
+          Error loading inventory: {inventory.error}
+        </div>
+      )}
+
+      {/* Empty state */}
       {!loading && !inventory?.error && filteredSortedItems.length === 0 && (
         <div className="w-full max-w-3xl border border-zinc-800 bg-zinc-950 rounded-2xl p-6 text-center">
           <div className="text-lg font-semibold">No items yet</div>
@@ -336,6 +380,7 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* Items grid */}
       {filteredSortedItems.length > 0 && (
         <div className="grid gap-4 w-full max-w-3xl sm:grid-cols-2 md:grid-cols-3">
           {filteredSortedItems.map((ui) => (
