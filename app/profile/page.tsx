@@ -105,7 +105,6 @@ export default function ProfilePage() {
   const [claimError, setClaimError] = useState<string | null>(null);
   const [claimSuccess, setClaimSuccess] = useState<string | null>(null);
 
-  // Инициализируем локальный daily и баланс из core (bootstrap)
   useEffect(() => {
     if (!core) return;
 
@@ -159,7 +158,6 @@ export default function ProfilePage() {
       const data = await res.json();
 
       if (!res.ok) {
-        // Если уже забрано — обновим таймер и состояние
         if (data.code === "DAILY_ALREADY_CLAIMED") {
           setDailyState((prev) =>
             prev
@@ -175,7 +173,6 @@ export default function ProfilePage() {
 
         setClaimError(data.error || "Failed to claim daily reward");
       } else {
-        // Успех: обновляем баланс и daily (локально)
         if (data.newBalance) {
           setBalanceState({
             soft_balance: Number(data.newBalance.soft_balance ?? 0),
@@ -196,8 +193,6 @@ export default function ProfilePage() {
         );
 
         setClaimSuccess(`+${data.amount ?? dailyState.amount} Shards claimed!`);
-
-        // ✅ чтобы все статы (totalPower/items/spins) тоже стали актуальными
         refreshSession?.();
       }
     } catch (e: any) {
@@ -207,8 +202,6 @@ export default function ProfilePage() {
       setClaimLoading(false);
     }
   };
-
-  // ---------- UI gates ----------
 
   if (!isTelegramEnv) {
     return (
@@ -312,7 +305,6 @@ export default function ProfilePage() {
     : "No spins yet";
 
   const daily = dailyState;
-
   const avatarUrl = user?.avatar_url || null;
 
   return (
@@ -322,7 +314,6 @@ export default function ProfilePage() {
           Profile
         </h1>
 
-        {/* manual re-sync */}
         <button
           onClick={handleResync}
           className="mb-6 px-4 py-1 rounded-full border border-zinc-800 text-[11px] text-zinc-300 hover:bg-zinc-900"
@@ -330,7 +321,6 @@ export default function ProfilePage() {
           Re-sync session
         </button>
 
-        {/* Header player card */}
         <div className="w-full max-w-3xl mb-6 border border-zinc-800 bg-zinc-950 rounded-2xl p-5 flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl border border-zinc-800 bg-zinc-900 flex items-center justify-center overflow-hidden">
             {avatarUrl ? (
@@ -361,7 +351,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Main stats */}
         <div className="w-full max-w-3xl grid gap-4 mb-8 sm:grid-cols-3">
           <div className="p-4 border border-zinc-700 rounded-xl">
             <div className="text-xs text-zinc-500 mb-1">BALANCE</div>
@@ -395,7 +384,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Level progress */}
         <div className="w-full max-w-3xl mb-8 p-4 border border-zinc-700 rounded-xl">
           <div className="flex items-center justify-between mb-2">
             <div>
@@ -418,7 +406,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Daily + last spin + spent */}
         <div className="w-full max-w-3xl grid gap-4 mb-10 sm:grid-cols-2">
           <div className="p-4 border border-zinc-700 rounded-xl">
             <div className="text-xs text-zinc-500 mb-2">DAILY REWARD</div>
@@ -485,28 +472,6 @@ export default function ProfilePage() {
               </span>
             </div>
           </div>
-        </div>
-
-        {/* Navigation (optional быстрые ссылки сверху уже не нужны, но оставим) */}
-        <div className="mt-4 flex gap-4 flex-wrap justify-center">
-          <a
-            href="/"
-            className="px-4 py-2 rounded-full border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-900"
-          >
-            Home
-          </a>
-          <a
-            href="/chest"
-            className="px-4 py-2 rounded-full border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-900"
-          >
-            Chest
-          </a>
-          <a
-            href="/inventory"
-            className="px-4 py-2 rounded-full border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-900"
-          >
-            Inventory
-          </a>
         </div>
       </main>
 

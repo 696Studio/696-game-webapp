@@ -144,9 +144,7 @@ export default function InventoryPage() {
         setInventory(data);
       } catch (err) {
         console.error("Inventory load error:", err);
-        if (!cancelled) {
-          setInventory({ error: "Request failed" });
-        }
+        if (!cancelled) setInventory({ error: "Request failed" });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -163,6 +161,48 @@ export default function InventoryPage() {
     setInventory(null);
     refreshSession?.();
   };
+
+  // ✅ ВАЖНО: вычисления/мемо — ДО любых return (чтобы не ломать порядок хуков)
+  const items: InventoryItem[] = inventory?.items ?? [];
+  const totalPower =
+    typeof inventory?.totalPower === "number"
+      ? inventory.totalPower
+      : core?.totalPower ?? 0;
+
+  const filteredSortedItems = useMemo(() => {
+    const base =
+      rarityFilter === "all"
+        ? items
+        : items.filter(
+            (ui) => normalizeRarity(ui.item?.rarity) === rarityFilter
+          );
+
+    const copy = [...base];
+
+    copy.sort((a, b) => {
+      const ap = Number(a?.item?.power_value ?? 0);
+      const bp = Number(b?.item?.power_value ?? 0);
+
+      if (sortMode === "power_asc") return ap - bp;
+      if (sortMode === "power_desc") return bp - ap;
+
+      const at = a.created_at ? Date.parse(a.created_at) : 0;
+      const bt = b.created_at ? Date.parse(b.created_at) : 0;
+      return bt - at;
+    });
+
+    return copy;
+  }, [items, rarityFilter, sortMode]);
+
+  const shownCount = filteredSortedItems.length;
+
+  const rarityOptions: { key: RarityFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "common", label: "Common" },
+    { key: "rare", label: "Rare" },
+    { key: "epic", label: "Epic" },
+    { key: "legendary", label: "Legendary" },
+  ];
 
   // ---------- UI ----------
 
@@ -182,7 +222,6 @@ export default function InventoryPage() {
     );
   }
 
-  // Gate: если нет core и при этом таймаут/ошибка/ожидание — показываем нормальный fallback + Re-sync
   if (
     (sessionLoading && !hasCore) ||
     (!hasCore && (timedOut || !!sessionError))
@@ -229,7 +268,6 @@ export default function InventoryPage() {
     );
   }
 
-  // если просто ещё грузится и телеграмId не готов — обычный лоадер
   if (sessionLoading || !telegramId) {
     return (
       <>
@@ -244,7 +282,6 @@ export default function InventoryPage() {
     );
   }
 
-  // если core ещё не успел появиться — мягкий лоадер
   if (!core) {
     return (
       <>
@@ -261,48 +298,6 @@ export default function InventoryPage() {
     );
   }
 
-  const items = inventory?.items ?? [];
-  const totalPower =
-    typeof inventory?.totalPower === "number"
-      ? inventory.totalPower
-      : core.totalPower ?? 0;
-
-  // Filter + sort
-  const filteredSortedItems = useMemo(() => {
-    const base =
-      rarityFilter === "all"
-        ? items
-        : items.filter(
-            (ui) => normalizeRarity(ui.item?.rarity) === rarityFilter
-          );
-
-    const copy = [...base];
-
-    copy.sort((a, b) => {
-      const ap = Number(a?.item?.power_value ?? 0);
-      const bp = Number(b?.item?.power_value ?? 0);
-
-      if (sortMode === "power_asc") return ap - bp;
-      if (sortMode === "power_desc") return bp - ap;
-
-      const at = a.created_at ? Date.parse(a.created_at) : 0;
-      const bt = b.created_at ? Date.parse(b.created_at) : 0;
-      return bt - at;
-    });
-
-    return copy;
-  }, [items, rarityFilter, sortMode]);
-
-  const shownCount = filteredSortedItems.length;
-
-  const rarityOptions: { key: RarityFilter; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "common", label: "Common" },
-    { key: "rare", label: "Rare" },
-    { key: "epic", label: "Epic" },
-    { key: "legendary", label: "Legendary" },
-  ];
-
   return (
     <>
       <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4 pb-28">
@@ -310,7 +305,6 @@ export default function InventoryPage() {
           Inventory
         </h1>
 
-        {/* manual re-sync */}
         <button
           onClick={handleResync}
           className="mb-6 px-4 py-1 rounded-full border border-zinc-800 text-[11px] text-zinc-300 hover:bg-zinc-900"
@@ -333,7 +327,6 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="w-full max-w-3xl mb-6 flex flex-col gap-3">
           <div className="flex flex-wrap gap-2 justify-center">
             {rarityOptions.map((opt) => {
@@ -406,7 +399,6 @@ export default function InventoryPage() {
           </div>
         )}
 
-        {/* Empty state (styled) */}
         {!loading && !inventory?.error && filteredSortedItems.length === 0 && (
           <div className="w-full max-w-3xl border border-zinc-800 bg-zinc-950 rounded-2xl p-6 text-center">
             <div className="text-lg font-semibold">No items yet</div>
@@ -422,7 +414,6 @@ export default function InventoryPage() {
           </div>
         )}
 
-        {/* Items grid */}
         {filteredSortedItems.length > 0 && (
           <div className="grid gap-4 w-full max-w-3xl sm:grid-cols-2 md:grid-cols-3">
             {filteredSortedItems.map((ui) => (
@@ -431,7 +422,9 @@ export default function InventoryPage() {
                 className="border border-zinc-700 rounded-xl p-3 bg-zinc-900/40"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="font-semibold leading-snug">{ui.item.name}</div>
+                  <div className="font-semibold leading-snug">
+                    {ui.item.name}
+                  </div>
                   <div className="text-[10px] px-2 py-1 rounded-full border border-zinc-800 text-zinc-300">
                     {String(ui.item.rarity || "").toUpperCase()}
                   </div>

@@ -90,7 +90,6 @@ export default function HomePage() {
     refreshSession,
   } = useGameSessionContext() as any;
 
-  // локальный override, чтобы обновлять UI после claim без правок контекста
   const [overrideBootstrap, setOverrideBootstrap] = useState<any | null>(null);
   const [claimLoading, setClaimLoading] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -105,15 +104,11 @@ export default function HomePage() {
     const res = await fetch("/api/bootstrap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        telegramId: effectiveTelegramId,
-      }),
+      body: JSON.stringify({ telegramId: effectiveTelegramId }),
     });
 
     const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data?.error || "Bootstrap refresh failed");
-    }
+    if (!res.ok) throw new Error(data?.error || "Bootstrap refresh failed");
     setOverrideBootstrap(data);
   }
 
@@ -131,11 +126,8 @@ export default function HomePage() {
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "Daily claim failed");
-      }
+      if (!res.ok) throw new Error(data?.error || "Daily claim failed");
 
-      // ✅ после claim обновляем balance + daily через bootstrap
       await refreshBootstrap(telegramId);
     } catch (e: any) {
       console.error("Claim daily error:", e);
@@ -150,7 +142,6 @@ export default function HomePage() {
     refreshSession?.();
   };
 
-  // 0) Если не в Telegram — честно говорим
   if (!isTelegramEnv) {
     return (
       <>
@@ -167,7 +158,6 @@ export default function HomePage() {
     );
   }
 
-  // 1) Лоадер: если ещё грузимся и нет данных
   if (loading && !hasCore) {
     return (
       <>
@@ -200,7 +190,6 @@ export default function HomePage() {
     );
   }
 
-  // 2) Жёсткий фоллбек: если так и не получили core-данные (НЕ JSON)
   if (!hasCore) {
     return (
       <>
@@ -244,7 +233,6 @@ export default function HomePage() {
     );
   }
 
-  // 3) Нормальный сценарий — данные есть, рендерим дашборд
   const {
     user,
     balance,
@@ -265,7 +253,6 @@ export default function HomePage() {
           696 Game
         </h1>
 
-        {/* Блок игрока */}
         <div className="mb-6 text-center">
           <div className="text-xs text-zinc-500 mb-1">PLAYER</div>
           <div className="text-lg font-semibold">
@@ -283,7 +270,6 @@ export default function HomePage() {
           </button>
         </div>
 
-        {/* Основные статы */}
         <div className="flex flex-wrap gap-4 justify-center mb-8">
           <div className="p-4 border border-zinc-700 rounded-xl min-w-[180px]">
             <div className="text-xs text-zinc-500">TOTAL POWER</div>
@@ -305,7 +291,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Уровень / прогресс */}
         <div className="w-full max-w-md mb-8">
           <div className="flex justify-between text-xs text-zinc-500 mb-1">
             <span>LEVEL {level}</span>
@@ -319,7 +304,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Daily reward */}
         <div className="w-full max-w-md mb-10 p-4 border border-zinc-700 rounded-xl">
           <div className="text-xs text-zinc-500 mb-1 uppercase">
             Daily Shards
@@ -353,28 +337,6 @@ export default function HomePage() {
           {claimError && (
             <div className="mt-2 text-xs text-red-400">{claimError}</div>
           )}
-        </div>
-
-        {/* (оставляем быстрые ссылки, но теперь есть нижний nav) */}
-        <div className="flex gap-4">
-          <a
-            href="/chest"
-            className="px-4 py-2 rounded-full border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-900"
-          >
-            Go to Chest
-          </a>
-          <a
-            href="/inventory"
-            className="px-4 py-2 rounded-full border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-900"
-          >
-            Inventory
-          </a>
-          <a
-            href="/profile"
-            className="px-4 py-2 rounded-full border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-900"
-          >
-            Profile
-          </a>
         </div>
       </main>
 
