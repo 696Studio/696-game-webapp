@@ -14,7 +14,7 @@ type InventoryItem = {
     type: string;
     power_value: number;
     image_url?: string | null;
-  } | null; // ✅ важное: может прилететь null
+  } | null; // может быть null
 };
 
 type RarityStats = {
@@ -56,11 +56,27 @@ function unwrapCore(bootstrap: any): CoreBootstrap | null {
 type RarityFilter = "all" | "common" | "rare" | "epic" | "legendary";
 type SortMode = "power_desc" | "power_asc" | "newest";
 
-function normalizeRarity(rarity: string | null | undefined): RarityFilter {
+function normalizeRarity(rarity: string | null | undefined): Exclude<RarityFilter, "all"> {
   const r = String(rarity || "").trim().toLowerCase();
-  if (r === "common" || r === "rare" || r === "epic" || r === "legendary")
-    return r;
+  if (r === "common" || r === "rare" || r === "epic" || r === "legendary") return r;
   return "common";
+}
+
+async function safeReadJson(res: Response): Promise<{ ok: boolean; json: any; raw: string }> {
+  const ct = res.headers.get("content-type") || "";
+  const raw = await res.text();
+
+  // если не похоже на json — не пытаемся парсить
+  if (!ct.includes("application/json")) {
+    return { ok: false, json: null, raw };
+  }
+
+  try {
+    const json = raw ? JSON.parse(raw) : null;
+    return { ok: res.ok, json, raw };
+  } catch {
+    return { ok: false, json: null, raw };
+  }
 }
 
 export default function InventoryPage() {
@@ -74,7 +90,7 @@ export default function InventoryPage() {
     refreshSession,
   } = useGameSessionContext() as any;
 
-  // ✅ grace delay
+  // ✅ grace delay чтобы “Couldn’t load…” не мигало
   const [showGate, setShowGate] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setShowGate(true), 1200);
@@ -100,26 +116,38 @@ export default function InventoryPage() {
         setLoading(true);
 
         const res = await fetch(
-          `/api/inventory?telegram_id=${encodeURIComponent(telegramId)}`
+          `/api/inventory?telegram_id=${encodeURIComponent(String(telegramId))}`,
+          { method: "GET" }
         );
 
-        const data: InventoryResponse = await res.json();
+        const parsed = await safeReadJson(res);
+
         if (cancelled) return;
 
-        // ✅ Санитизация: убираем записи без item (иначе краш UI)
+        if (!parsed.ok || !parsed.json) {
+          // ✅ никогда не крашим UI — просто показываем ошибку
+          setInventory({
+            error: `Inventory API returned non-JSON or error (status ${res.status}).`,
+          });
+          console.error("Inventory API bad response:", {
+            status: res.status,
+            contentType: res.headers.get("content-type"),
+            rawPreview: parsed.raw?.slice(0, 200),
+          });
+          return;
+        }
+
+        const data: InventoryResponse = parsed.json;
+
+        // ✅ Санитизация items: убираем записи без item
         const safeItems = Array.isArray(data.items)
           ? data.items.filter((x: any) => x && x.item && x.item.name)
           : [];
 
-        setInventory({
-          ...data,
-          items: safeItems,
-        });
+        setInventory({ ...data, items: safeItems });
       } catch (err) {
         console.error("Inventory load error:", err);
-        if (!cancelled) {
-          setInventory({ error: "Request failed" });
-        }
+        if (!cancelled) setInventory({ error: "Request failed" });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -152,7 +180,6 @@ export default function InventoryPage() {
     );
   }
 
-  // ✅ gate с задержкой
   if (!hasCore) {
     if (!showGate || sessionLoading) {
       return (
@@ -236,9 +263,7 @@ export default function InventoryPage() {
     const base =
       rarityFilter === "all"
         ? items
-        : items.filter(
-            (ui) => normalizeRarity(ui.item?.rarity) === rarityFilter
-          );
+        : items.filter((ui) => normalizeRarity(ui.item?.rarity) === rarityFilter);
 
     const copy = [...base];
 
@@ -357,11 +382,17 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {loading && <div className="text-sm text-zinc-400 mb-4">Loading items...</div>}
+      {loading && (
+        <div className="text-sm text-zinc-400 mb-4">Loading items...</div>
+      )}
 
       {inventory?.error && (
-        <div className="text-red-400 mb-4">
-          Error loading inventory: {inventory.error}
+        <div className="w-full max-w-3xl border border-red-900/60 bg-red-950/30 rounded-xl p-4 mb-4">
+          <div className="text-red-300 font-semibold">Inventory error</div>
+          <div className="text-red-200 text-sm mt-1">{inventory.error}</div>
+          <div className="text-[11px] text-zinc-400 mt-2">
+            Tip: check Vercel logs for <span className="font-semibold">/api/inventory</span>
+          </div>
         </div>
       )}
 
