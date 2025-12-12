@@ -23,9 +23,6 @@ export function useTelegramWebApp() {
   const [webApp, setWebApp] = useState<any | null>(null);
   const [initData, setInitData] = useState<string>("");
 
-  // ✅ telegramUser теперь НЕ будет null на Desktop,
-  // потому что сначала берём initDataUnsafe.user
-  // и потом (если auth ок) заменяем на verified telegramUser
   const [telegramUser, setTelegramUser] = useState<any | null>(null);
 
   const [authLoading, setAuthLoading] = useState(false);
@@ -35,91 +32,102 @@ export function useTelegramWebApp() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const tg = window.Telegram?.WebApp;
-    if (!tg) return;
+    let cancelled = false;
+    let attempts = 0;
 
-    setWebApp(tg);
+    const interval = setInterval(() => {
+      const tg = window.Telegram?.WebApp;
+      attempts++;
 
-    // Telegram рекомендует вызывать ready()
-    try {
-      tg.ready?.();
-      tg.expand?.();
-    } catch {
-      // ignore
-    }
-
-    // initData строка нужна для /api/auth/telegram
-    const rawInitData: string = typeof tg.initData === "string" ? tg.initData : "";
-    setInitData(rawInitData);
-
-    // ✅ Самый надёжный user на Desktop: initDataUnsafe.user
-    const unsafeUser = tg.initDataUnsafe?.user;
-    if (unsafeUser?.id) {
-      setTelegramUser(unsafeUser);
-    } else {
-      // fallback: пробуем вытащить user из rawInitData
-      try {
-        const params = new URLSearchParams(rawInitData);
-        const userStr = params.get("user");
-        if (userStr) {
-          const parsed = JSON.parse(userStr);
-          if (parsed?.id) setTelegramUser(parsed);
+      // ❗ ЖДЁМ, пока Telegram реально появится
+      if (!tg) {
+        if (attempts > 40) {
+          clearInterval(interval);
         }
+        return;
+      }
+
+      clearInterval(interval);
+
+      setWebApp(tg);
+
+      try {
+        tg.ready?.();
+        tg.expand?.();
       } catch {
         // ignore
       }
-    }
 
-    // если нет initData — смысла в auth нет
-    if (!rawInitData) return;
+      const rawInitData =
+        typeof tg.initData === "string" ? tg.initData : "";
+      setInitData(rawInitData);
 
-    let cancelled = false;
-
-    async function auth() {
-      try {
-        setAuthLoading(true);
-        setAuthError(null);
-
-        const res = await fetch("/api/auth/telegram", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ initData: rawInitData }),
-        });
-
-        const json: AuthTelegramResponse = await res.json();
-
-        if (!res.ok || !json?.ok) {
-          throw new Error(json?.error || "Telegram auth failed");
+      // ✅ Desktop-safe user (initDataUnsafe)
+      const unsafeUser = tg.initDataUnsafe?.user;
+      if (unsafeUser?.id) {
+        setTelegramUser(unsafeUser);
+      } else {
+        // fallback: парсим user из initData
+        try {
+          const params = new URLSearchParams(rawInitData);
+          const userStr = params.get("user");
+          if (userStr) {
+            const parsed = JSON.parse(userStr);
+            if (parsed?.id) setTelegramUser(parsed);
+          }
+        } catch {
+          // ignore
         }
-
-        if (cancelled) return;
-
-        setAuthData(json);
-
-        // ✅ verified user (после /api/auth/telegram)
-        // перезаписываем telegramUser на подтверждённого
-        if (json.telegramUser?.id) {
-          setTelegramUser(json.telegramUser);
-        }
-      } catch (e: any) {
-        console.error("Telegram auth error:", e);
-        if (!cancelled) {
-          setAuthData(null);
-          setAuthError(e?.message ? String(e.message) : String(e));
-
-          // ВАЖНО: не обнуляем telegramUser, если он уже есть из initDataUnsafe,
-          // иначе GameSessionContext опять останется без telegramId.
-          // setTelegramUser(null);
-        }
-      } finally {
-        if (!cancelled) setAuthLoading(false);
       }
-    }
 
-    auth();
+      // если нет initData — auth невозможен
+      if (!rawInitData) return;
+
+      async function auth() {
+        try {
+          setAuthLoading(true);
+          setAuthError(null);
+
+          const res = await fetch("/api/auth/telegram", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ initData: rawInitData }),
+          });
+
+          const json: AuthTelegramResponse = await res.json();
+
+          if (!res.ok || !json?.ok) {
+            throw new Error(json?.error || "Telegram auth failed");
+          }
+
+          if (cancelled) return;
+
+          setAuthData(json);
+
+          // ✅ verified user с сервера
+          if (json.telegramUser?.id) {
+            setTelegramUser(json.telegramUser);
+          }
+        } catch (e: any) {
+          console.error("Telegram auth error:", e);
+          if (!cancelled) {
+            setAuthError(
+              e?.message ? String(e.message) : String(e)
+            );
+            // ❗ НЕ обнуляем telegramUser,
+            // иначе bootstrap опять останется без telegramId
+          }
+        } finally {
+          if (!cancelled) setAuthLoading(false);
+        }
+      }
+
+      auth();
+    }, 100);
 
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, []);
 
