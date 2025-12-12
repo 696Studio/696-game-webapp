@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import crypto from "crypto";
 
-const NO_ROWS_CODE = "PGRST116";
-
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN_696;
+
+// можно ограничить "свежесть" initData (например 10 минут)
+const MAX_INITDATA_AGE_SECONDS = 10 * 60;
 
 if (!BOT_TOKEN) {
   console.warn(
@@ -26,61 +27,68 @@ type AuthTelegramBody = {
   initData?: string;
 };
 
-// Валидация initData по документации Telegram WebApp
-function validateTelegramInitData(initData: string, botToken: string): {
-  ok: boolean;
-  user?: TelegramWebAppUser;
-} {
+// Telegram WebApp initData validation (корректная схема)
+function validateTelegramInitData(
+  initData: string,
+  botToken: string
+): { ok: boolean; user?: TelegramWebAppUser } {
   try {
-    const urlSearchParams = new URLSearchParams(initData);
-    const hash = urlSearchParams.get("hash");
-    if (!hash) {
+    const params = new URLSearchParams(initData);
+    const hash = params.get("hash");
+    if (!hash) return { ok: false };
+
+    // OPTIONAL: проверка auth_date (защита от reuse старых initData)
+    const authDateStr = params.get("auth_date");
+    if (!authDateStr) return { ok: false };
+
+    const authDate = parseInt(authDateStr, 10);
+    if (!Number.isFinite(authDate)) return { ok: false };
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const age = nowSec - authDate;
+    if (age < 0 || age > MAX_INITDATA_AGE_SECONDS) {
       return { ok: false };
     }
 
-    // Собираем все пары key=value кроме hash
-    const data: string[] = [];
-    urlSearchParams.forEach((value, key) => {
+    // data_check_string: сортируем key=value (кроме hash) по key и соединяем \n
+    const pairs: string[] = [];
+    params.forEach((value, key) => {
       if (key === "hash") return;
-      data.push(`${key}=${value}`);
+      pairs.push(`${key}=${value}`);
     });
 
-    // Сортируем по key
-    data.sort((a, b) => {
+    pairs.sort((a, b) => {
       const ak = a.split("=")[0];
       const bk = b.split("=")[0];
       return ak.localeCompare(bk);
     });
 
-    const dataCheckString = data.join("\n");
+    const dataCheckString = pairs.join("\n");
 
-    // Создаём секрет по правилу:
-    // secretKey = sha256("WebAppData" + bot_token)
+    // secretKey = HMAC_SHA256(key="WebAppData", message=bot_token)
     const secretKey = crypto
-      .createHash("sha256")
-      .update("WebAppData" + botToken)
+      .createHmac("sha256", "WebAppData")
+      .update(botToken)
       .digest();
 
-    const hmac = crypto
+    // computedHash = HMAC_SHA256(key=secretKey, message=dataCheckString).hex
+    const computedHash = crypto
       .createHmac("sha256", secretKey)
       .update(dataCheckString)
       .digest("hex");
 
-    if (hmac !== hash) {
-      return { ok: false };
-    }
+    // timing-safe compare
+    const a = Buffer.from(computedHash, "hex");
+    const b = Buffer.from(hash, "hex");
+    if (a.length !== b.length) return { ok: false };
+    if (!crypto.timingSafeEqual(a, b)) return { ok: false };
 
-    // Если подпись ок — достаём user (в JSON внутри поля "user")
-    const userStr = urlSearchParams.get("user");
-    if (!userStr) {
-      // user обязателен для нас
-      return { ok: false };
-    }
+    // user обязателен для нас
+    const userStr = params.get("user");
+    if (!userStr) return { ok: false };
 
     const user = JSON.parse(userStr) as TelegramWebAppUser;
-    if (!user.id) {
-      return { ok: false };
-    }
+    if (!user?.id) return { ok: false };
 
     return { ok: true, user };
   } catch (e) {
@@ -99,13 +107,11 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json().catch(() => ({}))) as AuthTelegramBody;
-    const initData = body.initData;
+    const initData =
+      typeof body.initData === "string" ? body.initData.trim() : "";
 
     if (!initData) {
-      return NextResponse.json(
-        { error: "initData is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "initData is required" }, { status: 400 });
     }
 
     // 1) Проверяем подпись
@@ -121,23 +127,33 @@ export async function POST(request: Request) {
     const tgUser = validation.user;
     const telegramId = String(tgUser.id);
 
-    // 2) Находим или создаём пользователя
-    let { data: user, error: userError } = await supabase
+    // 2) Находим или создаём пользователя (без .single + PGRST116)
+    const { data: userRow, error: userSelectError } = await supabase
       .from("users")
       .select("*")
       .eq("telegram_id", telegramId)
-      .single();
+      .maybeSingle();
 
-    if (userError && userError.code === NO_ROWS_CODE) {
+    if (userSelectError) {
+      return NextResponse.json(
+        { error: "Failed to fetch user", details: userSelectError },
+        { status: 500 }
+      );
+    }
+
+    let user = userRow;
+
+    if (!user) {
       const { data: newUser, error: createError } = await supabase
         .from("users")
         .insert({
           telegram_id: telegramId,
           username: tgUser.username || `user_${telegramId.slice(-4)}`,
           avatar_url: tgUser.photo_url || null,
+          first_name: tgUser.first_name || null,
         })
         .select("*")
-        .single();
+        .maybeSingle();
 
       if (createError || !newUser) {
         return NextResponse.json(
@@ -147,26 +163,30 @@ export async function POST(request: Request) {
       }
 
       user = newUser;
-    } else if (userError) {
+    }
+
+    // 3) Находим или создаём баланс
+    const { data: balanceRow, error: balanceSelectError } = await supabase
+      .from("balances")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (balanceSelectError) {
       return NextResponse.json(
-        { error: "Failed to fetch user", details: userError },
+        { error: "Failed to fetch balance", details: balanceSelectError },
         { status: 500 }
       );
     }
 
-    // 3) Находим или создаём баланс
-    let { data: balance, error: balanceError } = await supabase
-      .from("balances")
-      .select("*")
-      .eq("user_id", user.id)
-      .single();
+    let balance = balanceRow;
 
-    if (balanceError && balanceError.code === NO_ROWS_CODE) {
+    if (!balance) {
       const { data: newBalance, error: createBalError } = await supabase
         .from("balances")
         .insert({ user_id: user.id, soft_balance: 0, hard_balance: 0 })
         .select("*")
-        .single();
+        .maybeSingle();
 
       if (createBalError || !newBalance) {
         return NextResponse.json(
@@ -176,14 +196,9 @@ export async function POST(request: Request) {
       }
 
       balance = newBalance;
-    } else if (balanceError) {
-      return NextResponse.json(
-        { error: "Failed to fetch balance", details: balanceError },
-        { status: 500 }
-      );
     }
 
-    // 4) Можно сразу посчитать базовый totalPower (по желанию)
+    // 4) totalPower (best effort)
     const { data: userItems, error: itemsError } = await supabase
       .from("user_items")
       .select("id, item:items(power_value)")

@@ -12,28 +12,44 @@ export async function GET(req: Request) {
     );
   }
 
+  // простая валидация
+  if (!/^\d+$/.test(telegramId)) {
+    return NextResponse.json(
+      { error: "Invalid telegram_id" },
+      { status: 400 }
+    );
+  }
+
   try {
     // 1) Находим пользователя по telegram_id
     const { data: user, error: userError } = await supabase
       .from("users")
       .select("*")
       .eq("telegram_id", telegramId)
-      .single();
+      .maybeSingle();
 
-    if (userError || !user) {
+    if (userError) {
       return NextResponse.json(
-        { error: "User not found", details: userError },
+        { error: "Failed to fetch user", details: userError },
+        { status: 500 }
+      );
+    }
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "User not found" },
         { status: 404 }
       );
     }
 
-    // 2) Тянем все user_items с джойном на items
+    // 2) Тянем user_items + items
     const { data: rows, error: invError } = await supabase
       .from("user_items")
       .select(
         `
         id,
         created_at,
+        obtained_from,
         item:items (
           id,
           name,
@@ -56,25 +72,29 @@ export async function GET(req: Request) {
 
     const items =
       rows?.map((row: any) => ({
-        userItemId: row.id,
-        obtainedAt: row.created_at,
-        id: row.item?.id,
-        name: row.item?.name,
-        type: row.item?.type,
-        rarity: row.item?.rarity,
-        power_value: row.item?.power_value,
-        image_url: row.item?.image_url,
+        id: row.id, // ❗ user_items.id — то, что ждёт фронт
+        created_at: row.created_at,
+        obtained_from: row.obtained_from ?? null,
+        item: {
+          id: row.item?.id,
+          name: row.item?.name,
+          type: row.item?.type,
+          rarity: row.item?.rarity,
+          power_value: row.item?.power_value ?? 0,
+          image_url: row.item?.image_url ?? null,
+        },
       })) ?? [];
 
-    // 3) Считаем суммарную силу и статистику по редкости
+    // 3) totalPower
     const totalPower = items.reduce(
-      (sum, item) => sum + (item.power_value || 0),
+      (sum, ui) => sum + (ui.item?.power_value || 0),
       0
     );
 
+    // 4) rarityStats
     const rarityStats = items.reduce(
-      (acc: Record<string, number>, item) => {
-        const r = item.rarity || "unknown";
+      (acc: Record<string, number>, ui) => {
+        const r = ui.item?.rarity || "unknown";
         acc[r] = (acc[r] || 0) + 1;
         return acc;
       },

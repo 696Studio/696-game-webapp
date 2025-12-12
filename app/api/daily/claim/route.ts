@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
-const NO_ROWS_CODE = "PGRST116";
-
 const DAILY_REWARD_AMOUNT = 50;
 const DAILY_COOLDOWN_HOURS = 24;
 
@@ -13,7 +11,8 @@ type DailyClaimBody = {
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as DailyClaimBody;
-    const telegramId = body.telegramId;
+    const telegramId =
+      typeof body.telegramId === "string" ? body.telegramId.trim() : "";
 
     if (!telegramId) {
       return NextResponse.json(
@@ -22,51 +21,53 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1) Находим или создаём пользователя
-    let { data: user, error: userError } = await supabase
+    if (!/^\d+$/.test(telegramId)) {
+      return NextResponse.json({ error: "Invalid telegramId" }, { status: 400 });
+    }
+
+    // ✅ SECURITY: user должен уже существовать (создаётся через /api/auth/telegram)
+    const { data: user, error: userSelectError } = await supabase
       .from("users")
       .select("*")
       .eq("telegram_id", telegramId)
-      .single();
+      .maybeSingle();
 
-    if (userError && userError.code === NO_ROWS_CODE) {
-      const { data: newUser, error: createError } = await supabase
-        .from("users")
-        .insert({
-          telegram_id: telegramId,
-          username: `user_${telegramId.slice(-4)}`,
-        })
-        .select("*")
-        .single();
-
-      if (createError || !newUser) {
-        return NextResponse.json(
-          { error: "Failed to create user", details: createError },
-          { status: 500 }
-        );
-      }
-
-      user = newUser;
-    } else if (userError) {
+    if (userSelectError) {
       return NextResponse.json(
-        { error: "Failed to fetch user", details: userError },
+        { error: "Failed to fetch user", details: userSelectError },
         { status: 500 }
       );
     }
 
-    // 2) Находим или создаём баланс
-    let { data: balance, error: balanceError } = await supabase
+    if (!user) {
+      return NextResponse.json(
+        { error: "User not found (auth required)" },
+        { status: 401 }
+      );
+    }
+
+    // 2) Баланс: можно создать
+    const { data: balanceRow, error: balanceSelectError } = await supabase
       .from("balances")
       .select("*")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (balanceError && balanceError.code === NO_ROWS_CODE) {
+    if (balanceSelectError) {
+      return NextResponse.json(
+        { error: "Failed to fetch balance", details: balanceSelectError },
+        { status: 500 }
+      );
+    }
+
+    let balance = balanceRow;
+
+    if (!balance) {
       const { data: newBalance, error: createBalError } = await supabase
         .from("balances")
         .insert({ user_id: user.id, soft_balance: 0, hard_balance: 0 })
         .select("*")
-        .single();
+        .maybeSingle();
 
       if (createBalError || !newBalance) {
         return NextResponse.json(
@@ -76,51 +77,37 @@ export async function POST(request: Request) {
       }
 
       balance = newBalance;
-    } else if (balanceError) {
+    }
+
+    // 3) Daily
+    const { data: daily, error: dailySelectError } = await supabase
+      .from("daily_rewards")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (dailySelectError) {
       return NextResponse.json(
-        { error: "Failed to fetch balance", details: balanceError },
+        { error: "Failed to fetch daily_rewards", details: dailySelectError },
         { status: 500 }
       );
     }
 
-    // 3) Проверяем/обновляем daily_rewards
-    const { data: daily, error: dailyError } = await supabase
-      .from("daily_rewards")
-      .select("*")
-      .eq("user_id", user.id)
-      .single();
-
     const now = new Date();
 
-    let canClaim = false;
     let newStreak = 1;
 
-    if (dailyError && dailyError.code === NO_ROWS_CODE) {
-      // первый раз — ок
-      canClaim = true;
+    if (!daily) {
       newStreak = 1;
-    } else if (dailyError) {
-      return NextResponse.json(
-        { error: "Failed to fetch daily_rewards", details: dailyError },
-        { status: 500 }
-      );
-    } else if (daily) {
+    } else {
       const lastClaimAt = new Date(daily.last_claim_at);
       const diffMs = now.getTime() - lastClaimAt.getTime();
       const diffHours = diffMs / (1000 * 60 * 60);
 
-      if (diffHours >= DAILY_COOLDOWN_HOURS) {
-        canClaim = true;
-
-        // простая логика streak: если разрыв <= 48h — продолжаем, иначе сбрасываем
-        if (diffHours <= DAILY_COOLDOWN_HOURS * 2) {
-          newStreak = (daily.streak ?? 1) + 1;
-        } else {
-          newStreak = 1;
-        }
-      } else {
+      if (diffHours < DAILY_COOLDOWN_HOURS) {
         const remainingMs = DAILY_COOLDOWN_HOURS * 3600 * 1000 - diffMs;
         const remainingSeconds = Math.ceil(remainingMs / 1000);
+
         return NextResponse.json(
           {
             error: "Daily reward already claimed",
@@ -130,18 +117,19 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
+
+      // streak: разрыв <= 48h — продолжаем, иначе сбрасываем
+      if (diffHours <= DAILY_COOLDOWN_HOURS * 2) {
+        newStreak = (daily.streak ?? 1) + 1;
+      } else {
+        newStreak = 1;
+      }
     }
 
-    if (!canClaim) {
-      return NextResponse.json(
-        { error: "Cannot claim daily reward", code: "DAILY_BLOCKED" },
-        { status: 400 }
-      );
-    }
-
-    // 4) Обновляем баланс (начисляем Shards)
-    const newSoftBalance =
-      (balance.soft_balance ?? 0) + DAILY_REWARD_AMOUNT;
+    // 4) Обновляем баланс
+    const prevSoft =
+      typeof balance.soft_balance === "number" ? balance.soft_balance : 0;
+    const newSoftBalance = prevSoft + DAILY_REWARD_AMOUNT;
 
     const { data: updatedBalance, error: updateBalanceError } = await supabase
       .from("balances")
@@ -151,7 +139,7 @@ export async function POST(request: Request) {
       })
       .eq("user_id", user.id)
       .select("*")
-      .single();
+      .maybeSingle();
 
     if (updateBalanceError || !updatedBalance) {
       return NextResponse.json(
@@ -160,7 +148,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5) Логируем currency_event
+    // 5) currency_event
     const { error: currencyEventError } = await supabase
       .from("currency_events")
       .insert({
@@ -170,9 +158,7 @@ export async function POST(request: Request) {
         amount: DAILY_REWARD_AMOUNT,
         balance_after: newSoftBalance,
         source: "daily_reward",
-        metadata: {
-          streak: newStreak,
-        },
+        metadata: { streak: newStreak },
       });
 
     if (currencyEventError) {
@@ -182,21 +168,37 @@ export async function POST(request: Request) {
       );
     }
 
-    // 6) Обновляем/создаём daily_rewards
-    if (dailyError && dailyError.code === NO_ROWS_CODE) {
-      await supabase.from("daily_rewards").insert({
-        user_id: user.id,
-        last_claim_at: now.toISOString(),
-        streak: newStreak,
-      });
+    // 6) upsert daily_rewards
+    if (!daily) {
+      const { error: insertDailyError } = await supabase
+        .from("daily_rewards")
+        .insert({
+          user_id: user.id,
+          last_claim_at: now.toISOString(),
+          streak: newStreak,
+        });
+
+      if (insertDailyError) {
+        return NextResponse.json(
+          { error: "Failed to create daily_rewards", details: insertDailyError },
+          { status: 500 }
+        );
+      }
     } else {
-      await supabase
+      const { error: updateDailyError } = await supabase
         .from("daily_rewards")
         .update({
           last_claim_at: now.toISOString(),
           streak: newStreak,
         })
         .eq("user_id", user.id);
+
+      if (updateDailyError) {
+        return NextResponse.json(
+          { error: "Failed to update daily_rewards", details: updateDailyError },
+          { status: 500 }
+        );
+      }
     }
 
     return NextResponse.json({

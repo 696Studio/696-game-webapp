@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useGameSessionContext } from "../context/GameSessionContext";
 
 type InventoryItem = {
@@ -31,32 +31,102 @@ type InventoryResponse = {
   error?: string;
 };
 
+type CoreBootstrap = {
+  user: {
+    id: string;
+    telegram_id: string;
+    username: string | null;
+  };
+  balance: {
+    user_id: string;
+    soft_balance: number;
+    hard_balance: number;
+  };
+  totalPower: number;
+  level: number;
+  progress: number;
+};
+
+function unwrapCore(bootstrap: any): CoreBootstrap | null {
+  const core = (bootstrap && bootstrap.bootstrap) || bootstrap || null;
+  if (!core || !core.user || !core.balance) return null;
+  return core as CoreBootstrap;
+}
+
 export default function InventoryPage() {
   const {
     loading: sessionLoading,
     error: sessionError,
     telegramId,
     bootstrap,
-  } = useGameSessionContext();
+    isTelegramEnv,
+  } = useGameSessionContext() as any;
+
+  const core = useMemo(() => unwrapCore(bootstrap), [bootstrap]);
 
   const [inventory, setInventory] = useState<InventoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // честно: только Telegram
+  if (!isTelegramEnv) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+        <div className="max-w-md text-center">
+          <div className="text-lg font-semibold mb-2">Open in Telegram</div>
+          <div className="text-sm text-zinc-400">
+            This page works only inside Telegram WebApp.
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // Пока сессия грузится / нет telegramId
+  if (sessionLoading || !telegramId) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white">
+        <span>Loading inventory...</span>
+      </main>
+    );
+  }
+
+  if (sessionError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white">
+        <div>
+          <div className="mb-2 text-red-400">Error loading session</div>
+          <pre className="text-xs max-w-sm overflow-auto">
+            {JSON.stringify({ sessionError, telegramId }, null, 2)}
+          </pre>
+        </div>
+      </main>
+    );
+  }
+
+  // core нужен, иначе нечего рендерить (и power fallback некуда взять)
+  if (!core) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white">
+        <div>
+          <div className="mb-2 text-red-400">Error loading bootstrap</div>
+          <pre className="text-xs max-w-sm overflow-auto">
+            {JSON.stringify({ telegramId, bootstrap }, null, 2)}
+          </pre>
+        </div>
+      </main>
+    );
+  }
+
   // Загружаем инвентарь
   useEffect(() => {
-    if (!telegramId) return;
-
     let cancelled = false;
 
     async function loadInventory() {
       try {
         setLoading(true);
 
-        // 🔥 ВАЖНО: гарантия, что тут строка, а не null
-        const safeTelegramId = telegramId ?? "";
-
         const res = await fetch(
-          `/api/inventory?telegram_id=${encodeURIComponent(safeTelegramId)}`
+          `/api/inventory?telegram_id=${encodeURIComponent(telegramId)}`
         );
 
         const data: InventoryResponse = await res.json();
@@ -80,34 +150,12 @@ export default function InventoryPage() {
     };
   }, [telegramId]);
 
-  // Пока bootstrap грузится
-  if (sessionLoading || !bootstrap) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <span>Loading inventory...</span>
-      </main>
-    );
-  }
-
-  if (sessionError) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <div>
-          <div className="mb-2 text-red-400">Error loading session</div>
-          <pre className="text-xs max-w-sm overflow-auto">
-            {JSON.stringify({ sessionError, telegramId }, null, 2)}
-          </pre>
-        </div>
-      </main>
-    );
-  }
-
   // Power
   const totalPowerFromBackend = inventory?.totalPower;
   const totalPower =
     typeof totalPowerFromBackend === "number"
       ? totalPowerFromBackend
-      : bootstrap.totalPower ?? 0;
+      : core.totalPower ?? 0;
 
   const items = inventory?.items ?? [];
   const rarityStats = inventory?.rarityStats ?? {};
@@ -132,10 +180,14 @@ export default function InventoryPage() {
 
         <div className="p-4 border border-zinc-700 rounded-xl min-w-[160px]">
           <div className="text-xs text-zinc-500 mb-1">RARITY</div>
-          <div className="text-xs text-zinc-400">Common: {rarityStats.common ?? 0}</div>
+          <div className="text-xs text-zinc-400">
+            Common: {rarityStats.common ?? 0}
+          </div>
           <div className="text-xs text-zinc-400">Rare: {rarityStats.rare ?? 0}</div>
           <div className="text-xs text-zinc-400">Epic: {rarityStats.epic ?? 0}</div>
-          <div className="text-xs text-zinc-400">Legendary: {rarityStats.legendary ?? 0}</div>
+          <div className="text-xs text-zinc-400">
+            Legendary: {rarityStats.legendary ?? 0}
+          </div>
         </div>
       </div>
 

@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   ReactNode,
 } from "react";
@@ -17,6 +18,12 @@ type GameSessionContextValue = {
   telegramId: string | null;
   initDataRaw: string;
   bootstrap: BootstrapResponse | null;
+  isTelegramEnv: boolean;
+
+  // optional: удобно дебажить, но не обязателен
+  authLoading: boolean;
+  authError: string | null;
+  authData: any | null;
 };
 
 const GameSessionContext = createContext<GameSessionContextValue | undefined>(
@@ -24,16 +31,23 @@ const GameSessionContext = createContext<GameSessionContextValue | undefined>(
 );
 
 export function GameSessionProvider({ children }: { children: ReactNode }) {
-  // Твой текущий хук: webApp / initData / telegramUser
-  const { webApp, initData, telegramUser } = useTelegramWebApp() as any;
+  // ✅ новый хук теперь делает server-side auth
+  const {
+    webApp,
+    initData,
+    telegramUser,
+    authLoading,
+    authError,
+    authData,
+  } = useTelegramWebApp() as any;
 
   const isTelegramEnv = !!webApp;
   const user = telegramUser || null;
   const initDataRaw = initData || "";
 
   const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [bootstrapLoading, setBootstrapLoading] = useState(true);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [telegramId, setTelegramId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,20 +55,39 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
 
     async function runBootstrap() {
       try {
-        setLoading(true);
+        setBootstrapLoading(true);
+        setBootstrapError(null);
 
-        let effectiveTelegramId: string;
-        const payload: Record<string, unknown> = {};
-
-        if (isTelegramEnv && user?.id) {
-          // Реальный Telegram WebApp
-          effectiveTelegramId = String(user.id);
-          payload.initData = initDataRaw;
-        } else {
-          // Фоллбек — обычный веб, без телеги: тестовый юзер
-          effectiveTelegramId = "123456789";
+        // 1) Не Telegram среда — ничего не делаем
+        if (!isTelegramEnv) {
+          setTelegramId(null);
+          setBootstrap(null);
+          setBootstrapError("Telegram WebApp environment required");
+          return;
         }
 
+        // 2) Ждём auth
+        if (authLoading) {
+          return; // просто ждём
+        }
+
+        // 3) Auth упал — bootstrap запрещён
+        if (authError) {
+          setTelegramId(null);
+          setBootstrap(null);
+          setBootstrapError(authError);
+          return;
+        }
+
+        // 4) Нет verified user — bootstrap запрещён
+        if (!user?.id) {
+          setTelegramId(null);
+          setBootstrap(null);
+          setBootstrapError("Telegram auth required");
+          return;
+        }
+
+        const effectiveTelegramId = String(user.id);
         setTelegramId(effectiveTelegramId);
 
         const res = await fetch("/api/bootstrap", {
@@ -62,7 +95,6 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             telegramId: effectiveTelegramId,
-            ...payload,
           }),
         });
 
@@ -75,15 +107,16 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
 
         setBootstrap(data);
-        setError(null);
+        setBootstrapError(null);
       } catch (err: any) {
         console.error("Bootstrap error:", err);
         if (!cancelled) {
-          setError(err?.message ? String(err.message) : String(err));
+          setBootstrap(null);
+          setBootstrapError(err?.message ? String(err.message) : String(err));
         }
       } finally {
         if (!cancelled) {
-          setLoading(false);
+          setBootstrapLoading(false);
         }
       }
     }
@@ -93,15 +126,42 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isTelegramEnv, user, initDataRaw]);
+  }, [isTelegramEnv, authLoading, authError, user?.id]);
 
-  const value: GameSessionContextValue = {
-    loading,
-    error,
-    telegramId,
-    initDataRaw,
-    bootstrap,
-  };
+  // единое состояние для UI
+  const loading = authLoading || bootstrapLoading;
+
+  const error = useMemo(() => {
+    // приоритет: authError -> bootstrapError
+    if (!isTelegramEnv) return "Telegram WebApp environment required";
+    return authError || bootstrapError || null;
+  }, [isTelegramEnv, authError, bootstrapError]);
+
+  const value: GameSessionContextValue = useMemo(
+    () => ({
+      loading,
+      error,
+      telegramId,
+      initDataRaw,
+      bootstrap,
+      isTelegramEnv,
+
+      authLoading,
+      authError,
+      authData,
+    }),
+    [
+      loading,
+      error,
+      telegramId,
+      initDataRaw,
+      bootstrap,
+      isTelegramEnv,
+      authLoading,
+      authError,
+      authData,
+    ]
+  );
 
   return (
     <GameSessionContext.Provider value={value}>

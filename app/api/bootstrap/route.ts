@@ -40,38 +40,63 @@ function calcLevel(totalPower: number) {
   };
 }
 
+async function extractTelegramId(request: Request): Promise<string | null> {
+  let telegramId: string | null = null;
+
+  // 1) POST body
+  if (request.method === "POST") {
+    try {
+      const body = await request.json();
+      if (body && typeof body.telegramId === "string" && body.telegramId.trim()) {
+        telegramId = body.telegramId.trim();
+      }
+      if (
+        !telegramId &&
+        body &&
+        typeof body.telegram_id === "string" &&
+        body.telegram_id.trim()
+      ) {
+        telegramId = body.telegram_id.trim();
+      }
+    } catch {
+      // ok
+    }
+  }
+
+  // 2) query params
+  if (!telegramId) {
+    const { searchParams } = new URL(request.url);
+    telegramId =
+      searchParams.get("telegramId") ||
+      searchParams.get("telegram_id") ||
+      searchParams.get("tg") ||
+      null;
+
+    if (telegramId) telegramId = telegramId.trim();
+  }
+
+  // валидация
+  if (telegramId && !/^\d+$/.test(telegramId)) {
+    return null;
+  }
+
+  return telegramId || null;
+}
+
 async function handleBootstrap(request: Request) {
   try {
-    // 1) Достаём telegramId: POST body -> query -> fallback
-    let telegramId: string | null = null;
-
-    if (request.method === "POST") {
-      try {
-        const body = await request.json();
-        if (body && typeof body.telegramId === "string") {
-          telegramId = body.telegramId;
-        }
-      } catch {
-        // тело могло быть пустым — ок
-      }
-    }
+    const telegramId = await extractTelegramId(request);
 
     if (!telegramId) {
-      const { searchParams } = new URL(request.url);
-      const fromQuery = searchParams.get("telegram_id");
-      if (fromQuery) telegramId = fromQuery;
+      return NextResponse.json(
+        { error: "telegramId is required" },
+        { status: 400 }
+      );
     }
 
-    if (!telegramId) {
-      // fallback, чтобы сайт просто открывался в браузере
-      telegramId = "123456789";
-    }
-
-    // 2) Находим пользователя (0 строк — НЕ ошибка)
-    const {
-      data: userRow,
-      error: userError,
-    } = await supabase
+    // ✅ SECURITY: bootstrap больше НЕ создаёт пользователя.
+    // Пользователь создаётся только через /api/auth/telegram после проверки initData.
+    const { data: user, error: userError } = await supabase
       .from("users")
       .select("*")
       .eq("telegram_id", telegramId)
@@ -79,45 +104,21 @@ async function handleBootstrap(request: Request) {
 
     if (userError) {
       console.error("bootstrap: user select error", userError);
+      return NextResponse.json(
+        { error: "Failed to fetch user", details: userError },
+        { status: 500 }
+      );
     }
 
-    let user = userRow;
-
-    // 2.1. Если юзера нет — создаём
     if (!user) {
-      const {
-        data: newUser,
-        error: createError,
-      } = await supabase
-        .from("users")
-        .insert({
-          telegram_id: telegramId,
-          username: `user_${telegramId.slice(-4)}`,
-        })
-        .select("*")
-        .maybeSingle();
-
-      if (createError || !newUser) {
-        console.error("bootstrap: user create error", createError);
-        return NextResponse.json(
-          {
-            error: "Failed to fetch/create user",
-            telegramId,
-            userError,
-            createError,
-          },
-          { status: 500 }
-        );
-      }
-
-      user = newUser;
+      return NextResponse.json(
+        { error: "User not found (auth required)" },
+        { status: 401 }
+      );
     }
 
-    // 3) Баланс
-    const {
-      data: balanceRow,
-      error: balanceError,
-    } = await supabase
+    // Баланс: можно создать, если его нет
+    const { data: balanceRow, error: balanceError } = await supabase
       .from("balances")
       .select("*")
       .eq("user_id", user.id)
@@ -125,15 +126,16 @@ async function handleBootstrap(request: Request) {
 
     if (balanceError) {
       console.error("bootstrap: balance select error", balanceError);
+      return NextResponse.json(
+        { error: "Failed to fetch balance", details: balanceError },
+        { status: 500 }
+      );
     }
 
     let balance = balanceRow;
 
     if (!balance) {
-      const {
-        data: newBalance,
-        error: createBalError,
-      } = await supabase
+      const { data: newBalance, error: createBalError } = await supabase
         .from("balances")
         .insert({ user_id: user.id, soft_balance: 0, hard_balance: 0 })
         .select("*")
@@ -142,11 +144,7 @@ async function handleBootstrap(request: Request) {
       if (createBalError || !newBalance) {
         console.error("bootstrap: balance create error", createBalError);
         return NextResponse.json(
-          {
-            error: "Failed to fetch/create balance",
-            balanceError,
-            createBalError,
-          },
+          { error: "Failed to create balance", details: createBalError },
           { status: 500 }
         );
       }
@@ -154,7 +152,7 @@ async function handleBootstrap(request: Request) {
       balance = newBalance;
     }
 
-    // 4) Предметы → power + count
+    // Items → power + count
     const { data: userItems, error: itemsError } = await supabase
       .from("user_items")
       .select("id, item:items(power_value)")
@@ -179,7 +177,7 @@ async function handleBootstrap(request: Request) {
     const itemsCount = itemsArray.length;
     const levelData = calcLevel(totalPower);
 
-    // 5) Спины
+    // Spins
     const { data: spinsRows, error: spinsError } = await supabase
       .from("chest_spins")
       .select("id, created_at")
@@ -198,7 +196,7 @@ async function handleBootstrap(request: Request) {
     const lastSpinAt =
       spinsRows && spinsRows.length > 0 ? spinsRows[0].created_at : null;
 
-    // 6) Валюта
+    // Currency stats
     const { data: currencyEvents, error: currencyError } = await supabase
       .from("currency_events")
       .select("type, currency, amount")
@@ -221,7 +219,7 @@ async function handleBootstrap(request: Request) {
       }
     });
 
-    // 7) Daily
+    // Daily
     const { data: daily, error: dailyError } = await supabase
       .from("daily_rewards")
       .select("*")
@@ -230,6 +228,7 @@ async function handleBootstrap(request: Request) {
 
     if (dailyError) {
       console.error("bootstrap: daily error", dailyError);
+      // daily не критично — продолжаем
     }
 
     let dailyCanClaim = true;
@@ -254,7 +253,6 @@ async function handleBootstrap(request: Request) {
       }
     }
 
-    // 8) Ответ
     return NextResponse.json({
       telegramId,
       bootstrap: {
