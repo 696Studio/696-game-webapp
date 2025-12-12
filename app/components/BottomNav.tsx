@@ -3,10 +3,9 @@
 import { useMemo } from "react";
 import { usePathname } from "next/navigation";
 
-type ActiveKey = "home" | "chest" | "inventory" | "profile";
+type Tab = "home" | "chest" | "inventory" | "profile";
 
-function getActive(pathname: string): ActiveKey {
-  if (pathname === "/") return "home";
+function getActiveTab(pathname: string): Tab {
   if (pathname.startsWith("/chest")) return "chest";
   if (pathname.startsWith("/inventory")) return "inventory";
   if (pathname.startsWith("/profile")) return "profile";
@@ -15,7 +14,8 @@ function getActive(pathname: string): ActiveKey {
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const active = useMemo(() => getActive(pathname || "/"), [pathname]);
+
+  const active = useMemo(() => getActiveTab(pathname || "/"), [pathname]);
 
   const base =
     "px-4 py-2 rounded-full border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-900";

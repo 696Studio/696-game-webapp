@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import { GameSessionProvider } from "./context/GameSessionContext";
+import BottomNav from "./components/BottomNav";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,7 +29,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* ✅ Telegram WebApp SDK (нужно чтобы window.Telegram.WebApp был доступен) */}
         <Script
           src="https://telegram.org/js/telegram-web-app.js"
           strategy="beforeInteractive"
@@ -36,8 +36,10 @@ export default function RootLayout({
       </head>
 
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {/* подключаем игровую сессию один раз на всё приложение */}
-        <GameSessionProvider>{children}</GameSessionProvider>
+        <GameSessionProvider>
+          {children}
+          <BottomNav />
+        </GameSessionProvider>
       </body>
     </html>
   );
