@@ -44,8 +44,15 @@ function unwrapCore(bootstrap: any): CoreBootstrap | null {
 }
 
 export default function HomePage() {
-  const { loading, error, telegramId, bootstrap, isTelegramEnv } =
-    useGameSessionContext() as any;
+  const {
+    loading,
+    error,
+    telegramId,
+    bootstrap,
+    isTelegramEnv,
+    timedOut,
+    refreshSession,
+  } = useGameSessionContext() as any;
 
   // локальный override, чтобы обновлять UI после claim без правок контекста
   const [overrideBootstrap, setOverrideBootstrap] = useState<any | null>(null);
@@ -119,31 +126,76 @@ export default function HomePage() {
   // 1) Лоадер: если ещё грузимся и нет данных
   if (loading && !hasCore) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <span>Loading 696 Game...</span>
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+        <div className="max-w-md w-full text-center">
+          <div className="text-lg font-semibold">Loading 696 Game...</div>
+          <div className="mt-2 text-sm text-zinc-400">
+            Syncing your session and profile.
+          </div>
+
+          {/* Если внезапно таймаут успел наступить, покажем кнопку даже тут */}
+          {(timedOut || !!error) && (
+            <div className="mt-6">
+              <div className="text-xs text-zinc-500 mb-2">
+                {timedOut
+                  ? "Sync timed out."
+                  : "We couldn't finish loading your profile."}
+              </div>
+              <button
+                onClick={() => {
+                  setOverrideBootstrap(null);
+                  refreshSession?.();
+                }}
+                className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
+              >
+                Re-sync
+              </button>
+            </div>
+          )}
+        </div>
       </main>
     );
   }
 
-  // 2) Жёсткий фоллбек: если так и не получили core-данные
+  // 2) Жёсткий фоллбек: если так и не получили core-данные (НЕ JSON)
   if (!hasCore) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <div className="max-w-md">
-          <div className="mb-2 text-red-400 text-sm">
-            Error loading profile / bootstrap
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+        <div className="max-w-md w-full">
+          <div className="text-lg font-semibold">
+            {timedOut ? "Connection timeout" : "Couldn’t load your profile"}
           </div>
-          <pre className="text-[10px] max-h-[300px] overflow-auto bg-zinc-900 p-2 rounded-lg border border-zinc-700">
-            {JSON.stringify(
-              {
-                error,
-                telegramId,
-                bootstrap,
-              },
-              null,
-              2
-            )}
-          </pre>
+
+          <div className="mt-2 text-sm text-zinc-400">
+            {timedOut
+              ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
+              : "Something went wrong while syncing your session."}
+          </div>
+
+          {error && (
+            <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
+              <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
+              <div className="text-xs text-zinc-200 break-words">
+                {String(error)}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-col gap-3">
+            <button
+              onClick={() => {
+                setOverrideBootstrap(null);
+                refreshSession?.();
+              }}
+              className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
+            >
+              Re-sync
+            </button>
+
+            <div className="text-[11px] text-zinc-500 text-center">
+              If it keeps failing, reopen the Mini App from the bot menu.
+            </div>
+          </div>
         </div>
       </main>
     );
@@ -178,6 +230,17 @@ export default function HomePage() {
             ({user.telegram_id || telegramId})
           </span>
         </div>
+
+        {/* быстрый manual re-sync, если что-то отвалилось */}
+        <button
+          onClick={() => {
+            setOverrideBootstrap(null);
+            refreshSession?.();
+          }}
+          className="mt-3 px-3 py-1 rounded-full border border-zinc-800 text-[11px] text-zinc-300 hover:bg-zinc-900"
+        >
+          Re-sync session
+        </button>
       </div>
 
       {/* Основные статы */}

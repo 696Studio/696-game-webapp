@@ -53,6 +53,18 @@ function unwrapCore(bootstrap: any): CoreBootstrap | null {
   return core as CoreBootstrap;
 }
 
+type RarityFilter = "all" | "common" | "rare" | "epic" | "legendary";
+type SortMode = "power_desc" | "power_asc" | "newest";
+
+function normalizeRarity(rarity: string | null | undefined): RarityFilter {
+  const r = String(rarity || "")
+    .trim()
+    .toLowerCase();
+  if (r === "common" || r === "rare" || r === "epic" || r === "legendary")
+    return r;
+  return "common";
+}
+
 export default function InventoryPage() {
   const {
     loading: sessionLoading,
@@ -60,12 +72,19 @@ export default function InventoryPage() {
     telegramId,
     bootstrap,
     isTelegramEnv,
+    timedOut,
+    refreshSession,
   } = useGameSessionContext() as any;
 
   const core = useMemo(() => unwrapCore(bootstrap), [bootstrap]);
+  const hasCore = !!core;
 
   const [inventory, setInventory] = useState<InventoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // ✅ Inventory UX state
+  const [rarityFilter, setRarityFilter] = useState<RarityFilter>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("power_desc");
 
   // ✅ hooks ВСЕГДА наверху
   useEffect(() => {
@@ -117,26 +136,75 @@ export default function InventoryPage() {
     );
   }
 
+  // Gate: если нет core и при этом таймаут/ошибка/ожидание — показываем нормальный fallback + Re-sync
+  if (
+    (sessionLoading && !hasCore) ||
+    (!hasCore && (timedOut || !!sessionError))
+  ) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+        <div className="max-w-md w-full">
+          <div className="text-lg font-semibold">
+            {timedOut ? "Connection timeout" : "Couldn’t load your session"}
+          </div>
+
+          <div className="mt-2 text-sm text-zinc-400">
+            {timedOut
+              ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
+              : "Something went wrong while syncing your profile."}
+          </div>
+
+          {sessionError && (
+            <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
+              <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
+              <div className="text-xs text-zinc-200 break-words">
+                {String(sessionError)}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-col gap-3">
+            <button
+              onClick={() => {
+                setInventory(null);
+                refreshSession?.();
+              }}
+              className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
+            >
+              Re-sync
+            </button>
+
+            <div className="text-[11px] text-zinc-500 text-center">
+              If it keeps failing, reopen the Mini App from the bot menu.
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // если просто ещё грузится и телеграмId не готов — обычный лоадер
   if (sessionLoading || !telegramId) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <span>Loading inventory...</span>
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Loading inventory...</div>
+          <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
+        </div>
       </main>
     );
   }
 
-  if (sessionError) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <pre className="text-xs">{sessionError}</pre>
-      </main>
-    );
-  }
-
+  // если core ещё не успел появиться — мягкий лоадер
   if (!core) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <span>Loading profile...</span>
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Loading profile...</div>
+          <div className="mt-2 text-sm text-zinc-400">
+            Please wait a moment.
+          </div>
+        </div>
       </main>
     );
   }
@@ -148,11 +216,59 @@ export default function InventoryPage() {
       ? inventory.totalPower
       : core.totalPower ?? 0;
 
+  // Filter + sort
+  const filteredSortedItems = useMemo(() => {
+    const base =
+      rarityFilter === "all"
+        ? items
+        : items.filter(
+            (ui) => normalizeRarity(ui.item?.rarity) === rarityFilter
+          );
+
+    const copy = [...base];
+
+    copy.sort((a, b) => {
+      const ap = Number(a?.item?.power_value ?? 0);
+      const bp = Number(b?.item?.power_value ?? 0);
+
+      if (sortMode === "power_asc") return ap - bp;
+      if (sortMode === "power_desc") return bp - ap;
+
+      // newest (created_at desc). If missing -> keep stable.
+      const at = a.created_at ? Date.parse(a.created_at) : 0;
+      const bt = b.created_at ? Date.parse(b.created_at) : 0;
+      return bt - at;
+    });
+
+    return copy;
+  }, [items, rarityFilter, sortMode]);
+
+  const shownCount = filteredSortedItems.length;
+
+  const rarityOptions: { key: RarityFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "common", label: "Common" },
+    { key: "rare", label: "Rare" },
+    { key: "epic", label: "Epic" },
+    { key: "legendary", label: "Legendary" },
+  ];
+
   return (
     <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4">
       <h1 className="text-3xl font-bold tracking-[0.3em] uppercase mb-6">
         Inventory
       </h1>
+
+      {/* manual re-sync */}
+      <button
+        onClick={() => {
+          setInventory(null);
+          refreshSession?.();
+        }}
+        className="mb-6 px-4 py-1 rounded-full border border-zinc-800 text-[11px] text-zinc-300 hover:bg-zinc-900"
+      >
+        Re-sync session
+      </button>
 
       <div className="flex flex-wrap gap-4 mb-6 justify-center">
         <div className="p-4 border border-zinc-700 rounded-xl min-w-[160px]">
@@ -163,6 +279,72 @@ export default function InventoryPage() {
         <div className="p-4 border border-zinc-700 rounded-xl min-w-[160px]">
           <div className="text-xs text-zinc-500 mb-1">ITEMS</div>
           <div className="text-xl font-semibold">{items.length}</div>
+          <div className="text-[11px] text-zinc-500 mt-1">
+            Showing: {shownCount}
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="w-full max-w-3xl mb-6 flex flex-col gap-3">
+        <div className="flex flex-wrap gap-2 justify-center">
+          {rarityOptions.map((opt) => {
+            const active = rarityFilter === opt.key;
+            return (
+              <button
+                key={opt.key}
+                onClick={() => setRarityFilter(opt.key)}
+                className={[
+                  "px-3 py-1 rounded-full border text-xs",
+                  active
+                    ? "border-zinc-400 text-white bg-zinc-900"
+                    : "border-zinc-800 text-zinc-300 hover:bg-zinc-900",
+                ].join(" ")}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          <div className="text-xs text-zinc-500">Sort:</div>
+
+          <button
+            onClick={() => setSortMode("power_desc")}
+            className={[
+              "px-3 py-1 rounded-full border text-xs",
+              sortMode === "power_desc"
+                ? "border-zinc-400 text-white bg-zinc-900"
+                : "border-zinc-800 text-zinc-300 hover:bg-zinc-900",
+            ].join(" ")}
+          >
+            Power ↓
+          </button>
+
+          <button
+            onClick={() => setSortMode("power_asc")}
+            className={[
+              "px-3 py-1 rounded-full border text-xs",
+              sortMode === "power_asc"
+                ? "border-zinc-400 text-white bg-zinc-900"
+                : "border-zinc-800 text-zinc-300 hover:bg-zinc-900",
+            ].join(" ")}
+          >
+            Power ↑
+          </button>
+
+          <button
+            onClick={() => setSortMode("newest")}
+            className={[
+              "px-3 py-1 rounded-full border text-xs",
+              sortMode === "newest"
+                ? "border-zinc-400 text-white bg-zinc-900"
+                : "border-zinc-800 text-zinc-300 hover:bg-zinc-900",
+            ].join(" ")}
+          >
+            Newest
+          </button>
         </div>
       </div>
 
@@ -176,25 +358,51 @@ export default function InventoryPage() {
         </div>
       )}
 
-      <div className="grid gap-4 w-full max-w-3xl sm:grid-cols-2 md:grid-cols-3">
-        {items.length === 0 && !loading && !inventory?.error && (
-          <div className="col-span-full text-center text-zinc-500 text-sm">
-            У тебя пока нет предметов. Открой сундук 😈
+      {/* Empty state (styled) */}
+      {!loading && !inventory?.error && filteredSortedItems.length === 0 && (
+        <div className="w-full max-w-3xl border border-zinc-800 bg-zinc-950 rounded-2xl p-6 text-center">
+          <div className="text-lg font-semibold">No items yet</div>
+          <div className="mt-2 text-sm text-zinc-400">
+            Open chests to collect emblems, items, characters and pets.
           </div>
-        )}
-
-        {items.map((ui) => (
-          <div
-            key={ui.id}
-            className="border border-zinc-700 rounded-xl p-3 bg-zinc-900/40"
+          <a
+            href="/chest"
+            className="inline-block mt-4 px-4 py-2 rounded-lg border border-zinc-800 text-sm text-zinc-200 hover:bg-zinc-900"
           >
-            <div className="font-semibold">{ui.item.name}</div>
-            <div className="text-xs text-zinc-400">
-              Power: {ui.item.power_value}
+            Go to Chest
+          </a>
+        </div>
+      )}
+
+      {/* Items grid */}
+      {filteredSortedItems.length > 0 && (
+        <div className="grid gap-4 w-full max-w-3xl sm:grid-cols-2 md:grid-cols-3">
+          {filteredSortedItems.map((ui) => (
+            <div
+              key={ui.id}
+              className="border border-zinc-700 rounded-xl p-3 bg-zinc-900/40"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="font-semibold leading-snug">{ui.item.name}</div>
+                <div className="text-[10px] px-2 py-1 rounded-full border border-zinc-800 text-zinc-300">
+                  {String(ui.item.rarity || "").toUpperCase()}
+                </div>
+              </div>
+
+              <div className="mt-2 text-xs text-zinc-400">
+                Type: {String(ui.item.type || "").toUpperCase()}
+              </div>
+
+              <div className="mt-1 text-xs text-zinc-400">
+                Power:{" "}
+                <span className="text-zinc-100 font-semibold">
+                  {ui.item.power_value}
+                </span>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </main>
   );
 }

@@ -20,6 +20,10 @@ type GameSessionContextValue = {
   bootstrap: BootstrapResponse | null;
   isTelegramEnv: boolean;
 
+  // ✅ UX stability controls
+  timedOut: boolean;
+  refreshSession: () => void;
+
   // optional debug
   authLoading: boolean;
   authError: string | null;
@@ -29,6 +33,8 @@ type GameSessionContextValue = {
 const GameSessionContext = createContext<GameSessionContextValue | undefined>(
   undefined
 );
+
+const BOOTSTRAP_TIMEOUT_MS = 12_000;
 
 function pickTelegramId(webApp: any, telegramUser: any): string | null {
   // 1) verified user (после /api/auth/telegram)
@@ -57,15 +63,26 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
   const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
   const [bootstrapLoading, setBootstrapLoading] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [bootstrapTimedOut, setBootstrapTimedOut] = useState(false);
   const [telegramId, setTelegramId] = useState<string | null>(null);
+
+  // ✅ manual re-sync trigger
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const refreshSession = () => setRefreshNonce((n) => n + 1);
 
   useEffect(() => {
     let cancelled = false;
 
     async function runBootstrap() {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, BOOTSTRAP_TIMEOUT_MS);
+
       try {
         setBootstrapLoading(true);
         setBootstrapError(null);
+        setBootstrapTimedOut(false);
 
         if (!isTelegramEnv) {
           setTelegramId(null);
@@ -90,9 +107,10 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
             telegramId: effectiveTelegramId,
             initData: initDataRaw, // пусть уходит, даже если сервер пока не использует
           }),
+          signal: controller.signal,
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
 
         if (!res.ok) {
           throw new Error(data?.error || "Bootstrap failed");
@@ -103,12 +121,27 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
         setBootstrap(data);
         setBootstrapError(null);
       } catch (err: any) {
-        console.error("Bootstrap error:", err);
-        if (!cancelled) {
+        if (cancelled) return;
+
+        // timeout / abort
+        const isAbort =
+          err?.name === "AbortError" ||
+          String(err?.message || "").toLowerCase().includes("aborted");
+
+        if (isAbort) {
           setBootstrap(null);
-          setBootstrapError(err?.message ? String(err.message) : String(err));
+          setBootstrapTimedOut(true);
+          setBootstrapError(
+            "Session sync timed out. Please tap Re-sync and try again."
+          );
+          return;
         }
+
+        console.error("Bootstrap error:", err);
+        setBootstrap(null);
+        setBootstrapError(err?.message ? String(err.message) : String(err));
       } finally {
+        clearTimeout(timeoutId);
         if (!cancelled) setBootstrapLoading(false);
       }
     }
@@ -118,7 +151,7 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isTelegramEnv, webApp, telegramUser?.id, initDataRaw]);
+  }, [isTelegramEnv, webApp, telegramUser?.id, initDataRaw, refreshNonce]);
 
   // единое состояние для UI
   const loading = authLoading || bootstrapLoading;
@@ -140,6 +173,9 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
       bootstrap,
       isTelegramEnv,
 
+      timedOut: bootstrapTimedOut,
+      refreshSession,
+
       authLoading,
       authError,
       authData,
@@ -151,6 +187,7 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
       initDataRaw,
       bootstrap,
       isTelegramEnv,
+      bootstrapTimedOut,
       authLoading,
       authError,
       authData,

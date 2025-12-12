@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useGameSessionContext } from "../context/GameSessionContext";
 
 type DailyState = {
@@ -15,8 +15,50 @@ type BalanceState = {
   hard_balance: number;
 };
 
+type CoreBootstrap = {
+  user: {
+    id: string;
+    telegram_id: string;
+    username: string | null;
+    first_name?: string | null;
+    avatar_url?: string | null;
+  };
+  balance: {
+    user_id: string;
+    soft_balance: number;
+    hard_balance: number;
+  };
+  totalPower: number;
+  itemsCount?: number;
+  level: number;
+  currentLevelPower?: number;
+  nextLevelPower?: number;
+  progress: number;
+  spinsCount?: number;
+  lastSpinAt?: string | null;
+  totalShardsSpent?: number;
+  daily?: DailyState;
+};
+
+function unwrapCore(bootstrap: any): CoreBootstrap | null {
+  const core = (bootstrap && bootstrap.bootstrap) || bootstrap || null;
+  if (!core || !core.user || !core.balance) return null;
+  return core as CoreBootstrap;
+}
+
 export default function ProfilePage() {
-  const { loading, error, telegramId, bootstrap } = useGameSessionContext();
+  const {
+    loading: sessionLoading,
+    error: sessionError,
+    telegramId,
+    bootstrap,
+    isTelegramEnv,
+    timedOut,
+    refreshSession,
+  } = useGameSessionContext() as any;
+
+  const core = useMemo(() => unwrapCore(bootstrap), [bootstrap]);
+  const hasCore = !!core;
 
   const [dailyState, setDailyState] = useState<DailyState | null>(null);
   const [balanceState, setBalanceState] = useState<BalanceState | null>(null);
@@ -25,27 +67,37 @@ export default function ProfilePage() {
   const [claimError, setClaimError] = useState<string | null>(null);
   const [claimSuccess, setClaimSuccess] = useState<string | null>(null);
 
-  // Инициализируем локальный daily и баланс из bootstrap
+  // Инициализируем локальный daily и баланс из core (bootstrap)
   useEffect(() => {
-    if (!bootstrap) return;
+    if (!core) return;
 
-    const d = bootstrap.daily;
+    const d = (core as any).daily;
     if (d) {
       setDailyState({
-        canClaim: d.canClaim,
-        remainingSeconds: d.remainingSeconds,
-        streak: d.streak,
-        amount: d.amount,
+        canClaim: !!d.canClaim,
+        remainingSeconds: Number(d.remainingSeconds ?? 0),
+        streak: Number(d.streak ?? 0),
+        amount: Number(d.amount ?? 0),
       });
+    } else {
+      setDailyState(null);
     }
 
-    if (bootstrap.balance) {
+    if ((core as any).balance) {
       setBalanceState({
-        soft_balance: bootstrap.balance.soft_balance,
-        hard_balance: bootstrap.balance.hard_balance,
+        soft_balance: Number((core as any).balance.soft_balance ?? 0),
+        hard_balance: Number((core as any).balance.hard_balance ?? 0),
       });
+    } else {
+      setBalanceState(null);
     }
-  }, [bootstrap]);
+  }, [core]);
+
+  const handleResync = () => {
+    setClaimError(null);
+    setClaimSuccess(null);
+    refreshSession?.();
+  };
 
   const handleClaimDaily = async () => {
     if (!telegramId || !dailyState) return;
@@ -76,7 +128,8 @@ export default function ProfilePage() {
               ? {
                   ...prev,
                   canClaim: false,
-                  remainingSeconds: data.remainingSeconds ?? prev.remainingSeconds,
+                  remainingSeconds:
+                    data.remainingSeconds ?? prev.remainingSeconds ?? 0,
                 }
               : prev
           );
@@ -84,11 +137,11 @@ export default function ProfilePage() {
 
         setClaimError(data.error || "Failed to claim daily reward");
       } else {
-        // Успех: обновляем баланс и daily
+        // Успех: обновляем баланс и daily (локально)
         if (data.newBalance) {
           setBalanceState({
-            soft_balance: data.newBalance.soft_balance,
-            hard_balance: data.newBalance.hard_balance,
+            soft_balance: Number(data.newBalance.soft_balance ?? 0),
+            hard_balance: Number(data.newBalance.hard_balance ?? 0),
           });
         }
 
@@ -97,14 +150,17 @@ export default function ProfilePage() {
             ? {
                 ...prev,
                 canClaim: false,
-                remainingSeconds: 24 * 3600, // условно до следующего дня
-                streak: data.streak ?? prev.streak,
-                amount: data.amount ?? prev.amount,
+                remainingSeconds: 24 * 3600,
+                streak: Number(data.streak ?? prev.streak ?? 0),
+                amount: Number(data.amount ?? prev.amount ?? 0),
               }
             : prev
         );
 
         setClaimSuccess(`+${data.amount ?? dailyState.amount} Shards claimed!`);
+
+        // ✅ чтобы все статы (totalPower/items/spins) тоже стали актуальными
+        refreshSession?.();
       }
     } catch (e: any) {
       console.error(e);
@@ -114,22 +170,70 @@ export default function ProfilePage() {
     }
   };
 
-  if (loading || !bootstrap) {
+  // ---------- UI gates ----------
+
+  if (!isTelegramEnv) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <span>Loading profile...</span>
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+        <div className="max-w-md text-center">
+          <div className="text-lg font-semibold mb-2">Open in Telegram</div>
+          <div className="text-sm text-zinc-400">
+            This page works only inside Telegram WebApp.
+          </div>
+        </div>
       </main>
     );
   }
 
-  if (error) {
+  if (
+    (sessionLoading && !hasCore) ||
+    (!hasCore && (timedOut || !!sessionError))
+  ) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <div>
-          <div className="mb-2 text-red-400">Error loading profile</div>
-          <pre className="text-xs max-w-sm overflow-auto">
-            {JSON.stringify({ error, telegramId }, null, 2)}
-          </pre>
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+        <div className="max-w-md w-full">
+          <div className="text-lg font-semibold">
+            {timedOut ? "Connection timeout" : "Couldn’t load your session"}
+          </div>
+
+          <div className="mt-2 text-sm text-zinc-400">
+            {timedOut
+              ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
+              : "Something went wrong while syncing your profile."}
+          </div>
+
+          {sessionError && (
+            <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
+              <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
+              <div className="text-xs text-zinc-200 break-words">
+                {String(sessionError)}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-col gap-3">
+            <button
+              onClick={handleResync}
+              className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
+            >
+              Re-sync
+            </button>
+
+            <div className="text-[11px] text-zinc-500 text-center">
+              If it keeps failing, reopen the Mini App from the bot menu.
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (sessionLoading || !telegramId || !core) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Loading profile...</div>
+          <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
         </div>
       </main>
     );
@@ -138,6 +242,7 @@ export default function ProfilePage() {
   const {
     user,
     totalPower,
+    itemsCount,
     level,
     currentLevelPower,
     nextLevelPower,
@@ -145,13 +250,13 @@ export default function ProfilePage() {
     spinsCount,
     lastSpinAt,
     totalShardsSpent,
-  } = bootstrap;
+  } = core;
 
-  const username = user?.username || "Unknown";
+  const username = user?.username || user?.first_name || "Unknown";
   const tid = user?.telegram_id || telegramId || "N/A";
 
-  const shards = balanceState?.soft_balance ?? 0;
-  const crystals = balanceState?.hard_balance ?? 0;
+  const shards = balanceState?.soft_balance ?? core.balance.soft_balance ?? 0;
+  const crystals = balanceState?.hard_balance ?? core.balance.hard_balance ?? 0;
 
   const levelProgressPercent = Math.round((progress ?? 0) * 100);
 
@@ -161,23 +266,52 @@ export default function ProfilePage() {
 
   const daily = dailyState;
 
+  const avatarUrl = user?.avatar_url || null;
+
   return (
     <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4">
       <h1 className="text-3xl font-bold tracking-[0.3em] uppercase mb-6">
         Profile
       </h1>
 
-      {/* Блок с ником и телеграмом */}
-      <div className="w-full max-w-3xl mb-6 flex flex-col gap-2 items-center">
-        <div className="text-sm text-zinc-400">
-          Player: <span className="text-white font-semibold">{username}</span>
+      {/* manual re-sync */}
+      <button
+        onClick={handleResync}
+        className="mb-6 px-4 py-1 rounded-full border border-zinc-800 text-[11px] text-zinc-300 hover:bg-zinc-900"
+      >
+        Re-sync session
+      </button>
+
+      {/* Header player card */}
+      <div className="w-full max-w-3xl mb-6 border border-zinc-800 bg-zinc-950 rounded-2xl p-5 flex items-center gap-4">
+        <div className="w-14 h-14 rounded-2xl border border-zinc-800 bg-zinc-900 flex items-center justify-center overflow-hidden">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt={username}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="text-[10px] text-zinc-500 px-2 text-center">
+              No avatar
+            </div>
+          )}
         </div>
-        <div className="text-xs text-zinc-500">
-          Telegram ID: <span className="text-zinc-300">{tid}</span>
+
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-zinc-500 mb-1 uppercase">Player</div>
+          <div className="text-lg font-semibold truncate">{username}</div>
+          <div className="text-xs text-zinc-500 truncate">Telegram ID: {tid}</div>
+        </div>
+
+        <div className="text-right">
+          <div className="text-xs text-zinc-500 uppercase">Level</div>
+          <div className="text-xl font-semibold">{level ?? 1}</div>
         </div>
       </div>
 
-      {/* Основные статы */}
+      {/* Main stats */}
       <div className="w-full max-w-3xl grid gap-4 mb-8 sm:grid-cols-3">
         <div className="p-4 border border-zinc-700 rounded-xl">
           <div className="text-xs text-zinc-500 mb-1">BALANCE</div>
@@ -195,18 +329,23 @@ export default function ProfilePage() {
         </div>
 
         <div className="p-4 border border-zinc-700 rounded-xl">
-          <div className="text-xs text-zinc-500 mb-1">SPINS / SPENT</div>
+          <div className="text-xs text-zinc-500 mb-1">ITEMS / SPINS</div>
           <div className="text-sm">
-            Chest spins: <span className="font-semibold">{spinsCount ?? 0}</span>
+            Items:{" "}
+            <span className="font-semibold">
+              {typeof itemsCount === "number" ? itemsCount : "—"}
+            </span>
           </div>
           <div className="text-sm">
-            Shards spent:{" "}
-            <span className="font-semibold">{totalShardsSpent ?? 0}</span>
+            Spins:{" "}
+            <span className="font-semibold">
+              {typeof spinsCount === "number" ? spinsCount : 0}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Уровень и прогресс */}
+      {/* Level progress */}
       <div className="w-full max-w-3xl mb-8 p-4 border border-zinc-700 rounded-xl">
         <div className="flex items-center justify-between mb-2">
           <div>
@@ -229,7 +368,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Инфо по daily и последнему спину */}
+      {/* Daily + last spin + spent */}
       <div className="w-full max-w-3xl grid gap-4 mb-10 sm:grid-cols-2">
         <div className="p-4 border border-zinc-700 rounded-xl">
           <div className="text-xs text-zinc-500 mb-2">DAILY REWARD</div>
@@ -276,20 +415,28 @@ export default function ProfilePage() {
               )}
             </>
           ) : (
-            <div className="text-sm text-zinc-400">
-              Daily info not available.
-            </div>
+            <div className="text-sm text-zinc-400">Daily info not available.</div>
           )}
         </div>
 
         <div className="p-4 border border-zinc-700 rounded-xl">
-          <div className="text-xs text-zinc-500 mb-1">LAST CHEST SPIN</div>
-          <div className="text-sm text-zinc-300">{lastSpinText}</div>
+          <div className="text-xs text-zinc-500 mb-2">STATS</div>
+
+          <div className="text-sm text-zinc-300">
+            Last spin: <span className="text-zinc-100">{lastSpinText}</span>
+          </div>
+
+          <div className="mt-2 text-sm text-zinc-300">
+            Shards spent:{" "}
+            <span className="text-zinc-100 font-semibold">
+              {typeof totalShardsSpent === "number" ? totalShardsSpent : 0}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Навигация */}
-      <div className="mt-4 flex gap-4">
+      {/* Navigation */}
+      <div className="mt-4 flex gap-4 flex-wrap justify-center">
         <a
           href="/"
           className="px-4 py-2 rounded-full border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-900"
