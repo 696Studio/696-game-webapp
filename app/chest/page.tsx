@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useGameSessionContext } from "../context/GameSessionContext";
 
 type DropItem = {
@@ -58,6 +58,13 @@ export default function ChestPage() {
     refreshSession,
   } = useGameSessionContext() as any;
 
+  // ✅ grace delay
+  const [showGate, setShowGate] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setShowGate(true), 1200);
+    return () => clearTimeout(t);
+  }, []);
+
   // локальный override — чтобы обновлять данные после открытия сундука
   const [overrideBootstrap, setOverrideBootstrap] = useState<any | null>(null);
 
@@ -95,6 +102,12 @@ export default function ChestPage() {
       setRefreshing(false);
     }
   }
+
+  const handleResync = () => {
+    setOverrideBootstrap(null);
+    setResult(null);
+    refreshSession?.();
+  };
 
   const handleOpenChest = async () => {
     if (!telegramId) return;
@@ -138,9 +151,10 @@ export default function ChestPage() {
     await handleOpenChest();
   };
 
+  // честно: только Telegram
   if (!isTelegramEnv) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 pb-24">
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
         <div className="max-w-md text-center">
           <div className="text-lg font-semibold mb-2">Open in Telegram</div>
           <div className="text-sm text-zinc-400">
@@ -151,45 +165,64 @@ export default function ChestPage() {
     );
   }
 
-  if ((loading && !hasCore) || (!hasCore && (timedOut || !!error))) {
-    return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 pb-24">
-        <div className="max-w-md w-full">
-          <div className="text-lg font-semibold">
-            {timedOut ? "Connection timeout" : "Couldn’t load your session"}
+  // ✅ gate с задержкой
+  if (!hasCore) {
+    if (!showGate || loading) {
+      return (
+        <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+          <div className="text-center">
+            <div className="text-lg font-semibold">Loading...</div>
+            <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
           </div>
+        </main>
+      );
+    }
 
-          <div className="mt-2 text-sm text-zinc-400">
-            {timedOut
-              ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
-              : "Something went wrong while syncing your profile."}
-          </div>
+    if (timedOut || !!error) {
+      return (
+        <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+          <div className="max-w-md w-full">
+            <div className="text-lg font-semibold">
+              {timedOut ? "Connection timeout" : "Couldn’t load your session"}
+            </div>
 
-          {error && (
-            <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
-              <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
-              <div className="text-xs text-zinc-200 break-words">
-                {String(error)}
+            <div className="mt-2 text-sm text-zinc-400">
+              {timedOut
+                ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
+                : "Something went wrong while syncing your profile."}
+            </div>
+
+            {error && (
+              <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
+                <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
+                <div className="text-xs text-zinc-200 break-words">
+                  {String(error)}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                onClick={handleResync}
+                className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
+              >
+                Re-sync
+              </button>
+
+              <div className="text-[11px] text-zinc-500 text-center">
+                If it keeps failing, reopen the Mini App from the bot menu.
               </div>
             </div>
-          )}
-
-          <div className="mt-6 flex flex-col gap-3">
-            <button
-              onClick={() => {
-                setOverrideBootstrap(null);
-                setResult(null);
-                refreshSession?.();
-              }}
-              className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
-            >
-              Re-sync
-            </button>
-
-            <div className="text-[11px] text-zinc-500 text-center">
-              If it keeps failing, reopen the Mini App from the bot menu.
-            </div>
           </div>
+        </main>
+      );
+    }
+
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Loading...</div>
+          <div className="mt-2 text-sm text-zinc-400">Still syncing.</div>
         </div>
       </main>
     );
@@ -197,7 +230,7 @@ export default function ChestPage() {
 
   if (loading || !telegramId) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 pb-24">
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
         <div className="text-center">
           <div className="text-lg font-semibold">Loading...</div>
           <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
@@ -207,7 +240,7 @@ export default function ChestPage() {
   }
 
   return (
-    <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4 pb-28">
+    <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4 pb-24">
       <h1 className="text-3xl font-bold tracking-[0.3em] uppercase mb-6">
         696 Chest
       </h1>
@@ -229,11 +262,7 @@ export default function ChestPage() {
       </div>
 
       <button
-        onClick={() => {
-          setOverrideBootstrap(null);
-          setResult(null);
-          refreshSession?.();
-        }}
+        onClick={handleResync}
         className="mb-8 px-4 py-1 rounded-full border border-zinc-800 text-[11px] text-zinc-300 hover:bg-zinc-900"
       >
         Re-sync session
@@ -253,7 +282,9 @@ export default function ChestPage() {
             </div>
             <div className="text-xs text-zinc-400 mt-1">
               You need{" "}
-              <span className="font-semibold">{CHEST_COST_SHARDS - soft}</span>{" "}
+              <span className="font-semibold">
+                {CHEST_COST_SHARDS - soft}
+              </span>{" "}
               more Shards to open this chest.
             </div>
             <a
@@ -296,14 +327,16 @@ export default function ChestPage() {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="text-[10px] text-zinc-500 px-2">No image</div>
+                    <div className="text-[10px] text-zinc-500 px-2">
+                      No image
+                    </div>
                   )}
                 </div>
               </div>
 
               <div className="text-lg font-semibold mb-1">{result.drop.name}</div>
               <div className="text-sm text-zinc-400">
-                Rarity: {result.drop.rarity.toUpperCase()}
+                Rarity: {String(result.drop.rarity || "").toUpperCase()}
               </div>
               <div className="text-sm text-zinc-400">
                 Power: {result.drop.power_value}

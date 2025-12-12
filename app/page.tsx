@@ -55,7 +55,7 @@ export default function HomePage() {
   // ✅ grace delay: не показываем “Couldn’t load…” сразу
   const [showGate, setShowGate] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setShowGate(true), 900);
+    const t = setTimeout(() => setShowGate(true), 1200);
     return () => clearTimeout(t);
   }, []);
 
@@ -97,6 +97,7 @@ export default function HomePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Daily claim failed");
 
+      // ✅ обновляем баланс + daily через bootstrap
       await refreshBootstrap(telegramId);
     } catch (e: any) {
       console.error("Claim daily error:", e);
@@ -111,9 +112,10 @@ export default function HomePage() {
     refreshSession?.();
   };
 
+  // 0) Если не в Telegram — честно говорим
   if (!isTelegramEnv) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4 pb-24">
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
         <div className="max-w-md text-center">
           <div className="text-lg font-semibold mb-2">Open in Telegram</div>
           <div className="text-sm text-zinc-400">
@@ -124,11 +126,11 @@ export default function HomePage() {
     );
   }
 
-  // ✅ пока core нет — сначала только Loading (900ms), потом уже можно показывать ошибку/timeout
+  // ✅ пока core нет — сначала только Loading (1200ms), потом уже можно показывать ошибку/timeout
   if (!hasCore) {
     if (!showGate || loading) {
       return (
-        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4 pb-24">
+        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
           <div className="max-w-md w-full text-center">
             <div className="text-lg font-semibold">Loading 696 Game...</div>
             <div className="mt-2 text-sm text-zinc-400">
@@ -141,7 +143,7 @@ export default function HomePage() {
 
     if (timedOut || !!error) {
       return (
-        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4 pb-24">
+        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
           <div className="max-w-md w-full">
             <div className="text-lg font-semibold">
               {timedOut ? "Connection timeout" : "Couldn’t load your profile"}
@@ -180,7 +182,7 @@ export default function HomePage() {
     }
 
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4 pb-24">
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
         <div className="max-w-md w-full text-center">
           <div className="text-lg font-semibold">Loading...</div>
           <div className="mt-2 text-sm text-zinc-400">Still syncing.</div>
@@ -203,7 +205,7 @@ export default function HomePage() {
   const progressPercent = Math.round((progress || 0) * 100);
 
   return (
-    <main className="min-h-screen bg-black text-white flex flex-col items-center pt-12 px-4 pb-28">
+    <main className="min-h-screen bg-black text-white flex flex-col items-center pt-12 px-4 pb-24">
       <h1 className="text-3xl font-bold tracking-[0.35em] uppercase mb-6">
         696 Game
       </h1>

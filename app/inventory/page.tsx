@@ -14,19 +14,34 @@ type InventoryItem = {
     type: string;
     power_value: number;
     image_url?: string | null;
-  };
+  } | null; // ✅ важное: может прилететь null
+};
+
+type RarityStats = {
+  common?: number;
+  rare?: number;
+  epic?: number;
+  legendary?: number;
 };
 
 type InventoryResponse = {
   items?: InventoryItem[];
   totalPower?: number;
-  rarityStats?: Record<string, number>;
+  rarityStats?: RarityStats;
   error?: string;
 };
 
 type CoreBootstrap = {
-  user: { id: string; telegram_id: string; username: string | null };
-  balance: { user_id: string; soft_balance: number; hard_balance: number };
+  user: {
+    id: string;
+    telegram_id: string;
+    username: string | null;
+  };
+  balance: {
+    user_id: string;
+    soft_balance: number;
+    hard_balance: number;
+  };
   totalPower: number;
   level: number;
   progress: number;
@@ -43,7 +58,8 @@ type SortMode = "power_desc" | "power_asc" | "newest";
 
 function normalizeRarity(rarity: string | null | undefined): RarityFilter {
   const r = String(rarity || "").trim().toLowerCase();
-  if (r === "common" || r === "rare" || r === "epic" || r === "legendary") return r;
+  if (r === "common" || r === "rare" || r === "epic" || r === "legendary")
+    return r;
   return "common";
 }
 
@@ -57,6 +73,13 @@ export default function InventoryPage() {
     timedOut,
     refreshSession,
   } = useGameSessionContext() as any;
+
+  // ✅ grace delay
+  const [showGate, setShowGate] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setShowGate(true), 1200);
+    return () => clearTimeout(t);
+  }, []);
 
   const core = useMemo(() => unwrapCore(bootstrap), [bootstrap]);
   const hasCore = !!core;
@@ -83,16 +106,27 @@ export default function InventoryPage() {
         const data: InventoryResponse = await res.json();
         if (cancelled) return;
 
-        setInventory(data);
+        // ✅ Санитизация: убираем записи без item (иначе краш UI)
+        const safeItems = Array.isArray(data.items)
+          ? data.items.filter((x: any) => x && x.item && x.item.name)
+          : [];
+
+        setInventory({
+          ...data,
+          items: safeItems,
+        });
       } catch (err) {
         console.error("Inventory load error:", err);
-        if (!cancelled) setInventory({ error: "Request failed" });
+        if (!cancelled) {
+          setInventory({ error: "Request failed" });
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
     loadInventory();
+
     return () => {
       cancelled = true;
     };
@@ -103,9 +137,11 @@ export default function InventoryPage() {
     refreshSession?.();
   };
 
+  // ---------- UI ----------
+
   if (!isTelegramEnv) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 pb-24">
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
         <div className="max-w-md text-center">
           <div className="text-lg font-semibold mb-2">Open in Telegram</div>
           <div className="text-sm text-zinc-400">
@@ -116,41 +152,64 @@ export default function InventoryPage() {
     );
   }
 
-  if ((sessionLoading && !hasCore) || (!hasCore && (timedOut || !!sessionError))) {
-    return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 pb-24">
-        <div className="max-w-md w-full">
-          <div className="text-lg font-semibold">
-            {timedOut ? "Connection timeout" : "Couldn’t load your session"}
+  // ✅ gate с задержкой
+  if (!hasCore) {
+    if (!showGate || sessionLoading) {
+      return (
+        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+          <div className="text-center">
+            <div className="text-lg font-semibold">Loading inventory...</div>
+            <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
           </div>
+        </main>
+      );
+    }
 
-          <div className="mt-2 text-sm text-zinc-400">
-            {timedOut
-              ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
-              : "Something went wrong while syncing your profile."}
-          </div>
+    if (timedOut || !!sessionError) {
+      return (
+        <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+          <div className="max-w-md w-full">
+            <div className="text-lg font-semibold">
+              {timedOut ? "Connection timeout" : "Couldn’t load your session"}
+            </div>
 
-          {sessionError && (
-            <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
-              <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
-              <div className="text-xs text-zinc-200 break-words">
-                {String(sessionError)}
+            <div className="mt-2 text-sm text-zinc-400">
+              {timedOut
+                ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
+                : "Something went wrong while syncing your profile."}
+            </div>
+
+            {sessionError && (
+              <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
+                <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
+                <div className="text-xs text-zinc-200 break-words">
+                  {String(sessionError)}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                onClick={handleResync}
+                className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
+              >
+                Re-sync
+              </button>
+
+              <div className="text-[11px] text-zinc-500 text-center">
+                If it keeps failing, reopen the Mini App from the bot menu.
               </div>
             </div>
-          )}
-
-          <div className="mt-6 flex flex-col gap-3">
-            <button
-              onClick={handleResync}
-              className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
-            >
-              Re-sync
-            </button>
-
-            <div className="text-[11px] text-zinc-500 text-center">
-              If it keeps failing, reopen the Mini App from the bot menu.
-            </div>
           </div>
+        </main>
+      );
+    }
+
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Loading...</div>
+          <div className="mt-2 text-sm text-zinc-400">Still syncing.</div>
         </div>
       </main>
     );
@@ -158,7 +217,7 @@ export default function InventoryPage() {
 
   if (sessionLoading || !telegramId) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4 pb-24">
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
         <div className="text-center">
           <div className="text-lg font-semibold">Loading inventory...</div>
           <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
@@ -167,26 +226,19 @@ export default function InventoryPage() {
     );
   }
 
-  if (!core) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4 pb-24">
-        <div className="text-center">
-          <div className="text-lg font-semibold">Loading profile...</div>
-          <div className="mt-2 text-sm text-zinc-400">Please wait a moment.</div>
-        </div>
-      </main>
-    );
-  }
-
   const items = inventory?.items ?? [];
   const totalPower =
-    typeof inventory?.totalPower === "number" ? inventory.totalPower : core.totalPower ?? 0;
+    typeof inventory?.totalPower === "number"
+      ? inventory.totalPower
+      : core?.totalPower ?? 0;
 
   const filteredSortedItems = useMemo(() => {
     const base =
       rarityFilter === "all"
         ? items
-        : items.filter((ui) => normalizeRarity(ui.item?.rarity) === rarityFilter);
+        : items.filter(
+            (ui) => normalizeRarity(ui.item?.rarity) === rarityFilter
+          );
 
     const copy = [...base];
 
@@ -216,7 +268,7 @@ export default function InventoryPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4 pb-28">
+    <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4 pb-24">
       <h1 className="text-3xl font-bold tracking-[0.3em] uppercase mb-6">
         Inventory
       </h1>
@@ -237,7 +289,9 @@ export default function InventoryPage() {
         <div className="p-4 border border-zinc-700 rounded-xl min-w-[160px]">
           <div className="text-xs text-zinc-500 mb-1">ITEMS</div>
           <div className="text-xl font-semibold">{items.length}</div>
-          <div className="text-[11px] text-zinc-500 mt-1">Showing: {shownCount}</div>
+          <div className="text-[11px] text-zinc-500 mt-1">
+            Showing: {shownCount}
+          </div>
         </div>
       </div>
 
@@ -306,7 +360,9 @@ export default function InventoryPage() {
       {loading && <div className="text-sm text-zinc-400 mb-4">Loading items...</div>}
 
       {inventory?.error && (
-        <div className="text-red-400 mb-4">Error loading inventory: {inventory.error}</div>
+        <div className="text-red-400 mb-4">
+          Error loading inventory: {inventory.error}
+        </div>
       )}
 
       {!loading && !inventory?.error && filteredSortedItems.length === 0 && (
@@ -332,20 +388,22 @@ export default function InventoryPage() {
               className="border border-zinc-700 rounded-xl p-3 bg-zinc-900/40"
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="font-semibold leading-snug">{ui.item.name}</div>
+                <div className="font-semibold leading-snug">
+                  {ui.item?.name ?? "Unknown item"}
+                </div>
                 <div className="text-[10px] px-2 py-1 rounded-full border border-zinc-800 text-zinc-300">
-                  {String(ui.item.rarity || "").toUpperCase()}
+                  {String(ui.item?.rarity || "unknown").toUpperCase()}
                 </div>
               </div>
 
               <div className="mt-2 text-xs text-zinc-400">
-                Type: {String(ui.item.type || "").toUpperCase()}
+                Type: {String(ui.item?.type || "—").toUpperCase()}
               </div>
 
               <div className="mt-1 text-xs text-zinc-400">
                 Power:{" "}
                 <span className="text-zinc-100 font-semibold">
-                  {ui.item.power_value}
+                  {Number(ui.item?.power_value ?? 0)}
                 </span>
               </div>
             </div>

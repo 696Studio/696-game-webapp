@@ -57,6 +57,13 @@ export default function ProfilePage() {
     refreshSession,
   } = useGameSessionContext() as any;
 
+  // ✅ grace delay
+  const [showGate, setShowGate] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setShowGate(true), 1200);
+    return () => clearTimeout(t);
+  }, []);
+
   const core = useMemo(() => unwrapCore(bootstrap), [bootstrap]);
   const hasCore = !!core;
 
@@ -126,7 +133,8 @@ export default function ProfilePage() {
               ? {
                   ...prev,
                   canClaim: false,
-                  remainingSeconds: data.remainingSeconds ?? prev.remainingSeconds ?? 0,
+                  remainingSeconds:
+                    data.remainingSeconds ?? prev.remainingSeconds ?? 0,
                 }
               : prev
           );
@@ -166,7 +174,7 @@ export default function ProfilePage() {
 
   if (!isTelegramEnv) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 pb-24">
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
         <div className="max-w-md text-center">
           <div className="text-lg font-semibold mb-2">Open in Telegram</div>
           <div className="text-sm text-zinc-400">
@@ -177,41 +185,63 @@ export default function ProfilePage() {
     );
   }
 
-  if ((sessionLoading && !hasCore) || (!hasCore && (timedOut || !!sessionError))) {
-    return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 pb-24">
-        <div className="max-w-md w-full">
-          <div className="text-lg font-semibold">
-            {timedOut ? "Connection timeout" : "Couldn’t load your session"}
+  if (!hasCore) {
+    if (!showGate || sessionLoading) {
+      return (
+        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+          <div className="text-center">
+            <div className="text-lg font-semibold">Loading profile...</div>
+            <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
           </div>
+        </main>
+      );
+    }
 
-          <div className="mt-2 text-sm text-zinc-400">
-            {timedOut
-              ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
-              : "Something went wrong while syncing your profile."}
-          </div>
+    if (timedOut || !!sessionError) {
+      return (
+        <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+          <div className="max-w-md w-full">
+            <div className="text-lg font-semibold">
+              {timedOut ? "Connection timeout" : "Couldn’t load your session"}
+            </div>
 
-          {sessionError && (
-            <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
-              <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
-              <div className="text-xs text-zinc-200 break-words">
-                {String(sessionError)}
+            <div className="mt-2 text-sm text-zinc-400">
+              {timedOut
+                ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
+                : "Something went wrong while syncing your profile."}
+            </div>
+
+            {sessionError && (
+              <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
+                <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
+                <div className="text-xs text-zinc-200 break-words">
+                  {String(sessionError)}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                onClick={handleResync}
+                className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
+              >
+                Re-sync
+              </button>
+
+              <div className="text-[11px] text-zinc-500 text-center">
+                If it keeps failing, reopen the Mini App from the bot menu.
               </div>
             </div>
-          )}
-
-          <div className="mt-6 flex flex-col gap-3">
-            <button
-              onClick={handleResync}
-              className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
-            >
-              Re-sync
-            </button>
-
-            <div className="text-[11px] text-zinc-500 text-center">
-              If it keeps failing, reopen the Mini App from the bot menu.
-            </div>
           </div>
+        </main>
+      );
+    }
+
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Loading...</div>
+          <div className="mt-2 text-sm text-zinc-400">Still syncing.</div>
         </div>
       </main>
     );
@@ -219,7 +249,7 @@ export default function ProfilePage() {
 
   if (sessionLoading || !telegramId || !core) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4 pb-24">
+      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
         <div className="text-center">
           <div className="text-lg font-semibold">Loading profile...</div>
           <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
@@ -248,12 +278,16 @@ export default function ProfilePage() {
   const crystals = balanceState?.hard_balance ?? core.balance.hard_balance ?? 0;
 
   const levelProgressPercent = Math.round((progress ?? 0) * 100);
-  const lastSpinText = lastSpinAt ? new Date(lastSpinAt).toLocaleString() : "No spins yet";
+
+  const lastSpinText = lastSpinAt
+    ? new Date(lastSpinAt).toLocaleString()
+    : "No spins yet";
+
   const daily = dailyState;
   const avatarUrl = user?.avatar_url || null;
 
   return (
-    <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4 pb-28">
+    <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4 pb-24">
       <h1 className="text-3xl font-bold tracking-[0.3em] uppercase mb-6">
         Profile
       </h1>
@@ -269,9 +303,15 @@ export default function ProfilePage() {
         <div className="w-14 h-14 rounded-2xl border border-zinc-800 bg-zinc-900 flex items-center justify-center overflow-hidden">
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
+            <img
+              src={avatarUrl}
+              alt={username}
+              className="w-full h-full object-cover"
+            />
           ) : (
-            <div className="text-[10px] text-zinc-500 px-2 text-center">No avatar</div>
+            <div className="text-[10px] text-zinc-500 px-2 text-center">
+              No avatar
+            </div>
           )}
         </div>
 
@@ -313,7 +353,9 @@ export default function ProfilePage() {
           </div>
           <div className="text-sm">
             Spins:{" "}
-            <span className="font-semibold">{typeof spinsCount === "number" ? spinsCount : 0}</span>
+            <span className="font-semibold">
+              {typeof spinsCount === "number" ? spinsCount : 0}
+            </span>
           </div>
         </div>
       </div>
@@ -330,7 +372,10 @@ export default function ProfilePage() {
         </div>
 
         <div className="w-full h-2 rounded-full bg-zinc-900 overflow-hidden">
-          <div className="h-full bg-zinc-200" style={{ width: `${levelProgressPercent}%` }} />
+          <div
+            className="h-full bg-zinc-200"
+            style={{ width: `${levelProgressPercent}%` }}
+          />
         </div>
         <div className="mt-1 text-[10px] text-zinc-500 text-right">
           {levelProgressPercent}% to next level
@@ -350,11 +395,16 @@ export default function ProfilePage() {
               ) : (
                 <div className="text-sm text-zinc-300 mb-2">
                   Уже забрал, до следующей ещё{" "}
-                  <span className="font-semibold">{daily.remainingSeconds ?? 0} сек</span>.
+                  <span className="font-semibold">
+                    {daily.remainingSeconds ?? 0} сек
+                  </span>
+                  .
                 </div>
               )}
 
-              <div className="text-[10px] text-zinc-500 mb-3">Streak: {daily.streak ?? 0}</div>
+              <div className="text-[10px] text-zinc-500 mb-3">
+                Streak: {daily.streak ?? 0}
+              </div>
 
               <button
                 onClick={handleClaimDaily}
@@ -368,8 +418,12 @@ export default function ProfilePage() {
                   : "Already claimed"}
               </button>
 
-              {claimError && <div className="mt-2 text-xs text-red-400">{claimError}</div>}
-              {claimSuccess && <div className="mt-2 text-xs text-green-400">{claimSuccess}</div>}
+              {claimError && (
+                <div className="mt-2 text-xs text-red-400">{claimError}</div>
+              )}
+              {claimSuccess && (
+                <div className="mt-2 text-xs text-green-400">{claimSuccess}</div>
+              )}
             </>
           ) : (
             <div className="text-sm text-zinc-400">Daily info not available.</div>
