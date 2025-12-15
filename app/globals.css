@@ -2,35 +2,34 @@
 
 /* -------------------------------------------------------
    696 GAME UI FOUNDATION (Fortnite-ish, brighter, clean)
-   - slightly more color & punch
-   - still stable / minimal
+   Premium game feel – energetic but balanced.
 -------------------------------------------------------- */
 
 :root {
   --bg: #070709;
 
   /* Panels */
-  --panel: rgba(255, 255, 255, 0.045);
-  --panel-2: rgba(255, 255, 255, 0.075);
+  --panel: rgba(255, 255, 255, 0.065); /* +depth */
+  --panel-2: rgba(255, 255, 255, 0.12);
 
   /* Borders & text */
-  --border: rgba(255, 255, 255, 0.16);
-  --muted: rgba(255, 255, 255, 0.66);
-  --muted-2: rgba(255, 255, 255, 0.48);
-  --text: rgba(255, 255, 255, 0.94);
+  --border: rgba(255, 255, 255, 0.25);
+  --muted: rgba(255, 255, 255, 0.74);
+  --muted-2: rgba(255, 255, 255, 0.54);
+  --text: rgba(255, 255, 255, 0.97);
 
   /* Fortnite-ish accents */
-  --accent: #58f0ff;      /* cyan */
-  --accent-2: #b85cff;    /* purple */
+  --accent: #58f0ff; /* cyan */
+  --accent-2: #b85cff; /* purple */
 
   /* Rarity colors */
-  --rarity-common: rgba(255,255,255,0.70);
+  --rarity-common: rgba(255, 255, 255, 0.7);
   --rarity-rare: #4aa3ff;
   --rarity-epic: #b25cff;
   --rarity-legendary: #ffcc57;
 
   /* focus ring */
-  --ring: rgba(88, 240, 255, 0.22);
+  --ring: rgba(88, 240, 255, 0.27);
 
   /* radius scale */
   --r-sm: 10px;
@@ -50,18 +49,18 @@
 @media (prefers-color-scheme: light) {
   :root {
     --bg: #ffffff;
-    --panel: rgba(0, 0, 0, 0.04);
-    --panel-2: rgba(0, 0, 0, 0.06);
-    --border: rgba(0, 0, 0, 0.14);
-    --muted: rgba(0, 0, 0, 0.64);
-    --muted-2: rgba(0, 0, 0, 0.48);
-    --text: rgba(0, 0, 0, 0.92);
-    --ring: rgba(0, 0, 0, 0.18);
+    --panel: rgba(0, 0, 0, 0.05);
+    --panel-2: rgba(0, 0, 0, 0.1);
+    --border: rgba(0, 0, 0, 0.19);
+    --muted: rgba(0, 0, 0, 0.7);
+    --muted-2: rgba(0, 0, 0, 0.52);
+    --text: rgba(0, 0, 0, 0.95);
+    --ring: rgba(0, 0, 0, 0.22);
 
     --accent: #008cff;
     --accent-2: #7b2dff;
 
-    --rarity-common: rgba(0,0,0,0.70);
+    --rarity-common: rgba(0, 0, 0, 0.7);
     --rarity-rare: #006dff;
     --rarity-epic: #7b2dff;
     --rarity-legendary: #b06a00;
@@ -81,18 +80,18 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Fortnite-ish background (more energy) */
+/* Fortnite-ish background (added subtle extra punch, cleaner fade) */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(900px 520px at 50% -10%, rgba(88, 240, 255, 0.12), transparent 60%),
-    radial-gradient(800px 480px at 18% 10%, rgba(184, 92, 255, 0.10), transparent 55%),
-    radial-gradient(900px 520px at 85% 18%, rgba(255, 204, 87, 0.08), transparent 55%),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.02), transparent 35%);
-  opacity: 0.95;
+    radial-gradient(950px 520px at 55% -8%, rgba(88, 240, 255, 0.16) 0%, transparent 60%),
+    radial-gradient(840px 500px at 13% 9%, rgba(184, 92, 255, 0.13) 0%, transparent 60%),
+    radial-gradient(960px 560px at 88% 20%, rgba(255, 204, 87, 0.11) 0%, transparent 60%),
+    linear-gradient(to bottom, rgba(52, 64, 81, 0.03) 0%, transparent 36%);
+  opacity: 0.96;
 }
 
 /* -------------------------
@@ -106,7 +105,7 @@ body::before {
 
   *:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 4px var(--ring);
+    box-shadow: 0 0 0 3px var(--ring);
     border-radius: var(--r-sm);
   }
 }
@@ -117,7 +116,7 @@ body::before {
 @layer components {
   .ui-title {
     @apply text-3xl font-extrabold uppercase;
-    letter-spacing: 0.30em;
+    letter-spacing: 0.3em;
   }
 
   .ui-subtitle {
@@ -126,69 +125,180 @@ body::before {
     color: var(--muted);
   }
 
-  .ui-muted { color: var(--muted); }
-  .ui-subtle { color: var(--muted-2); }
+  .ui-muted {
+    color: var(--muted);
+  }
+  .ui-subtle {
+    color: var(--muted-2);
+  }
 
   .ui-card {
-    background: var(--panel);
+    background: linear-gradient(112deg, var(--panel) 80%, rgba(88, 240, 255, 0.02) 100%);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
-    backdrop-filter: blur(8px);
-    box-shadow: 0 10px 40px rgba(0,0,0,0.22);
+    backdrop-filter: blur(12px) saturate(1.1);
+    box-shadow:
+      0 2px 9px 0 rgba(24, 32, 64, 0.16),
+      0 2px 10px 0 rgba(88, 240, 255, 0.04),
+      0 13px 48px rgba(0, 0, 0, 0.24);
+    transition:
+      box-shadow 160ms cubic-bezier(0.4, 0, 0.2, 1),
+      transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ✅ FIX: transform only on hover (no layout shift on focus) */
+  .ui-card:hover {
+    box-shadow:
+      0 6px 24px 0 rgba(24, 32, 64, 0.22),
+      0 4px 22px 0 rgba(88, 240, 255, 0.08),
+      0 24px 60px rgba(0, 0, 0, 0.25);
+    transform: translateY(-3px) scale(1.012);
+  }
+
+  .ui-card:focus-visible {
+    box-shadow:
+      0 6px 24px 0 rgba(24, 32, 64, 0.22),
+      0 4px 22px 0 rgba(88, 240, 255, 0.08),
+      0 24px 60px rgba(0, 0, 0, 0.25);
+  }
+
+  .ui-card:active {
+    box-shadow:
+      0 2px 10px 0 rgba(24, 32, 64, 0.12),
+      0 2px 10px 0 rgba(88, 240, 255, 0.03),
+      0 13px 32px rgba(0, 0, 0, 0.18);
+    transform: scale(0.98);
   }
 
   .ui-card-strong {
-    background: var(--panel-2);
-    border: 1px solid var(--border);
+    background: linear-gradient(108deg, var(--panel-2) 70%, rgba(184, 92, 255, 0.025) 100%);
+    border: 2px solid var(--border);
     border-radius: var(--r-lg);
-    backdrop-filter: blur(10px);
-    box-shadow: 0 14px 60px rgba(0,0,0,0.26);
+    backdrop-filter: blur(16px) saturate(1.14);
+    box-shadow:
+      0 5px 19px 0 rgba(24, 32, 64, 0.19),
+      0 4px 16px 0 rgba(184, 92, 255, 0.07),
+      0 20px 70px rgba(50, 30, 80, 0.19);
+    transition:
+      box-shadow 160ms cubic-bezier(0.4, 0, 0.2, 1),
+      transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ✅ FIX: transform only on hover */
+  .ui-card-strong:hover {
+    box-shadow:
+      0 12px 36px 0 rgba(88, 240, 255, 0.12),
+      0 10px 38px 0 rgba(184, 92, 255, 0.07),
+      0 40px 100px rgba(50, 30, 80, 0.2);
+    transform: translateY(-3px) scale(1.014);
+  }
+
+  .ui-card-strong:focus-visible {
+    box-shadow:
+      0 12px 36px 0 rgba(88, 240, 255, 0.12),
+      0 10px 38px 0 rgba(184, 92, 255, 0.07),
+      0 40px 100px rgba(50, 30, 80, 0.2);
+  }
+
+  .ui-card-strong:active {
+    box-shadow:
+      0 6px 15px 0 rgba(88, 240, 255, 0.08),
+      0 8px 18px 0 rgba(184, 92, 255, 0.04),
+      0 12px 40px rgba(50, 30, 80, 0.17);
+    transform: scale(0.983);
   }
 
   .ui-pill {
     @apply inline-flex items-center justify-center;
     border: 1px solid var(--border);
     border-radius: 999px;
-    padding: 6px 12px;
-    font-size: 12px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
     color: var(--muted);
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.1);
+
+    /* ✅ FIX: real glass blur */
+    backdrop-filter: blur(10px);
+
+    text-shadow: 0 1px 3px rgba(30, 40, 70, 0.1);
+    letter-spacing: 0.08em;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.09);
+    transition: box-shadow 120ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .ui-btn {
     @apply inline-flex items-center justify-center gap-2;
     border: 1px solid var(--border);
     border-radius: 999px;
-    padding: 11px 18px;
-    font-size: 14px;
+    padding: 12px 22px;
+    font-size: 15px;
+    font-weight: 700;
     color: var(--text);
-    background: rgba(255, 255, 255, 0.05);
-    transition: transform 140ms ease, background 140ms ease, opacity 140ms ease, box-shadow 140ms ease;
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+    transition:
+      transform 140ms cubic-bezier(0.4, 0, 0.2, 1),
+      background 140ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 140ms cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 140ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .ui-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(88, 240, 255, 0.1);
+    box-shadow: 0 5px 19px rgba(88, 240, 255, 0.13);
   }
 
   .ui-btn:active {
-    transform: translateY(1px);
+    transform: translateY(1px) scale(0.98);
   }
 
   .ui-btn:disabled {
-    opacity: 0.55;
+    opacity: 0.54;
     cursor: not-allowed;
+    filter: grayscale(0.25);
   }
 
   /* Fortnite-ish primary */
   .ui-btn-primary {
-    border-color: rgba(88, 240, 255, 0.40);
-    background: linear-gradient(90deg, rgba(88,240,255,0.18), rgba(184,92,255,0.14));
-    box-shadow: 0 16px 55px rgba(88,240,255,0.08);
+    border-color: #58f0ff;
+    color: #101825;
+    background: linear-gradient(
+      97deg,
+      rgba(88, 240, 255, 0.87) 0%,
+      rgba(138, 210, 255, 0.95) 64%,
+      rgba(184, 92, 255, 0.92) 100%
+    );
+    box-shadow:
+      0 7px 26px 0 rgba(88, 240, 255, 0.15),
+      0 2px 8px rgba(88, 240, 255, 0.13),
+      0 0.5px 4px 0 rgba(184, 92, 255, 0.075);
+    text-shadow: 0 0.5px 3.5px rgba(88, 240, 255, 0.14);
+    letter-spacing: 0.09em;
+    transition:
+      background 120ms cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 130ms cubic-bezier(0.4, 0, 0.2, 1),
+      color 100ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .ui-btn-primary:hover {
-    background: linear-gradient(90deg, rgba(88,240,255,0.24), rgba(184,92,255,0.18));
-    box-shadow: 0 18px 70px rgba(88,240,255,0.10);
+    background: linear-gradient(
+      97deg,
+      rgba(88, 240, 255, 1) 0%,
+      rgba(138, 210, 255, 1) 64%,
+      rgba(184, 92, 255, 1) 100%
+    );
+    box-shadow:
+      0 14px 44px 0 rgba(88, 240, 255, 0.21),
+      0 8px 24px rgba(184, 92, 255, 0.15);
+    filter: brightness(1.04);
+  }
+
+  .ui-btn-primary:active {
+    filter: brightness(0.98);
+    box-shadow:
+      0 3px 10px rgba(88, 240, 255, 0.15),
+      0 1.5px 6px rgba(184, 92, 255, 0.07);
   }
 
   .ui-btn-ghost {
@@ -213,14 +323,25 @@ body::before {
 
   .ui-progress > div {
     height: 100%;
-    background: linear-gradient(90deg, rgba(88,240,255,0.95), rgba(184,92,255,0.90));
+    background: linear-gradient(90deg, rgba(88, 240, 255, 0.95), rgba(184, 92, 255, 0.9));
   }
 
   /* Rarity helpers */
-  .ui-rarity-common { border-color: rgba(255,255,255,0.20); }
-  .ui-rarity-rare { border-color: rgba(74,163,255,0.38); box-shadow: 0 16px 60px rgba(74,163,255,0.10); }
-  .ui-rarity-epic { border-color: rgba(178,92,255,0.40); box-shadow: 0 18px 70px rgba(178,92,255,0.12); }
-  .ui-rarity-legendary { border-color: rgba(255,204,87,0.45); box-shadow: 0 20px 80px rgba(255,204,87,0.12); }
+  .ui-rarity-common {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  .ui-rarity-rare {
+    border-color: rgba(74, 163, 255, 0.38);
+    box-shadow: 0 16px 60px rgba(74, 163, 255, 0.1);
+  }
+  .ui-rarity-epic {
+    border-color: rgba(178, 92, 255, 0.4);
+    box-shadow: 0 18px 70px rgba(178, 92, 255, 0.12);
+  }
+  .ui-rarity-legendary {
+    border-color: rgba(255, 204, 87, 0.45);
+    box-shadow: 0 20px 80px rgba(255, 204, 87, 0.12);
+  }
 }
 
 /* -------------------------
@@ -230,42 +351,4 @@ body::before {
   .text-696 {
     letter-spacing: 0.35em;
   }
-}
-
-/* Lightweight animations (safe) */
-@keyframes wiggle {
-  0% { transform: translateX(0) rotate(0deg); }
-  25% { transform: translateX(-2px) rotate(-1deg); }
-  50% { transform: translateX(2px) rotate(1deg); }
-  75% { transform: translateX(-1px) rotate(-1deg); }
-  100% { transform: translateX(0) rotate(0deg); }
-}
-
-@keyframes popIn {
-  0% { transform: translateY(6px) scale(0.985); opacity: 0; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
-}
-
-@keyframes bannerPop {
-  0% { transform: translate(-50%, -6px) scale(0.98); opacity: 0; }
-  12% { opacity: 1; }
-  60% { opacity: 1; }
-  100% { transform: translate(-50%, -14px) scale(1); opacity: 0; }
-}
-
-@keyframes shineSweep {
-  0% { transform: translateX(-30%) skewY(-10deg); opacity: 0; }
-  15% { opacity: 0.25; }
-  100% { transform: translateX(120%) skewY(-10deg); opacity: 0; }
-}
-
-@keyframes confettiFloat {
-  0% { transform: translateY(0) scale(1); opacity: 0; }
-  25% { opacity: 0.55; }
-  100% { transform: translateY(90px) scale(0.85); opacity: 0; }
-}
-
-@keyframes invModalIn {
-  0% { transform: translateY(8px) scale(0.99); opacity: 0; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
 }
