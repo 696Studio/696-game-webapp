@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export async function POST(request: Request) {
   try {
@@ -17,7 +18,9 @@ export async function POST(request: Request) {
     const requestIdRaw =
       typeof body.requestId === "string" ? body.requestId.trim() : "";
     const requestId =
-      requestIdRaw || (globalThis.crypto?.randomUUID?.() ?? `req_${Date.now()}_${Math.random()}`);
+      requestIdRaw ||
+      (globalThis.crypto?.randomUUID?.() ??
+        `req_${Date.now()}_${Math.random()}`);
 
     if (!telegramId) {
       return NextResponse.json({ error: "telegramId is required" }, { status: 400 });
@@ -42,7 +45,10 @@ export async function POST(request: Request) {
     }
 
     if (!user) {
-      return NextResponse.json({ error: "User not found (auth required)" }, { status: 401 });
+      return NextResponse.json(
+        { error: "User not found (auth required)" },
+        { status: 401 }
+      );
     }
 
     // Баланс: можно создать
@@ -62,7 +68,7 @@ export async function POST(request: Request) {
     let balance = balanceRow;
 
     if (!balance) {
-      const { data: newBalance, error: createBalError } = await supabase
+      const { data: newBalance, error: createBalError } = await supabaseAdmin
         .from("balances")
         .insert({ user_id: user.id, soft_balance: 0, hard_balance: 0 })
         .select("*")
@@ -102,7 +108,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const softBalance = typeof balance.soft_balance === "number" ? balance.soft_balance : 0;
+    const softBalance =
+      typeof balance.soft_balance === "number" ? balance.soft_balance : 0;
 
     if (softBalance < priceSoft) {
       return NextResponse.json(
@@ -140,7 +147,10 @@ export async function POST(request: Request) {
     }
 
     if (!chestItems || chestItems.length === 0) {
-      return NextResponse.json({ error: "Chest has no items configured" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Chest has no items configured" },
+        { status: 500 }
+      );
     }
 
     const availableChestItems = chestItems.filter((ci: any) => {
@@ -154,7 +164,8 @@ export async function POST(request: Request) {
       return true;
     });
 
-    const finalPool = availableChestItems.length > 0 ? availableChestItems : chestItems;
+    const finalPool =
+      availableChestItems.length > 0 ? availableChestItems : chestItems;
 
     const totalWeight = finalPool.reduce(
       (sum: number, ci: any) => sum + (ci.drop_weight || 0),
@@ -183,14 +194,17 @@ export async function POST(request: Request) {
     const selectedItem = (selectedChestItem.item as any) || null;
 
     if (!selectedItem) {
-      return NextResponse.json({ error: "Selected item not found" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Selected item not found" },
+        { status: 500 }
+      );
     }
 
     // списание
     const newSoftBalance = softBalance - priceSoft;
     const nowIso = new Date().toISOString();
 
-    const { error: updateBalanceError } = await supabase
+    const { error: updateBalanceError } = await supabaseAdmin
       .from("balances")
       .update({
         soft_balance: newSoftBalance,
@@ -205,14 +219,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const { error: currencyEventError } = await supabase.from("currency_events").insert({
-      user_id: user.id,
-      type: "spend",
-      source: "chest",
-      currency: "soft",
-      amount: -priceSoft,
-      balance_after: newSoftBalance,
-    });
+    const { error: currencyEventError } = await supabaseAdmin
+      .from("currency_events")
+      .insert({
+        user_id: user.id,
+        type: "spend",
+        source: "chest",
+        currency: "soft",
+        amount: -priceSoft,
+        balance_after: newSoftBalance,
+      });
 
     if (currencyEventError) {
       return NextResponse.json(
@@ -222,7 +238,7 @@ export async function POST(request: Request) {
     }
 
     // user_item
-    const { data: newUserItem, error: userItemError } = await supabase
+    const { data: newUserItem, error: userItemError } = await supabaseAdmin
       .from("user_items")
       .insert({
         user_id: user.id,
@@ -239,14 +255,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // total_minted best effort
-    await supabase
+    // total_minted best effort (admin)
+    await supabaseAdmin
       .from("items")
       .update({ total_minted: (selectedItem.total_minted || 0) + 1 })
       .eq("id", selectedItem.id);
 
-    // spins log
-    const { error: spinError } = await supabase.from("chest_spins").insert({
+    // spins log (admin)
+    const { error: spinError } = await supabaseAdmin.from("chest_spins").insert({
       user_id: user.id,
       chest_id: chest.id,
       cost_soft: priceSoft,
@@ -275,33 +291,50 @@ export async function POST(request: Request) {
     }
 
     const totalPowerAfter =
-      userItems?.reduce((sum: number, ui: any) => sum + (ui.item?.power_value || 0), 0) ?? 0;
+      userItems?.reduce(
+        (sum: number, ui: any) => sum + (ui.item?.power_value || 0),
+        0
+      ) ?? 0;
 
     // ✅ delta power (для логов сундука)
     const powerDelta = Number(selectedItem.power_value ?? 0) || 0;
 
-    // ✅ chest_open_events log (idempotent by request_id)
-    const { error: chestOpenEventError } = await supabase.from("chest_open_events").insert({
-      user_id: user.id,
-      telegram_id: telegramId,
-      chest_code: chestCode,
-      spent_soft: priceSoft,
-      spent_hard: priceHard ?? 0,
-      dropped_item_id: selectedItem.id,
-      dropped_inventory_id: newUserItem.id,
-      power_delta: powerDelta,
-      total_power_after: totalPowerAfter,
-      request_id: requestId,
-    });
+    // ✅ chest_open_events log (admin, idempotent)
+    const { error: chestOpenEventError } = await supabaseAdmin
+      .from("chest_open_events")
+      .insert({
+        user_id: user.id,
+        telegram_id: telegramId,
+        chest_code: chestCode,
+        spent_soft: priceSoft,
+        spent_hard: priceHard ?? 0,
+        dropped_item_id: selectedItem.id,
+        dropped_inventory_id: newUserItem.id,
+        power_delta: powerDelta,
+        total_power_after: totalPowerAfter,
+        request_id: requestId,
+      });
 
-    // Если у тебя request_id UNIQUE — повторный запрос может падать duplicate key.
-    // В таком случае можно сделать "мягко": если ошибка unique — просто игнорим.
-    // Но пока оставляю строго (чтобы видеть проблему сразу).
+    // Если request_id UNIQUE — duplicate считаем окей (повторный запрос)
     if (chestOpenEventError) {
-      return NextResponse.json(
-        { error: "Failed to log chest open event", details: chestOpenEventError },
-        { status: 500 }
-      );
+      const msg =
+        (chestOpenEventError as any)?.message ||
+        (chestOpenEventError as any)?.details ||
+        "";
+      const code = (chestOpenEventError as any)?.code;
+
+      const isDuplicate =
+        code === "23505" || // postgres unique_violation
+        String(msg).toLowerCase().includes("duplicate") ||
+        String(msg).toLowerCase().includes("unique");
+
+      if (!isDuplicate) {
+        return NextResponse.json(
+          { error: "Failed to log chest open event", details: chestOpenEventError },
+          { status: 500 }
+        );
+      }
+      // duplicate -> ignore
     }
 
     return NextResponse.json({
@@ -317,7 +350,6 @@ export async function POST(request: Request) {
         hard_balance: balance.hard_balance ?? 0,
       },
       totalPowerAfter,
-      // полезно для дебага/идемпотентности
       requestId,
     });
   } catch (err: any) {
