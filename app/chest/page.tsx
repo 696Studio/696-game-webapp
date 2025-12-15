@@ -51,21 +51,20 @@ type Phase = "idle" | "opening" | "reveal";
 
 function normalizeRarity(rarity: string | null | undefined) {
   const r = String(rarity || "").trim().toLowerCase();
-  if (r === "common" || r === "rare" || r === "epic" || r === "legendary")
-    return r;
+  if (r === "common" || r === "rare" || r === "epic" || r === "legendary") return r;
   return "common";
-}
-
-function rarityBorder(r: string | null | undefined) {
-  const rr = normalizeRarity(r);
-  if (rr === "legendary") return "border-[rgba(255,255,255,0.34)]";
-  if (rr === "epic") return "border-[rgba(255,255,255,0.28)]";
-  if (rr === "rare") return "border-[rgba(255,255,255,0.22)]";
-  return "border-[color:var(--border)]";
 }
 
 function rarityLabel(r: string | null | undefined) {
   return String(r || "").trim().toUpperCase() || "COMMON";
+}
+
+function rarityFxClass(r: string | null | undefined) {
+  const rr = normalizeRarity(r);
+  if (rr === "legendary") return "ui-rarity-legendary";
+  if (rr === "epic") return "ui-rarity-epic";
+  if (rr === "rare") return "ui-rarity-rare";
+  return "ui-rarity-common";
 }
 
 type RarityFx = "none" | "rare" | "epic" | "legendary";
@@ -84,6 +83,13 @@ function rarityBannerText(fx: RarityFx) {
   return "";
 }
 
+function fxColor(fx: RarityFx) {
+  if (fx === "legendary") return "var(--rarity-legendary)";
+  if (fx === "epic") return "var(--rarity-epic)";
+  if (fx === "rare") return "var(--rarity-rare)";
+  return "var(--rarity-common)";
+}
+
 export default function ChestPage() {
   const {
     telegramId,
@@ -95,36 +101,28 @@ export default function ChestPage() {
     refreshSession,
   } = useGameSessionContext() as any;
 
-  // ✅ grace delay
   const [showGate, setShowGate] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setShowGate(true), 1200);
     return () => clearTimeout(t);
   }, []);
 
-  // локальный override — чтобы обновлять данные после открытия сундука
   const [overrideBootstrap, setOverrideBootstrap] = useState<any | null>(null);
 
   const [result, setResult] = useState<ChestResponse | null>(null);
   const [opening, setOpening] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // UX-only phase (doesn't affect backend)
   const [phase, setPhase] = useState<Phase>("idle");
-  const [fxSeed, setFxSeed] = useState(0); // re-trigger FX per reveal
+  const [fxSeed, setFxSeed] = useState(0);
   const revealTimerRef = useRef<number | null>(null);
 
-  const core = useMemo(() => unwrapCore(overrideBootstrap || bootstrap), [
-    overrideBootstrap,
-    bootstrap,
-  ]);
-
+  const core = useMemo(() => unwrapCore(overrideBootstrap || bootstrap), [overrideBootstrap, bootstrap]);
   const hasCore = !!core;
 
   const soft = core?.balance?.soft_balance ?? 0;
   const hard = core?.balance?.hard_balance ?? 0;
   const totalPower = core?.totalPower ?? 0;
-
   const canAfford = soft >= CHEST_COST_SHARDS;
 
   async function refreshBootstrap(effectiveTelegramId: string) {
@@ -138,7 +136,6 @@ export default function ChestPage() {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Bootstrap refresh failed");
-
       setOverrideBootstrap(data);
     } finally {
       setRefreshing(false);
@@ -152,11 +149,9 @@ export default function ChestPage() {
     refreshSession?.();
   };
 
-  // reveal coordinator: wait for both fetch + animation
   async function openChestWithReveal() {
     if (!telegramId) return;
 
-    // ✅ pre-check (без запроса)
     if (!canAfford) {
       setResult({ error: "Insufficient funds", code: "INSUFFICIENT_FUNDS" });
       setPhase("reveal");
@@ -164,7 +159,6 @@ export default function ChestPage() {
       return;
     }
 
-    // reset previous
     if (revealTimerRef.current) {
       window.clearTimeout(revealTimerRef.current);
       revealTimerRef.current = null;
@@ -174,7 +168,6 @@ export default function ChestPage() {
     setResult(null);
     setPhase("opening");
 
-    // animation duration (UI only)
     const minRevealMs = 1200;
 
     const animDone = new Promise<void>((resolve) => {
@@ -199,8 +192,6 @@ export default function ChestPage() {
         setResult(data);
 
         if (!res.ok) return;
-
-        // ✅ после открытия сундука обновляем bootstrap
         await refreshBootstrap(telegramId);
       } catch (e) {
         console.error(e);
@@ -208,7 +199,6 @@ export default function ChestPage() {
       }
     })();
 
-    // wait both
     await Promise.all([animDone, fetchDone]);
 
     setOpening(false);
@@ -234,21 +224,17 @@ export default function ChestPage() {
     };
   }, []);
 
-  // честно: только Telegram
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Open in Telegram</div>
-          <div className="text-sm ui-subtle">
-            This page works only inside Telegram WebApp.
-          </div>
+          <div className="text-sm ui-subtle">This page works only inside Telegram WebApp.</div>
         </div>
       </main>
     );
   }
 
-  // ✅ gate с задержкой
   if (!hasCore) {
     if (!showGate || loading) {
       return (
@@ -289,7 +275,6 @@ export default function ChestPage() {
               <button onClick={handleResync} className="ui-btn ui-btn-primary w-full">
                 Re-sync
               </button>
-
               <div className="text-[11px] ui-subtle text-center">
                 If it keeps failing, reopen the Mini App from the bot menu.
               </div>
@@ -328,19 +313,13 @@ export default function ChestPage() {
   const showReveal = phase === "reveal" && !!result;
   const fx = drop ? rarityFx(drop.rarity) : "none";
 
-  // FX intensities (no colors, just white light layers)
-  const auraOpacity =
-    fx === "legendary" ? 0.28 : fx === "epic" ? 0.18 : fx === "rare" ? 0.12 : 0;
-
-  const confettiCount =
-    fx === "legendary" ? 16 : fx === "epic" ? 10 : fx === "rare" ? 6 : 0;
-
+  const auraOpacity = fx === "legendary" ? 0.26 : fx === "epic" ? 0.18 : fx === "rare" ? 0.12 : 0;
+  const confettiCount = fx === "legendary" ? 18 : fx === "epic" ? 12 : fx === "rare" ? 7 : 0;
   const bannerText = rarityBannerText(fx);
 
   return (
     <main className="min-h-screen flex flex-col items-center pt-10 px-4 pb-24">
       <div className="w-full max-w-3xl">
-        {/* Header */}
         <div className="flex items-start justify-between mb-5">
           <div>
             <h1 className="ui-title text-696">696 Chest</h1>
@@ -352,7 +331,6 @@ export default function ChestPage() {
           </button>
         </div>
 
-        {/* Stats */}
         <div className="ui-grid grid-cols-2 mb-5">
           <div className="ui-card p-4">
             <div className="ui-subtitle">Balance</div>
@@ -364,21 +342,16 @@ export default function ChestPage() {
               <span className="ui-subtle">Crystals</span>
               <span className="font-semibold tabular-nums">{hard}</span>
             </div>
-            {refreshing && (
-              <div className="mt-3 text-[11px] ui-subtle">Syncing...</div>
-            )}
+            {refreshing && <div className="mt-3 text-[11px] ui-subtle">Syncing...</div>}
           </div>
 
           <div className="ui-card p-4">
             <div className="ui-subtitle">Total Power</div>
-            <div className="text-3xl font-semibold mt-3 tabular-nums">
-              {totalPower}
-            </div>
+            <div className="text-3xl font-semibold mt-3 tabular-nums">{totalPower}</div>
             <div className="text-xs ui-subtle mt-2">Updated after each drop.</div>
           </div>
         </div>
 
-        {/* Chest panel */}
         <div className="ui-card p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -395,19 +368,23 @@ export default function ChestPage() {
             </span>
           </div>
 
-          {/* Visual chest */}
           <div className="mt-5 flex justify-center">
-            <div className="w-full max-w-sm h-44 rounded-[var(--r-xl)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.03)] flex items-center justify-center relative overflow-hidden">
-              <div className="pointer-events-none absolute inset-0 opacity-70 [background:radial-gradient(600px_260px_at_50%_-20%,rgba(255,255,255,0.10),transparent_60%)]" />
+            <div className="w-full max-w-sm h-44 rounded-[var(--r-xl)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.04)] flex items-center justify-center relative overflow-hidden">
+              <div
+                className="pointer-events-none absolute inset-0 opacity-90"
+                style={{
+                  background:
+                    "radial-gradient(680px 280px at 50% -15%, rgba(88,240,255,0.16), transparent 60%), radial-gradient(680px 280px at 50% 115%, rgba(184,92,255,0.12), transparent 60%)",
+                }}
+              />
 
               <div className="relative z-10 text-center">
                 <div
                   className={[
-                    "mx-auto w-28 h-28 rounded-[var(--r-lg)] border border-[rgba(255,255,255,0.16)]",
-                    "bg-[rgba(0,0,0,0.25)] flex items-center justify-center",
-                    phase === "opening"
-                      ? "motion-safe:animate-[wiggle_180ms_ease-in-out_infinite]"
-                      : "",
+                    "mx-auto w-28 h-28 rounded-[var(--r-lg)] border border-[rgba(255,255,255,0.18)]",
+                    "bg-[rgba(0,0,0,0.28)] flex items-center justify-center",
+                    "shadow-[0_12px_55px_rgba(0,0,0,0.35)]",
+                    phase === "opening" ? "motion-safe:animate-[wiggle_180ms_ease-in-out_infinite]" : "",
                   ].join(" ")}
                 >
                   <div className="text-[11px] ui-subtle px-3">
@@ -421,7 +398,7 @@ export default function ChestPage() {
 
                 {phase === "opening" && (
                   <div className="mt-3 ui-progress">
-                    <div className="w-2/3 opacity-80 animate-pulse" />
+                    <div className="w-2/3 opacity-90 animate-pulse" />
                   </div>
                 )}
               </div>
@@ -436,9 +413,7 @@ export default function ChestPage() {
                 <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span>{" "}
                 more Shards to open this chest.
               </div>
-              <a href="/" className="ui-btn ui-btn-ghost mt-3">
-                Go to Home
-              </a>
+              <a href="/" className="ui-btn ui-btn-ghost mt-3">Go to Home</a>
             </div>
           )}
 
@@ -461,34 +436,27 @@ export default function ChestPage() {
           </div>
         </div>
 
-        {/* Result / Reveal */}
         {showReveal && (
           <div className="mt-5 ui-card p-5 relative overflow-hidden">
-            {/* Banner (legendary/epic/rare only) */}
             {fx !== "none" && !isError && drop && (
               <div
                 key={`banner-${fxSeed}`}
                 className={[
                   "pointer-events-none absolute left-1/2 -translate-x-1/2 top-4",
-                  "px-4 py-2 rounded-full border border-[rgba(255,255,255,0.28)]",
+                  "px-4 py-2 rounded-full border",
                   "bg-[rgba(0,0,0,0.35)] backdrop-blur",
                   "text-[11px] tracking-[0.28em] uppercase",
                   "motion-safe:animate-[bannerPop_780ms_ease-out_1]",
                 ].join(" ")}
                 style={{
-                  boxShadow:
-                    fx === "legendary"
-                      ? "0 16px 60px rgba(255,255,255,0.06)"
-                      : fx === "epic"
-                      ? "0 14px 48px rgba(255,255,255,0.05)"
-                      : "0 10px 40px rgba(255,255,255,0.04)",
+                  borderColor: fxColor(fx),
+                  boxShadow: `0 18px 80px color-mix(in srgb, ${fxColor(fx)} 20%, transparent)`,
                 }}
               >
                 {bannerText}
               </div>
             )}
 
-            {/* FX layers */}
             {fx !== "none" && !isError && drop && (
               <>
                 <div
@@ -496,8 +464,8 @@ export default function ChestPage() {
                   className="pointer-events-none absolute inset-0"
                   style={{
                     opacity: auraOpacity,
-                    background:
-                      "radial-gradient(520px 260px at 50% 20%, rgba(255,255,255,0.35), transparent 60%), radial-gradient(720px 360px at 50% 110%, rgba(255,255,255,0.22), transparent 60%)",
+                    background: `radial-gradient(540px 260px at 50% 20%, color-mix(in srgb, ${fxColor(fx)} 65%, white 10%), transparent 60%),
+                                radial-gradient(820px 420px at 50% 115%, color-mix(in srgb, ${fxColor(fx)} 45%, transparent), transparent 60%)`,
                   }}
                 />
 
@@ -505,33 +473,28 @@ export default function ChestPage() {
                   key={`shine-${fxSeed}`}
                   className="pointer-events-none absolute -inset-x-10 top-[-60px] h-48 opacity-[0.22] motion-safe:animate-[shineSweep_900ms_ease-out_1]"
                   style={{
-                    background:
-                      "linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent)",
+                    background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.70), transparent)",
                     transform: "skewY(-10deg)",
                   }}
                 />
 
-                <div
-                  key={`confetti-${fxSeed}`}
-                  className="pointer-events-none absolute inset-0 overflow-hidden"
-                >
+                <div key={`confetti-${fxSeed}`} className="pointer-events-none absolute inset-0 overflow-hidden">
                   {Array.from({ length: confettiCount }).map((_, i) => {
                     const left = (i * (100 / Math.max(1, confettiCount))) % 100;
                     const delay = (i % 6) * 70;
                     const size = i % 3 === 0 ? 6 : i % 3 === 1 ? 4 : 3;
-                    const opacity =
-                      fx === "legendary" ? 0.55 : fx === "epic" ? 0.42 : 0.32;
 
                     return (
                       <span
                         key={i}
-                        className="absolute rounded-full bg-white"
+                        className="absolute rounded-full"
                         style={{
                           left: `${left}%`,
                           top: `${10 + (i % 5) * 10}%`,
                           width: `${size}px`,
                           height: `${size}px`,
-                          opacity,
+                          opacity: 0.6,
+                          backgroundColor: fxColor(fx),
                           filter: "blur(0.2px)",
                           animation: `confettiFloat 900ms ease-out ${delay}ms 1`,
                         }}
@@ -552,32 +515,18 @@ export default function ChestPage() {
                 </div>
               </div>
             ) : drop ? (
-              <div
-                key={`reveal-${fxSeed}`}
-                className="text-center motion-safe:animate-[popIn_260ms_ease-out_1]"
-              >
+              <div key={`reveal-${fxSeed}`} className="text-center motion-safe:animate-[popIn_260ms_ease-out_1]">
                 <div className="ui-subtitle mb-2">Drop</div>
 
                 <div
                   className={[
-                    "mx-auto w-28 h-28 rounded-[var(--r-xl)] border bg-[rgba(255,255,255,0.03)] overflow-hidden",
-                    rarityBorder(drop.rarity),
-                    fx === "legendary"
-                      ? "shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_18px_70px_rgba(255,255,255,0.06)]"
-                      : fx === "epic"
-                      ? "shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_14px_55px_rgba(255,255,255,0.05)]"
-                      : fx === "rare"
-                      ? "shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_10px_40px_rgba(255,255,255,0.04)]"
-                      : "",
+                    "mx-auto w-28 h-28 rounded-[var(--r-xl)] border bg-[rgba(255,255,255,0.04)] overflow-hidden",
+                    rarityFxClass(drop.rarity),
                   ].join(" ")}
                 >
                   {drop.image_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={drop.image_url}
-                      alt={drop.name}
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={drop.image_url} alt={drop.name} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <div className="text-[11px] ui-subtle">NO IMAGE</div>
@@ -588,30 +537,24 @@ export default function ChestPage() {
                 <div className="mt-4 text-lg font-semibold">{drop.name}</div>
 
                 <div className="mt-1 flex items-center justify-center gap-2 flex-wrap">
-                  <span className="ui-pill">{rarityLabel(drop.rarity)}</span>
+                  <span className="ui-pill" style={{ borderColor: fxColor(fx), color: "var(--text)" }}>
+                    {rarityLabel(drop.rarity)}
+                  </span>
                   <span className="ui-pill">
                     POWER{" "}
-                    <span className="ml-1 font-semibold tabular-nums">
-                      {drop.power_value}
-                    </span>
+                    <span className="ml-1 font-semibold tabular-nums">{drop.power_value}</span>
                   </span>
                 </div>
 
                 <div className="mt-3 text-xs ui-subtle">
                   Total Power after drop:{" "}
                   <span className="text-[color:var(--text)] font-semibold tabular-nums">
-                    {typeof result?.totalPowerAfter === "number"
-                      ? result.totalPowerAfter
-                      : totalPower}
+                    {typeof result?.totalPowerAfter === "number" ? result.totalPowerAfter : totalPower}
                   </span>
                 </div>
 
                 <div className="mt-5 flex gap-3 justify-center flex-wrap">
-                  <button
-                    onClick={handleOpenAgain}
-                    disabled={opening || !canAfford}
-                    className="ui-btn ui-btn-primary"
-                  >
+                  <button onClick={handleOpenAgain} disabled={opening || !canAfford} className="ui-btn ui-btn-primary">
                     {opening ? "Opening..." : "Open again"}
                   </button>
 
@@ -622,11 +565,7 @@ export default function ChestPage() {
 
                 {!canAfford && (
                   <div className="mt-3 text-[11px] ui-subtle">
-                    Need{" "}
-                    <span className="font-semibold tabular-nums">
-                      {CHEST_COST_SHARDS - soft}
-                    </span>{" "}
-                    more Shards to open again.
+                    Need <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span> more Shards.
                   </div>
                 )}
               </div>
@@ -634,36 +573,6 @@ export default function ChestPage() {
           </div>
         )}
       </div>
-
-      <style jsx global>{`
-        @keyframes wiggle {
-          0% { transform: translateX(0) rotate(0deg); }
-          25% { transform: translateX(-2px) rotate(-1deg); }
-          50% { transform: translateX(2px) rotate(1deg); }
-          75% { transform: translateX(-1px) rotate(-1deg); }
-          100% { transform: translateX(0) rotate(0deg); }
-        }
-        @keyframes shineSweep {
-          0% { transform: translateX(-30%) skewY(-10deg); opacity: 0; }
-          15% { opacity: 0.25; }
-          100% { transform: translateX(120%) skewY(-10deg); opacity: 0; }
-        }
-        @keyframes popIn {
-          0% { transform: translateY(6px) scale(0.985); opacity: 0; }
-          100% { transform: translateY(0) scale(1); opacity: 1; }
-        }
-        @keyframes confettiFloat {
-          0% { transform: translateY(0) scale(1); opacity: 0; }
-          25% { opacity: 0.55; }
-          100% { transform: translateY(90px) scale(0.85); opacity: 0; }
-        }
-        @keyframes bannerPop {
-          0% { transform: translate(-50%, -6px) scale(0.98); opacity: 0; }
-          12% { opacity: 1; }
-          60% { opacity: 1; }
-          100% { transform: translate(-50%, -14px) scale(1); opacity: 0; }
-        }
-      `}</style>
     </main>
   );
 }

@@ -17,17 +17,9 @@ type InventoryItem = {
   };
 };
 
-type RarityStats = {
-  common?: number;
-  rare?: number;
-  epic?: number;
-  legendary?: number;
-};
-
 type InventoryResponse = {
   items?: InventoryItem[];
   totalPower?: number;
-  rarityStats?: RarityStats;
   error?: string;
 };
 
@@ -58,8 +50,7 @@ type SortMode = "power_desc" | "power_asc" | "newest";
 
 function normalizeRarity(rarity: string | null | undefined): RarityFilter {
   const r = String(rarity || "").trim().toLowerCase();
-  if (r === "common" || r === "rare" || r === "epic" || r === "legendary")
-    return r;
+  if (r === "common" || r === "rare" || r === "epic" || r === "legendary") return r;
   return "common";
 }
 
@@ -67,13 +58,20 @@ function rarityLabel(r: string | null | undefined) {
   return String(r || "").trim().toUpperCase() || "COMMON";
 }
 
-function rarityBorder(r: string | null | undefined) {
+function rarityFxClass(r: string | null | undefined) {
   const rr = normalizeRarity(r);
-  // subtle but visible — no neon
-  if (rr === "legendary") return "border-[rgba(255,255,255,0.32)]";
-  if (rr === "epic") return "border-[rgba(255,255,255,0.26)]";
-  if (rr === "rare") return "border-[rgba(255,255,255,0.22)]";
-  return "border-[color:var(--border)]";
+  if (rr === "legendary") return "ui-rarity-legendary";
+  if (rr === "epic") return "ui-rarity-epic";
+  if (rr === "rare") return "ui-rarity-rare";
+  return "ui-rarity-common";
+}
+
+function rarityColorVar(r: string | null | undefined) {
+  const rr = normalizeRarity(r);
+  if (rr === "legendary") return "var(--rarity-legendary)";
+  if (rr === "epic") return "var(--rarity-epic)";
+  if (rr === "rare") return "var(--rarity-rare)";
+  return "var(--rarity-common)";
 }
 
 function formatCompact(n: number) {
@@ -108,7 +106,6 @@ export default function InventoryPage() {
     refreshSession,
   } = useGameSessionContext() as any;
 
-  // ---------- hooks MUST be before any return ----------
   const core = useMemo(() => unwrapCore(bootstrap), [bootstrap]);
   const hasCore = !!core;
 
@@ -118,10 +115,8 @@ export default function InventoryPage() {
   const [rarityFilter, setRarityFilter] = useState<RarityFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("power_desc");
 
-  // ✅ modal state (Inventory v2)
   const [selected, setSelected] = useState<InventoryItem | null>(null);
 
-  // grace delay for gate UI
   const [showGate, setShowGate] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setShowGate(true), 900);
@@ -134,7 +129,6 @@ export default function InventoryPage() {
     refreshSession?.();
   };
 
-  // load inventory when telegramId available
   useEffect(() => {
     if (!telegramId) return;
 
@@ -143,14 +137,9 @@ export default function InventoryPage() {
     async function loadInventory() {
       try {
         setLoading(true);
-
-        const res = await fetch(
-          `/api/inventory?telegram_id=${encodeURIComponent(telegramId)}`
-        );
-
+        const res = await fetch(`/api/inventory?telegram_id=${encodeURIComponent(telegramId)}`);
         const data: InventoryResponse = await res.json();
         if (cancelled) return;
-
         setInventory(data);
       } catch (err) {
         console.error("Inventory load error:", err);
@@ -167,10 +156,9 @@ export default function InventoryPage() {
     };
   }, [telegramId]);
 
-  // lock body scroll when modal open (prevents iOS bounce)
+  // lock scroll when modal open
   useEffect(() => {
     if (!selected) return;
-
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -185,20 +173,15 @@ export default function InventoryPage() {
     };
   }, [selected]);
 
-  // derived values (SAFE even if data not ready yet)
   const items: InventoryItem[] = inventory?.items ?? [];
   const totalPower =
-    typeof inventory?.totalPower === "number"
-      ? inventory.totalPower
-      : core?.totalPower ?? 0;
+    typeof inventory?.totalPower === "number" ? inventory.totalPower : core?.totalPower ?? 0;
 
   const filteredSortedItems = useMemo(() => {
     const base =
       rarityFilter === "all"
         ? items
-        : items.filter(
-            (ui) => normalizeRarity(ui.item?.rarity) === rarityFilter
-          );
+        : items.filter((ui) => normalizeRarity(ui.item?.rarity) === rarityFilter);
 
     const copy = [...base];
 
@@ -227,11 +210,10 @@ export default function InventoryPage() {
     { key: "legendary", label: "Legendary" },
   ];
 
-  // active class helpers (UI only)
   const pillBase =
     "ui-pill transition-transform duration-150 active:translate-y-[1px]";
   const pillActive =
-    "border-[rgba(255,255,255,0.38)] text-[color:var(--text)] bg-[rgba(255,255,255,0.07)]";
+    "border-[rgba(255,255,255,0.40)] text-[color:var(--text)] bg-[rgba(255,255,255,0.08)]";
   const pillIdle = "hover:bg-[rgba(255,255,255,0.06)]";
 
   // ---------- UI ----------
@@ -248,7 +230,6 @@ export default function InventoryPage() {
     );
   }
 
-  // gate (with delay) while core not ready
   if (!hasCore) {
     if (!showGate || sessionLoading) {
       return (
@@ -281,17 +262,12 @@ export default function InventoryPage() {
             {sessionError && (
               <div className="mt-4 p-3 rounded-[var(--r-md)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.03)]">
                 <div className="ui-subtitle mb-1">Details</div>
-                <div className="text-xs break-words">
-                  {String(sessionError)}
-                </div>
+                <div className="text-xs break-words">{String(sessionError)}</div>
               </div>
             )}
 
             <div className="mt-6 flex flex-col gap-3">
-              <button
-                onClick={handleResync}
-                className="ui-btn ui-btn-primary w-full"
-              >
+              <button onClick={handleResync} className="ui-btn ui-btn-primary w-full">
                 Re-sync
               </button>
 
@@ -314,7 +290,6 @@ export default function InventoryPage() {
     );
   }
 
-  // if telegramId not ready yet (rare), keep soft loader
   if (!telegramId) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4">
@@ -331,7 +306,7 @@ export default function InventoryPage() {
 
   return (
     <main className="min-h-screen flex flex-col items-center pt-10 px-4 pb-28">
-      <div className="w-full max-w-4xl">
+      <div className="w-full max-w-5xl">
         {/* Header */}
         <div className="flex items-start justify-between mb-5">
           <div>
@@ -354,24 +329,19 @@ export default function InventoryPage() {
             <div className="text-3xl font-semibold mt-3 tabular-nums">
               {formatCompact(totalPower)}
             </div>
-            <div className="text-xs ui-subtle mt-2">
-              Inventory power (fallback: core power).
-            </div>
+            <div className="text-xs ui-subtle mt-2">Inventory power (fallback: core power).</div>
           </div>
 
           <div className="ui-card p-4">
             <div className="flex items-center justify-between">
               <div className="ui-subtitle">Items</div>
-              <span className="ui-pill">
-                {shownCount}/{items.length}
-              </span>
+              <span className="ui-pill">{shownCount}/{items.length}</span>
             </div>
             <div className="text-3xl font-semibold mt-3 tabular-nums">
               {formatCompact(items.length)}
             </div>
             <div className="text-xs ui-subtle mt-2">
-              Showing:{" "}
-              <span className="text-[color:var(--text)]">{shownCount}</span>
+              Showing: <span className="text-[color:var(--text)]">{shownCount}</span>
             </div>
           </div>
         </div>
@@ -386,9 +356,7 @@ export default function InventoryPage() {
                   <button
                     key={opt.key}
                     onClick={() => setRarityFilter(opt.key)}
-                    className={[pillBase, active ? pillActive : pillIdle].join(
-                      " "
-                    )}
+                    className={[pillBase, active ? pillActive : pillIdle].join(" ")}
                     aria-pressed={active}
                   >
                     {opt.label}
@@ -402,10 +370,7 @@ export default function InventoryPage() {
 
               <button
                 onClick={() => setSortMode("power_desc")}
-                className={[
-                  pillBase,
-                  sortMode === "power_desc" ? pillActive : pillIdle,
-                ].join(" ")}
+                className={[pillBase, sortMode === "power_desc" ? pillActive : pillIdle].join(" ")}
                 aria-pressed={sortMode === "power_desc"}
               >
                 Power ↓
@@ -413,10 +378,7 @@ export default function InventoryPage() {
 
               <button
                 onClick={() => setSortMode("power_asc")}
-                className={[
-                  pillBase,
-                  sortMode === "power_asc" ? pillActive : pillIdle,
-                ].join(" ")}
+                className={[pillBase, sortMode === "power_asc" ? pillActive : pillIdle].join(" ")}
                 aria-pressed={sortMode === "power_asc"}
               >
                 Power ↑
@@ -424,10 +386,7 @@ export default function InventoryPage() {
 
               <button
                 onClick={() => setSortMode("newest")}
-                className={[
-                  pillBase,
-                  sortMode === "newest" ? pillActive : pillIdle,
-                ].join(" ")}
+                className={[pillBase, sortMode === "newest" ? pillActive : pillIdle].join(" ")}
                 aria-pressed={sortMode === "newest"}
               >
                 Newest
@@ -436,11 +395,8 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* status */}
         {loading && (
-          <div className="mb-4 ui-subtle text-sm text-center">
-            Loading items...
-          </div>
+          <div className="mb-4 ui-subtle text-sm text-center">Loading items...</div>
         )}
 
         {inventory?.error && (
@@ -452,7 +408,6 @@ export default function InventoryPage() {
           </div>
         )}
 
-        {/* empty */}
         {!loading && !inventory?.error && filteredSortedItems.length === 0 && (
           <div className="ui-card p-6 text-center">
             <div className="text-lg font-semibold">No items yet</div>
@@ -465,12 +420,12 @@ export default function InventoryPage() {
           </div>
         )}
 
-        {/* grid */}
+        {/* Fortnite-ish loot grid */}
         {filteredSortedItems.length > 0 && (
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+          <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {filteredSortedItems.map((ui) => {
-              const r = normalizeRarity(ui.item?.rarity);
-              const border = rarityBorder(ui.item?.rarity);
+              const rClass = rarityFxClass(ui.item?.rarity);
+              const rColor = rarityColorVar(ui.item?.rarity);
 
               return (
                 <button
@@ -478,72 +433,66 @@ export default function InventoryPage() {
                   type="button"
                   onClick={() => setSelected(ui)}
                   className={[
-                    "ui-card p-3 text-left w-full",
+                    "ui-card p-3 text-left w-full relative overflow-hidden",
                     "transition-transform duration-150 active:translate-y-[1px]",
-                    "hover:bg-[rgba(255,255,255,0.055)]",
-                    border,
+                    "hover:bg-[rgba(255,255,255,0.06)]",
+                    rClass,
                   ].join(" ")}
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  {/* rarity glow */}
+                  <div
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                      background: `radial-gradient(220px 120px at 50% 0%, color-mix(in srgb, ${rColor} 22%, transparent), transparent 60%)`,
+                      opacity: 0.9,
+                    }}
+                  />
+
+                  {/* badge */}
+                  <div className="relative z-10 flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="font-semibold leading-snug truncate">
                         {ui.item.name}
                       </div>
                       <div className="mt-1 text-[11px] ui-subtle">
-                        TYPE:{" "}
-                        <span className="text-[color:var(--text)]">
-                          {String(ui.item.type || "").toUpperCase()}
-                        </span>
+                        {String(ui.item.type || "").toUpperCase()}
                       </div>
                     </div>
 
-                    <span className="ui-pill whitespace-nowrap">
+                    <span
+                      className="ui-pill whitespace-nowrap"
+                      style={{ borderColor: rColor, color: "var(--text)" }}
+                    >
                       {rarityLabel(ui.item.rarity)}
                     </span>
                   </div>
 
-                  {/* preview */}
-                  {ui.item.image_url ? (
-                    <div className="mt-3 rounded-[var(--r-md)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.02)] overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {/* image (square loot tile) */}
+                  <div className="relative z-10 mt-3 rounded-[var(--r-md)] border border-[color:var(--border)] bg-[rgba(0,0,0,0.25)] overflow-hidden aspect-square">
+                    {ui.item.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={ui.item.image_url}
                         alt={ui.item.name}
-                        className="w-full h-28 object-cover"
+                        className="w-full h-full object-cover"
                         loading="lazy"
                       />
-                    </div>
-                  ) : (
-                    <div className="mt-3 h-28 rounded-[var(--r-md)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.02)] flex items-center justify-center">
-                      <div className="text-[11px] ui-subtle">
-                        {r === "legendary"
-                          ? "LEGENDARY DROP"
-                          : r === "epic"
-                          ? "EPIC DROP"
-                          : r === "rare"
-                          ? "RARE DROP"
-                          : "COMMON DROP"}
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <div className="ui-subtitle">No image</div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
-                  <div className="mt-3 flex items-center justify-between">
+                  {/* power */}
+                  <div className="relative z-10 mt-3 flex items-center justify-between">
                     <div className="text-[11px] ui-subtle">POWER</div>
                     <div className="text-base font-semibold tabular-nums">
                       {formatCompact(Number(ui.item.power_value ?? 0))}
                     </div>
                   </div>
 
-                  {ui.obtained_from ? (
-                    <div className="mt-2 text-[11px] ui-subtle">
-                      From:{" "}
-                      <span className="text-[color:var(--text)]">
-                        {String(ui.obtained_from)}
-                      </span>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-2 text-[11px] ui-subtle">
+                  <div className="relative z-10 mt-2 text-[11px] ui-subtle">
                     Tap to preview
                   </div>
                 </button>
@@ -561,30 +510,46 @@ export default function InventoryPage() {
           aria-modal="true"
           aria-label="Item preview"
         >
-          {/* backdrop */}
           <button
             type="button"
             onClick={() => setSelected(null)}
-            className="absolute inset-0 bg-black/70"
+            className="absolute inset-0 bg-black/75"
             aria-label="Close preview"
           />
 
-          {/* panel */}
           <div
             className={[
-              "relative w-full max-w-md ui-card-strong p-4",
-              "rounded-[var(--r-xl)]",
+              "relative w-full max-w-md ui-card-strong p-4 rounded-[var(--r-xl)]",
               "motion-safe:animate-[invModalIn_180ms_ease-out_1]",
-              rarityBorder(selected.item?.rarity),
+              rarityFxClass(selected.item?.rarity),
+              "overflow-hidden",
             ].join(" ")}
           >
-            <div className="flex items-start justify-between gap-3">
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background: `radial-gradient(520px 260px at 50% 0%, color-mix(in srgb, ${rarityColorVar(
+                  selected.item?.rarity
+                )} 18%, transparent), transparent 62%)`,
+                opacity: 0.95,
+              }}
+            />
+
+            <div className="relative z-10 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-lg font-semibold truncate">
                   {selected.item.name}
                 </div>
                 <div className="mt-1 flex items-center gap-2 flex-wrap">
-                  <span className="ui-pill">{rarityLabel(selected.item.rarity)}</span>
+                  <span
+                    className="ui-pill"
+                    style={{
+                      borderColor: rarityColorVar(selected.item?.rarity),
+                      color: "var(--text)",
+                    }}
+                  >
+                    {rarityLabel(selected.item.rarity)}
+                  </span>
                   <span className="ui-pill">
                     {String(selected.item.type || "").toUpperCase()}
                   </span>
@@ -600,24 +565,22 @@ export default function InventoryPage() {
               </button>
             </div>
 
-            {/* image */}
-            {selected.item.image_url ? (
-              <div className="mt-4 rounded-[var(--r-lg)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.02)] overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+            <div className="relative z-10 mt-4 rounded-[var(--r-lg)] border border-[color:var(--border)] bg-[rgba(0,0,0,0.25)] overflow-hidden aspect-square">
+              {selected.item.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={selected.item.image_url}
                   alt={selected.item.name}
-                  className="w-full h-56 object-cover"
+                  className="w-full h-full object-cover"
                 />
-              </div>
-            ) : (
-              <div className="mt-4 h-56 rounded-[var(--r-lg)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.02)] flex items-center justify-center">
-                <div className="ui-subtitle">No image</div>
-              </div>
-            )}
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <div className="ui-subtitle">No image</div>
+                </div>
+              )}
+            </div>
 
-            {/* stats */}
-            <div className="mt-4 ui-card p-4">
+            <div className="relative z-10 mt-4 ui-card p-4">
               <div className="flex items-center justify-between">
                 <div className="ui-subtitle">Power</div>
                 <div className="text-2xl font-semibold tabular-nums">
@@ -642,7 +605,7 @@ export default function InventoryPage() {
               </div>
             </div>
 
-            <div className="mt-4 flex gap-2">
+            <div className="relative z-10 mt-4 flex gap-2">
               <a href="/chest" className="ui-btn ui-btn-primary flex-1">
                 Open more
               </a>
@@ -655,13 +618,6 @@ export default function InventoryPage() {
               </button>
             </div>
           </div>
-
-          <style jsx global>{`
-            @keyframes invModalIn {
-              0% { transform: translateY(8px) scale(0.99); opacity: 0; }
-              100% { transform: translateY(0) scale(1); opacity: 1; }
-            }
-          `}</style>
         </div>
       )}
     </main>

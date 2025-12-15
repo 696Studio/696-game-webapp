@@ -1,23 +1,36 @@
 @import "tailwindcss";
 
 /* -------------------------------------------------------
-   696 GAME UI FOUNDATION (Fortnite-ish, minimal, stable)
-   - no heavy effects, just clean dark hierarchy
-   - reusable utility classes via @layer
+   696 GAME UI FOUNDATION (Fortnite-ish, brighter, clean)
+   - slightly more color & punch
+   - still stable / minimal
 -------------------------------------------------------- */
 
 :root {
   --bg: #070709;
-  --panel: rgba(255, 255, 255, 0.035);
-  --panel-2: rgba(255, 255, 255, 0.06);
-  --border: rgba(255, 255, 255, 0.14);
-  --muted: rgba(255, 255, 255, 0.62);
-  --muted-2: rgba(255, 255, 255, 0.45);
-  --text: rgba(255, 255, 255, 0.92);
-  --accent: rgba(255, 255, 255, 0.92);
 
-  /* soft glow for focus only */
-  --ring: rgba(255, 255, 255, 0.18);
+  /* Panels */
+  --panel: rgba(255, 255, 255, 0.045);
+  --panel-2: rgba(255, 255, 255, 0.075);
+
+  /* Borders & text */
+  --border: rgba(255, 255, 255, 0.16);
+  --muted: rgba(255, 255, 255, 0.66);
+  --muted-2: rgba(255, 255, 255, 0.48);
+  --text: rgba(255, 255, 255, 0.94);
+
+  /* Fortnite-ish accents */
+  --accent: #58f0ff;      /* cyan */
+  --accent-2: #b85cff;    /* purple */
+
+  /* Rarity colors */
+  --rarity-common: rgba(255,255,255,0.70);
+  --rarity-rare: #4aa3ff;
+  --rarity-epic: #b25cff;
+  --rarity-legendary: #ffcc57;
+
+  /* focus ring */
+  --ring: rgba(88, 240, 255, 0.22);
 
   /* radius scale */
   --r-sm: 10px;
@@ -43,8 +56,15 @@
     --muted: rgba(0, 0, 0, 0.64);
     --muted-2: rgba(0, 0, 0, 0.48);
     --text: rgba(0, 0, 0, 0.92);
-    --accent: rgba(0, 0, 0, 0.92);
     --ring: rgba(0, 0, 0, 0.18);
+
+    --accent: #008cff;
+    --accent-2: #7b2dff;
+
+    --rarity-common: rgba(0,0,0,0.70);
+    --rarity-rare: #006dff;
+    --rarity-epic: #7b2dff;
+    --rarity-legendary: #b06a00;
   }
 }
 
@@ -61,18 +81,18 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* a subtle “game” background without images */
+/* Fortnite-ish background (more energy) */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(1100px 600px at 50% -10%, rgba(255, 255, 255, 0.06), transparent 60%),
-    radial-gradient(900px 500px at 20% 10%, rgba(255, 255, 255, 0.04), transparent 55%),
-    radial-gradient(900px 500px at 80% 18%, rgba(255, 255, 255, 0.035), transparent 55%),
+    radial-gradient(900px 520px at 50% -10%, rgba(88, 240, 255, 0.12), transparent 60%),
+    radial-gradient(800px 480px at 18% 10%, rgba(184, 92, 255, 0.10), transparent 55%),
+    radial-gradient(900px 520px at 85% 18%, rgba(255, 204, 87, 0.08), transparent 55%),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.02), transparent 35%);
-  opacity: 0.9;
+  opacity: 0.95;
 }
 
 /* -------------------------
@@ -92,19 +112,12 @@ body::before {
 }
 
 /* -------------------------
-   Reusable UI primitives
-   Use these classes in pages:
-   - ui-title
-   - ui-card
-   - ui-pill
-   - ui-btn / ui-btn-primary / ui-btn-ghost
-   - ui-muted / ui-subtle
-   - ui-grid
+   UI Primitives
 -------------------------- */
 @layer components {
   .ui-title {
-    @apply text-3xl font-bold uppercase;
-    letter-spacing: 0.28em;
+    @apply text-3xl font-extrabold uppercase;
+    letter-spacing: 0.30em;
   }
 
   .ui-subtitle {
@@ -113,26 +126,23 @@ body::before {
     color: var(--muted);
   }
 
-  .ui-muted {
-    color: var(--muted);
-  }
-
-  .ui-subtle {
-    color: var(--muted-2);
-  }
+  .ui-muted { color: var(--muted); }
+  .ui-subtle { color: var(--muted-2); }
 
   .ui-card {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
-    backdrop-filter: blur(6px);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.22);
   }
 
   .ui-card-strong {
     background: var(--panel-2);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 14px 60px rgba(0,0,0,0.26);
   }
 
   .ui-pill {
@@ -142,22 +152,22 @@ body::before {
     padding: 6px 12px;
     font-size: 12px;
     color: var(--muted);
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(255, 255, 255, 0.04);
   }
 
   .ui-btn {
     @apply inline-flex items-center justify-center gap-2;
     border: 1px solid var(--border);
     border-radius: 999px;
-    padding: 10px 18px;
+    padding: 11px 18px;
     font-size: 14px;
     color: var(--text);
-    background: rgba(255, 255, 255, 0.04);
-    transition: transform 120ms ease, background 120ms ease, opacity 120ms ease;
+    background: rgba(255, 255, 255, 0.05);
+    transition: transform 140ms ease, background 140ms ease, opacity 140ms ease, box-shadow 140ms ease;
   }
 
   .ui-btn:hover {
-    background: rgba(255, 255, 255, 0.07);
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .ui-btn:active {
@@ -169,12 +179,16 @@ body::before {
     cursor: not-allowed;
   }
 
+  /* Fortnite-ish primary */
   .ui-btn-primary {
-    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(88, 240, 255, 0.40);
+    background: linear-gradient(90deg, rgba(88,240,255,0.18), rgba(184,92,255,0.14));
+    box-shadow: 0 16px 55px rgba(88,240,255,0.08);
   }
 
   .ui-btn-primary:hover {
-    background: rgba(255, 255, 255, 0.16);
+    background: linear-gradient(90deg, rgba(88,240,255,0.24), rgba(184,92,255,0.18));
+    box-shadow: 0 18px 70px rgba(88,240,255,0.10);
   }
 
   .ui-btn-ghost {
@@ -182,18 +196,11 @@ body::before {
   }
 
   .ui-btn-ghost:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.06);
   }
 
   .ui-grid {
     @apply grid gap-4;
-  }
-
-  .ui-kpi {
-    @apply px-4 py-4;
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    background: rgba(255, 255, 255, 0.03);
   }
 
   .ui-progress {
@@ -201,13 +208,19 @@ body::before {
     border-radius: 999px;
     overflow: hidden;
     border: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(255, 255, 255, 0.04);
   }
 
   .ui-progress > div {
     height: 100%;
-    background: rgba(255, 255, 255, 0.88);
+    background: linear-gradient(90deg, rgba(88,240,255,0.95), rgba(184,92,255,0.90));
   }
+
+  /* Rarity helpers */
+  .ui-rarity-common { border-color: rgba(255,255,255,0.20); }
+  .ui-rarity-rare { border-color: rgba(74,163,255,0.38); box-shadow: 0 16px 60px rgba(74,163,255,0.10); }
+  .ui-rarity-epic { border-color: rgba(178,92,255,0.40); box-shadow: 0 18px 70px rgba(178,92,255,0.12); }
+  .ui-rarity-legendary { border-color: rgba(255,204,87,0.45); box-shadow: 0 20px 80px rgba(255,204,87,0.12); }
 }
 
 /* -------------------------
@@ -217,4 +230,42 @@ body::before {
   .text-696 {
     letter-spacing: 0.35em;
   }
+}
+
+/* Lightweight animations (safe) */
+@keyframes wiggle {
+  0% { transform: translateX(0) rotate(0deg); }
+  25% { transform: translateX(-2px) rotate(-1deg); }
+  50% { transform: translateX(2px) rotate(1deg); }
+  75% { transform: translateX(-1px) rotate(-1deg); }
+  100% { transform: translateX(0) rotate(0deg); }
+}
+
+@keyframes popIn {
+  0% { transform: translateY(6px) scale(0.985); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes bannerPop {
+  0% { transform: translate(-50%, -6px) scale(0.98); opacity: 0; }
+  12% { opacity: 1; }
+  60% { opacity: 1; }
+  100% { transform: translate(-50%, -14px) scale(1); opacity: 0; }
+}
+
+@keyframes shineSweep {
+  0% { transform: translateX(-30%) skewY(-10deg); opacity: 0; }
+  15% { opacity: 0.25; }
+  100% { transform: translateX(120%) skewY(-10deg); opacity: 0; }
+}
+
+@keyframes confettiFloat {
+  0% { transform: translateY(0) scale(1); opacity: 0; }
+  25% { opacity: 0.55; }
+  100% { transform: translateY(90px) scale(0.85); opacity: 0; }
+}
+
+@keyframes invModalIn {
+  0% { transform: translateY(8px) scale(0.99); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
 }
