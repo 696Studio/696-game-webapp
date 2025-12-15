@@ -46,6 +46,20 @@ function unwrapCore(bootstrap: any): CoreBootstrap | null {
   return core as CoreBootstrap;
 }
 
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n));
+}
+
+function formatRemaining(sec: number) {
+  const s = Math.max(0, Math.floor(sec || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${ss}s`;
+  return `${ss}s`;
+}
+
 export default function ProfilePage() {
   const {
     loading: sessionLoading,
@@ -60,8 +74,8 @@ export default function ProfilePage() {
   // ✅ grace delay
   const [showGate, setShowGate] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setShowGate(true), 1200);
-    return () => clearTimeout(t);
+    const t = window.setTimeout(() => setShowGate(true), 1200);
+    return () => window.clearTimeout(t);
   }, []);
 
   const core = useMemo(() => unwrapCore(bootstrap), [bootstrap]);
@@ -73,6 +87,21 @@ export default function ProfilePage() {
   const [claimLoading, setClaimLoading] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [claimSuccess, setClaimSuccess] = useState<string | null>(null);
+
+  // local countdown (nice UX)
+  useEffect(() => {
+    if (!dailyState || dailyState.canClaim) return;
+
+    const id = window.setInterval(() => {
+      setDailyState((prev) => {
+        if (!prev) return prev;
+        const next = Math.max(0, (prev.remainingSeconds ?? 0) - 1);
+        return { ...prev, remainingSeconds: next, canClaim: next === 0 };
+      });
+    }, 1000);
+
+    return () => window.clearInterval(id);
+  }, [dailyState?.canClaim]);
 
   useEffect(() => {
     if (!core) return;
@@ -133,8 +162,7 @@ export default function ProfilePage() {
               ? {
                   ...prev,
                   canClaim: false,
-                  remainingSeconds:
-                    data.remainingSeconds ?? prev.remainingSeconds ?? 0,
+                  remainingSeconds: data.remainingSeconds ?? prev.remainingSeconds ?? 0,
                 }
               : prev
           );
@@ -172,26 +200,29 @@ export default function ProfilePage() {
     }
   };
 
+  // Telegram gate
   if (!isTelegramEnv) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
-        <div className="max-w-md text-center">
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+        <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Open in Telegram</div>
-          <div className="text-sm text-zinc-400">
-            This page works only inside Telegram WebApp.
-          </div>
+          <div className="text-sm ui-subtle">This page works only inside Telegram WebApp.</div>
         </div>
       </main>
     );
   }
 
+  // Loading / errors (new style)
   if (!hasCore) {
     if (!showGate || sessionLoading) {
       return (
-        <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
-          <div className="text-center">
-            <div className="text-lg font-semibold">Loading profile...</div>
-            <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
+        <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+          <div className="w-full max-w-md ui-card p-5 text-center">
+            <div className="text-sm font-semibold">Loading...</div>
+            <div className="mt-2 text-sm ui-subtle">Syncing session.</div>
+            <div className="mt-4 ui-progress">
+              <div className="w-1/3 opacity-70 animate-pulse" />
+            </div>
           </div>
         </main>
       );
@@ -199,36 +230,30 @@ export default function ProfilePage() {
 
     if (timedOut || !!sessionError) {
       return (
-        <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
-          <div className="max-w-md w-full">
+        <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+          <div className="w-full max-w-md ui-card p-5">
             <div className="text-lg font-semibold">
               {timedOut ? "Connection timeout" : "Couldn’t load your session"}
             </div>
 
-            <div className="mt-2 text-sm text-zinc-400">
+            <div className="mt-2 text-sm ui-subtle">
               {timedOut
                 ? "Telegram or network didn’t respond in time. Tap Re-sync to try again."
                 : "Something went wrong while syncing your profile."}
             </div>
 
             {sessionError && (
-              <div className="mt-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950">
-                <div className="text-[11px] text-zinc-500 mb-1">DETAILS</div>
-                <div className="text-xs text-zinc-200 break-words">
-                  {String(sessionError)}
-                </div>
+              <div className="mt-4 p-3 rounded-[var(--r-md)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.03)]">
+                <div className="ui-subtitle mb-1">Details</div>
+                <div className="text-xs break-words">{String(sessionError)}</div>
               </div>
             )}
 
             <div className="mt-6 flex flex-col gap-3">
-              <button
-                onClick={handleResync}
-                className="w-full px-4 py-2 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-900"
-              >
+              <button onClick={handleResync} className="ui-btn ui-btn-primary w-full">
                 Re-sync
               </button>
-
-              <div className="text-[11px] text-zinc-500 text-center">
+              <div className="text-[11px] ui-subtle text-center">
                 If it keeps failing, reopen the Mini App from the bot menu.
               </div>
             </div>
@@ -238,10 +263,10 @@ export default function ProfilePage() {
     }
 
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
-        <div className="text-center">
-          <div className="text-lg font-semibold">Loading...</div>
-          <div className="mt-2 text-sm text-zinc-400">Still syncing.</div>
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+        <div className="w-full max-w-md ui-card p-5 text-center">
+          <div className="text-sm font-semibold">Loading...</div>
+          <div className="mt-2 text-sm ui-subtle">Still syncing.</div>
         </div>
       </main>
     );
@@ -249,10 +274,13 @@ export default function ProfilePage() {
 
   if (sessionLoading || !telegramId || !core) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white px-4">
-        <div className="text-center">
-          <div className="text-lg font-semibold">Loading profile...</div>
-          <div className="mt-2 text-sm text-zinc-400">Syncing session.</div>
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+        <div className="w-full max-w-md ui-card p-5 text-center">
+          <div className="text-sm font-semibold">Loading...</div>
+          <div className="mt-2 text-sm ui-subtle">Syncing session.</div>
+          <div className="mt-4 ui-progress">
+            <div className="w-1/3 opacity-70 animate-pulse" />
+          </div>
         </div>
       </main>
     );
@@ -277,173 +305,219 @@ export default function ProfilePage() {
   const shards = balanceState?.soft_balance ?? core.balance.soft_balance ?? 0;
   const crystals = balanceState?.hard_balance ?? core.balance.hard_balance ?? 0;
 
-  const levelProgressPercent = Math.round((progress ?? 0) * 100);
-
-  const lastSpinText = lastSpinAt
-    ? new Date(lastSpinAt).toLocaleString()
-    : "No spins yet";
+  const levelProgressPercent = clamp(Math.round((progress ?? 0) * 100), 0, 100);
+  const lastSpinText = lastSpinAt ? new Date(lastSpinAt).toLocaleString() : "No spins yet";
 
   const daily = dailyState;
   const avatarUrl = user?.avatar_url || null;
 
   return (
-    <main className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4 pb-24">
-      <h1 className="text-3xl font-bold tracking-[0.3em] uppercase mb-6">
-        Profile
-      </h1>
-
-      <button
-        onClick={handleResync}
-        className="mb-6 px-4 py-1 rounded-full border border-zinc-800 text-[11px] text-zinc-300 hover:bg-zinc-900"
-      >
-        Re-sync session
-      </button>
-
-      <div className="w-full max-w-3xl mb-6 border border-zinc-800 bg-zinc-950 rounded-2xl p-5 flex items-center gap-4">
-        <div className="w-14 h-14 rounded-2xl border border-zinc-800 bg-zinc-900 flex items-center justify-center overflow-hidden">
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarUrl}
-              alt={username}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="text-[10px] text-zinc-500 px-2 text-center">
-              No avatar
+    <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
+      <div className="w-full max-w-3xl">
+        {/* Header / HUD */}
+        <header className="ui-card px-4 py-3 rounded-[var(--r-xl)] mb-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="ui-subtitle">Profile</div>
+              <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base truncate">
+                {username}
+              </div>
+              <div className="text-[11px] ui-subtle mt-1 truncate">Telegram ID: {tid}</div>
             </div>
-          )}
-        </div>
 
-        <div className="flex-1 min-w-0">
-          <div className="text-xs text-zinc-500 mb-1 uppercase">Player</div>
-          <div className="text-lg font-semibold truncate">{username}</div>
-          <div className="text-xs text-zinc-500 truncate">Telegram ID: {tid}</div>
-        </div>
-
-        <div className="text-right">
-          <div className="text-xs text-zinc-500 uppercase">Level</div>
-          <div className="text-xl font-semibold">{level ?? 1}</div>
-        </div>
-      </div>
-
-      <div className="w-full max-w-3xl grid gap-4 mb-8 sm:grid-cols-3">
-        <div className="p-4 border border-zinc-700 rounded-xl">
-          <div className="text-xs text-zinc-500 mb-1">BALANCE</div>
-          <div className="text-sm">
-            Shards: <span className="font-semibold">{shards}</span>
+            <div className="flex items-center gap-2">
+              <span className="ui-pill">
+                Shards <span className="ml-2 font-extrabold tabular-nums">{shards}</span>
+              </span>
+              <span className="ui-pill">
+                Crystals <span className="ml-2 font-extrabold tabular-nums">{crystals}</span>
+              </span>
+              <button onClick={handleResync} className="ui-btn ui-btn-ghost">
+                Re-sync
+              </button>
+            </div>
           </div>
-          <div className="text-sm">
-            Crystals: <span className="font-semibold">{crystals}</span>
-          </div>
-        </div>
+        </header>
 
-        <div className="p-4 border border-zinc-700 rounded-xl">
-          <div className="text-xs text-zinc-500 mb-1">TOTAL POWER</div>
-          <div className="text-2xl font-semibold">{totalPower ?? 0}</div>
-        </div>
-
-        <div className="p-4 border border-zinc-700 rounded-xl">
-          <div className="text-xs text-zinc-500 mb-1">ITEMS / SPINS</div>
-          <div className="text-sm">
-            Items:{" "}
-            <span className="font-semibold">
-              {typeof itemsCount === "number" ? itemsCount : "—"}
-            </span>
-          </div>
-          <div className="text-sm">
-            Spins:{" "}
-            <span className="font-semibold">
-              {typeof spinsCount === "number" ? spinsCount : 0}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="w-full max-w-3xl mb-8 p-4 border border-zinc-700 rounded-xl">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <div className="text-xs text-zinc-500">LEVEL</div>
-            <div className="text-xl font-semibold">Level {level ?? 1}</div>
-          </div>
-          <div className="text-xs text-zinc-400 text-right">
-            {currentLevelPower ?? 0} → {nextLevelPower ?? 100} power
-          </div>
-        </div>
-
-        <div className="w-full h-2 rounded-full bg-zinc-900 overflow-hidden">
-          <div
-            className="h-full bg-zinc-200"
-            style={{ width: `${levelProgressPercent}%` }}
-          />
-        </div>
-        <div className="mt-1 text-[10px] text-zinc-500 text-right">
-          {levelProgressPercent}% to next level
-        </div>
-      </div>
-
-      <div className="w-full max-w-3xl grid gap-4 mb-10 sm:grid-cols-2">
-        <div className="p-4 border border-zinc-700 rounded-xl">
-          <div className="text-xs text-zinc-500 mb-2">DAILY REWARD</div>
-
-          {daily ? (
-            <>
-              {daily.canClaim ? (
-                <div className="text-sm text-green-400 mb-2">
-                  Можно забрать +{daily.amount} Shards сегодня.
-                </div>
+        {/* Player card */}
+        <section className="ui-card-strong p-5 rounded-[var(--r-xl)]">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-[var(--r-lg)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.06)] overflow-hidden flex items-center justify-center">
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
               ) : (
-                <div className="text-sm text-zinc-300 mb-2">
-                  Уже забрал, до следующей ещё{" "}
-                  <span className="font-semibold">
-                    {daily.remainingSeconds ?? 0} сек
-                  </span>
-                  .
-                </div>
+                <div className="text-[10px] ui-subtle px-2 text-center">No avatar</div>
               )}
+            </div>
 
-              <div className="text-[10px] text-zinc-500 mb-3">
-                Streak: {daily.streak ?? 0}
+            <div className="flex-1 min-w-0">
+              <div className="ui-subtitle">Player</div>
+              <div className="mt-1 text-lg font-extrabold truncate">{username}</div>
+              <div className="text-[11px] ui-subtle truncate">Telegram ID: {tid}</div>
+            </div>
+
+            <div className="text-right">
+              <div className="ui-subtitle">Level</div>
+              <div className="mt-1 text-xl font-extrabold tabular-nums">{level ?? 1}</div>
+            </div>
+          </div>
+
+          {/* Level progress */}
+          <div className="mt-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="ui-subtitle">Progress</div>
+              <div className="text-[11px] ui-subtle text-right tabular-nums">
+                {currentLevelPower ?? 0} → {nextLevelPower ?? 100} power
+              </div>
+            </div>
+
+            <div className="mt-2 ui-progress">
+              <div style={{ width: `${levelProgressPercent}%` }} />
+            </div>
+
+            <div className="mt-1 text-[10px] ui-subtle text-right">
+              {levelProgressPercent}% to next level
+            </div>
+          </div>
+        </section>
+
+        {/* Stats grid */}
+        <section className="mt-4 ui-grid sm:grid-cols-3">
+          <div className="ui-card p-4">
+            <div className="ui-subtitle mb-2">Total Power</div>
+            <div className="text-3xl font-extrabold tabular-nums">{totalPower ?? 0}</div>
+            <div className="mt-2 text-[11px] ui-subtle">
+              Items:{" "}
+              <span className="font-semibold tabular-nums">
+                {typeof itemsCount === "number" ? itemsCount : "—"}
+              </span>
+            </div>
+          </div>
+
+          <div className="ui-card p-4">
+            <div className="ui-subtitle mb-2">Spins</div>
+            <div className="text-3xl font-extrabold tabular-nums">{typeof spinsCount === "number" ? spinsCount : 0}</div>
+            <div className="mt-2 text-[11px] ui-subtle truncate">Last: {lastSpinText}</div>
+          </div>
+
+          <div className="ui-card p-4">
+            <div className="ui-subtitle mb-2">Shards Spent</div>
+            <div className="text-3xl font-extrabold tabular-nums">
+              {typeof totalShardsSpent === "number" ? totalShardsSpent : 0}
+            </div>
+            <div className="mt-2 text-[11px] ui-subtle">Economy telemetry</div>
+          </div>
+        </section>
+
+        {/* Daily reward + stats */}
+        <section className="mt-4 ui-grid sm:grid-cols-2">
+          <div className="ui-card p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="ui-subtitle">Daily Reward</div>
+                <div className="mt-1 text-sm ui-muted">Claim your shards every day</div>
               </div>
 
-              <button
-                onClick={handleClaimDaily}
-                disabled={claimLoading || !daily.canClaim}
-                className="px-4 py-2 rounded-full border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
-              >
-                {claimLoading
-                  ? "Claiming..."
-                  : daily.canClaim
-                  ? `Claim +${daily.amount} Shards`
-                  : "Already claimed"}
+              {daily ? (
+                <span
+                  className={[
+                    "ui-pill px-5 h-8 font-extrabold uppercase tracking-[0.22em]",
+                    daily.canClaim
+                      ? "border-[rgba(88,240,255,0.45)] bg-[rgba(88,240,255,0.08)]"
+                      : "border-[rgba(255,255,255,0.22)] bg-[rgba(255,255,255,0.06)]",
+                  ].join(" ")}
+                >
+                  {daily.canClaim ? "READY" : "LOCKED"}
+                </span>
+              ) : (
+                <span className="ui-pill px-5 h-8 font-extrabold uppercase tracking-[0.22em]">
+                  N/A
+                </span>
+              )}
+            </div>
+
+            {daily ? (
+              <>
+                <div className="mt-4 text-sm ui-subtle">
+                  {daily.canClaim ? (
+                    <>
+                      Можно забрать{" "}
+                      <span className="font-extrabold text-[color:var(--text)] tabular-nums">
+                        +{daily.amount}
+                      </span>{" "}
+                      Shards сегодня.
+                    </>
+                  ) : (
+                    <>
+                      Уже забрал. До следующей:{" "}
+                      <span className="font-extrabold text-[color:var(--text)] tabular-nums">
+                        {formatRemaining(daily.remainingSeconds)}
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                <div className="mt-2 text-[11px] ui-subtle">
+                  Streak: <span className="font-semibold tabular-nums">{daily.streak ?? 0}</span>
+                </div>
+
+                <div className="mt-4 flex items-center gap-3 flex-wrap">
+                  <button
+                    onClick={handleClaimDaily}
+                    disabled={claimLoading || !daily.canClaim}
+                    className={[
+                      "ui-btn",
+                      daily.canClaim ? "ui-btn-primary" : "ui-btn-ghost",
+                    ].join(" ")}
+                  >
+                    {claimLoading
+                      ? "Claiming..."
+                      : daily.canClaim
+                      ? `Claim +${daily.amount} Shards`
+                      : "Already claimed"}
+                  </button>
+
+                  {(claimError || claimSuccess) && (
+                    <span
+                      className={[
+                        "ui-pill",
+                        claimError
+                          ? "border-[rgba(255,90,90,0.35)] bg-[rgba(255,90,90,0.08)] text-red-200"
+                          : "border-[rgba(88,240,255,0.35)] bg-[rgba(88,240,255,0.08)] text-white",
+                      ].join(" ")}
+                    >
+                      {claimError ? claimError : claimSuccess}
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="mt-4 text-sm ui-subtle">Daily info not available.</div>
+            )}
+          </div>
+
+          <div className="ui-card p-5">
+            <div className="ui-subtitle">Session</div>
+            <div className="mt-2 text-sm ui-subtle">
+              Telegram env:{" "}
+              <span className="font-semibold text-[color:var(--text)]">OK</span>
+            </div>
+            <div className="mt-2 text-sm ui-subtle">
+              Telegram ID:{" "}
+              <span className="font-semibold text-[color:var(--text)] tabular-nums">{telegramId}</span>
+            </div>
+
+            <div className="mt-5">
+              <button onClick={handleResync} className="ui-btn ui-btn-ghost w-full">
+                Re-sync session
               </button>
-
-              {claimError && (
-                <div className="mt-2 text-xs text-red-400">{claimError}</div>
-              )}
-              {claimSuccess && (
-                <div className="mt-2 text-xs text-green-400">{claimSuccess}</div>
-              )}
-            </>
-          ) : (
-            <div className="text-sm text-zinc-400">Daily info not available.</div>
-          )}
-        </div>
-
-        <div className="p-4 border border-zinc-700 rounded-xl">
-          <div className="text-xs text-zinc-500 mb-2">STATS</div>
-
-          <div className="text-sm text-zinc-300">
-            Last spin: <span className="text-zinc-100">{lastSpinText}</span>
+              <div className="mt-3 text-[11px] ui-subtle text-center">
+                If it glitches, reopen the Mini App from the bot.
+              </div>
+            </div>
           </div>
-
-          <div className="mt-2 text-sm text-zinc-300">
-            Shards spent:{" "}
-            <span className="text-zinc-100 font-semibold">
-              {typeof totalShardsSpent === "number" ? totalShardsSpent : 0}
-            </span>
-          </div>
-        </div>
+        </section>
       </div>
     </main>
   );
