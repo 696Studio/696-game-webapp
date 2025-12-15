@@ -120,8 +120,10 @@ function ChestModel({ phase }: { phase: Phase }) {
     }
   });
 
+  // --- Center the chest and reduce the scale for best framing ---
+  // Moved chest up vertically, reduced scale slightly from 1.6 to 1.25.
   return (
-    <group ref={chestGroupRef} position={[0, -0.6, 0]} scale={1.6}>
+    <group ref={chestGroupRef} position={[0, 0.05, 0]} scale={1.25}>
       {/* сам сундук */}
       <primitive object={scene} />
 
@@ -141,18 +143,41 @@ function ChestModel({ phase }: { phase: Phase }) {
 
 export function Chest3D({ phase }: { phase: Phase }) {
   return (
-    <Canvas camera={{ position: [0, 1.6, 4], fov: 38 }} gl={{ antialias: true, alpha: true }}>
-      <ambientLight intensity={0.9} />
-      <directionalLight position={[3, 6, 5]} intensity={1.4} />
-      <pointLight position={[-3, 2, 3]} intensity={0.8} />
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        minHeight: 0,
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Canvas
+        camera={{ position: [0, 1.25, 4.3], fov: 32 }} // Adjusted camera for full chest framing
+        gl={{ antialias: true, alpha: true }}
+        style={{
+          width: "100%",
+          height: "100%",
+          minHeight: 0,
+          position: "absolute",
+          top: 0,
+          left: 0,
+        }}
+      >
+        <ambientLight intensity={0.9} />
+        <directionalLight position={[3, 6, 5]} intensity={1.4} />
+        <pointLight position={[-3, 2, 3]} intensity={0.8} />
 
-      <Suspense fallback={null}>
-        <ChestModel phase={phase} />
-      </Suspense>
+        <Suspense fallback={null}>
+          <ChestModel phase={phase} />
+        </Suspense>
 
-      {/* Витрина — управление блокируем */}
-      <OrbitControls enableZoom={false} enablePan={false} enableRotate={false} />
-    </Canvas>
+        {/* Витрина — управление блокируем */}
+        <OrbitControls enableZoom={false} enablePan={false} enableRotate={false} />
+      </Canvas>
+    </div>
   );
 }
 
