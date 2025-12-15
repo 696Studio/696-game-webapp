@@ -320,7 +320,6 @@ export default function ChestPage() {
   const fx = drop ? rarityFx(drop.rarity) : "none";
 
   const bannerText = rarityBannerText(fx);
-  const spinColor = fxColor(fx);
 
   return (
     <main className="min-h-screen flex flex-col items-center pt-8 px-0 sm:px-4 pb-24 bg-gradient-to-b from-[#12141d] via-[#191d28] to-[#0d0f17]">
@@ -360,16 +359,6 @@ export default function ChestPage() {
           opacity: 0.55;
         }
 
-        @keyframes auraPulse {
-          0% { transform: translate(-50%, 0) scale(0.98); opacity: 0.35; filter: blur(10px); }
-          55% { transform: translate(-50%, 0) scale(1.06); opacity: 0.58; filter: blur(12px); }
-          100% { transform: translate(-50%, 0) scale(0.98); opacity: 0.35; filter: blur(10px); }
-        }
-        @keyframes auraSpin {
-          from { transform: translate(-50%, -50%) rotate(0deg); }
-          to { transform: translate(-50%, -50%) rotate(360deg); }
-        }
-
         .chest-area-premium {
           position: relative;
           min-height: 328px;
@@ -403,57 +392,14 @@ export default function ChestPage() {
           filter: drop-shadow(0 16px 44px rgba(0, 0, 0, 0.45));
         }
 
-        /* ✅ NEW: Simple aura (no ring/stripes on top) */
-        .chest-aura {
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          width: 230px;
-          height: 230px;
-          border-radius: 999px;
-          transform: translate(-50%, -50%);
-          pointer-events: none;
-          z-index: 1;
-          opacity: 0;
-          transition: opacity 180ms ease;
-        }
-        .chest-aura::before {
-          content: "";
-          position: absolute;
-          inset: 0;
-          border-radius: 999px;
-          background:
-            radial-gradient(circle at 50% 50%,
-              color-mix(in srgb, var(--aura-color, #7ef6ff) 22%, transparent),
-              transparent 62%);
-          animation: auraPulse 2.8s ease-in-out infinite;
-        }
-        .chest-aura::after {
-          content: "";
-          position: absolute;
-          inset: -18px;
-          border-radius: 999px;
-          background:
-            conic-gradient(
-              from 0deg,
-              transparent 0%,
-              color-mix(in srgb, var(--aura-color, #7ef6ff) 14%, transparent) 18%,
-              transparent 45%,
-              color-mix(in srgb, var(--aura-color, #7ef6ff) 10%, transparent) 70%,
-              transparent 100%
-            );
-          filter: blur(8px);
-          opacity: 0.55;
-          animation: auraSpin 1.6s linear infinite;
-        }
-
-        /* show aura only while opening */
-        .opening-on .chest-aura { opacity: 1; }
-
         @media (max-width: 768px) {
-          .chest-3d-wrap { width: 120px; height: 120px; }
-          .chest-3d-canvas { inset: -24px; }
-          .chest-aura { width: 190px; height: 190px; }
+          .chest-3d-wrap {
+            width: 120px;
+            height: 120px;
+          }
+          .chest-3d-canvas {
+            inset: -24px;
+          }
         }
       `}</style>
 
@@ -525,20 +471,7 @@ export default function ChestPage() {
               <div className="altar-emissive" />
 
               <div className="relative z-10 text-center w-full">
-                <div
-                  className={[
-                    "chest-3d-wrap mx-auto",
-                    phase === "opening" ? "opening-on" : "",
-                  ].join(" ")}
-                  style={
-                    {
-                      ["--aura-color" as any]: spinColor,
-                    } as any
-                  }
-                >
-                  {/* ✅ aura behind chest */}
-                  <div className="chest-aura" />
-
+                <div className="chest-3d-wrap mx-auto">
                   <div className="chest-3d-canvas">
                     <Chest3D phase={phase} />
                   </div>
@@ -670,7 +603,13 @@ export default function ChestPage() {
                     style={{
                       borderColor: fxColor(fx),
                       color:
-                        fx === "legendary" ? "#ffdf4a" : fx === "epic" ? "#e0cefe" : fx === "rare" ? "#abebff" : "var(--text)",
+                        fx === "legendary"
+                          ? "#ffdf4a"
+                          : fx === "epic"
+                          ? "#e0cefe"
+                          : fx === "rare"
+                          ? "#abebff"
+                          : "var(--text)",
                       background:
                         fx === "legendary"
                           ? "linear-gradient(93deg,#f7e48fff 16%,#fff7dd88 61%,#fff4a4ff 90%)"
