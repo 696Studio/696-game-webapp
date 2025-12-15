@@ -150,7 +150,6 @@ export default function ChestPage() {
   async function openChestWithReveal() {
     if (!telegramId) return;
 
-    // ✅ hard lock: no double open while request/animation in flight
     if (openingRef.current) return;
     openingRef.current = true;
 
@@ -171,7 +170,6 @@ export default function ChestPage() {
       setResult(null);
       setPhase("opening");
 
-      // ✅ fast open after reveal
       const minRevealMs = phase === "reveal" ? 450 : 1200;
 
       const animDone = new Promise<void>((resolve) => {
@@ -321,12 +319,8 @@ export default function ChestPage() {
   const showReveal = phase === "reveal" && !!result;
   const fx = drop ? rarityFx(drop.rarity) : "none";
 
-  const auraOpacity = fx === "legendary" ? 0.38 : fx === "epic" ? 0.26 : fx === "rare" ? 0.18 : 0;
-  const confettiCount = fx === "legendary" ? 22 : fx === "epic" ? 14 : fx === "rare" ? 8 : 0;
   const bannerText = rarityBannerText(fx);
-
-  const spinSpeed = fx === "legendary" ? 70 : fx === "epic" ? 95 : fx === "rare" ? 120 : 140;
-  const shakeIntensity = fx === "legendary" ? 1.0 : fx === "epic" ? 0.85 : fx === "rare" ? 0.65 : 0.55;
+  const spinColor = fxColor(fx);
 
   return (
     <main className="min-h-screen flex flex-col items-center pt-8 px-0 sm:px-4 pb-24 bg-gradient-to-b from-[#12141d] via-[#191d28] to-[#0d0f17]">
@@ -339,68 +333,15 @@ export default function ChestPage() {
           border-radius: 2.5rem;
           overflow: hidden;
           background:
-            radial-gradient(950px 380px at 50% -45px, #45e3ff2b 0%, transparent 70%),
-            radial-gradient(580px 180px at 50% 420px, #ae41fa18 0%, transparent 70%),
-            linear-gradient(135deg, rgba(48,54,74,0.065), rgba(92,80,156,0.02), transparent 100%);
+            radial-gradient(950px 380px at 50% -45px, #45e3ff26 0%, transparent 70%),
+            radial-gradient(580px 180px at 50% 420px, #ae41fa14 0%, transparent 70%);
         }
         @media (max-width: 600px) {
           .altar-bg {
             border-radius: 1.5rem;
           }
         }
-        .altar-light-spot {
-          pointer-events: none;
-          position: absolute;
-          z-index: 1;
-          left: 50%;
-          top: 55px;
-          width: 370px;
-          height: 90px;
-          background: radial-gradient(
-            ellipse 80% 50% at 50% 65%,
-            rgba(255, 255, 255, 0.18),
-            transparent 70%
-          );
-          transform: translateX(-50%);
-          filter: blur(0.5px);
-        }
-        .altar-rings {
-          pointer-events: none;
-          position: absolute;
-          z-index: 1;
-          left: 50%;
-          bottom: 0px;
-          width: 300px;
-          height: 80px;
-          transform: translateX(-50%);
-        }
-        .altar-ring {
-          position: absolute;
-          left: 50%;
-          bottom: 0;
-          width: 320px;
-          height: 32px;
-          border-radius: 999px;
-          border-width: 2px;
-          border-style: solid;
-          pointer-events: none;
-          transform: translate(-50%, 0) scaleX(1.05);
-          opacity: 0.12;
-        }
-        .altar-ring.epic {
-          border-color: var(--rarity-epic);
-          opacity: 0.16;
-        }
-        .altar-ring.legendary {
-          border-color: var(--rarity-legendary);
-          opacity: 0.19;
-        }
-        .altar-ring.rare {
-          border-color: var(--rarity-rare);
-        }
-        .altar-ring.common {
-          border-color: var(--rarity-common);
-        }
+
         .altar-emissive {
           pointer-events: none;
           position: absolute;
@@ -413,19 +354,22 @@ export default function ChestPage() {
           border-radius: 50%;
           background: radial-gradient(
             ellipse 60% 40% at 50% 60%,
-            rgba(255, 255, 255, 0.15),
+            rgba(255, 255, 255, 0.13),
             transparent 74%
           );
+          opacity: 0.55;
         }
-        @keyframes altarGlowPulse {
-          0%,
-          100% {
-            opacity: 0.43;
-          }
-          54% {
-            opacity: 0.68;
-          }
+
+        @keyframes auraPulse {
+          0% { transform: translate(-50%, 0) scale(0.98); opacity: 0.35; filter: blur(10px); }
+          55% { transform: translate(-50%, 0) scale(1.06); opacity: 0.58; filter: blur(12px); }
+          100% { transform: translate(-50%, 0) scale(0.98); opacity: 0.35; filter: blur(10px); }
         }
+        @keyframes auraSpin {
+          from { transform: translate(-50%, -50%) rotate(0deg); }
+          to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
         .chest-area-premium {
           position: relative;
           min-height: 328px;
@@ -433,162 +377,6 @@ export default function ChestPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-        }
-        .altar-bg,
-        .altar-light-spot,
-        .altar-rings,
-        .altar-emissive {
-          transition: filter 0.18s;
-        }
-        .altar-emissive {
-          animation: altarGlowPulse 3.2s ease-in-out infinite;
-        }
-
-        @keyframes chestSpin {
-          from {
-            transform: rotate(0deg);
-          }
-          to {
-            transform: rotate(360deg);
-          }
-        }
-        @keyframes burstRing {
-          0% {
-            transform: scale(0.22);
-            opacity: 0;
-          }
-          18% {
-            opacity: 0.52;
-          }
-          68% {
-            opacity: 0.84;
-          }
-          100% {
-            transform: scale(1.6);
-            opacity: 0;
-          }
-        }
-        @keyframes flare {
-          0% {
-            transform: translateY(18px) scale(0.75);
-            opacity: 0;
-          }
-          14% {
-            opacity: 0.55;
-          }
-          46% {
-            opacity: 0.96;
-          }
-          100% {
-            transform: translateY(-46px) scale(1.21);
-            opacity: 0;
-          }
-        }
-        @keyframes shineSweep {
-          0% {
-            transform: translateX(-67%) skewY(-11deg);
-            opacity: 0;
-          }
-          23% {
-            opacity: 0.21;
-          }
-          54% {
-            opacity: 0.28;
-          }
-          100% {
-            transform: translateX(64%) skewY(-11deg);
-            opacity: 0;
-          }
-        }
-        .chest-spin-ring {
-          position: absolute;
-          z-index: 7;
-          inset: -19px;
-          border-radius: 999px;
-          border: 2.1px solid color-mix(in srgb, var(--spin-color, #fff8) 44%, transparent);
-          box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--spin-color, #fff7) 16%, transparent),
-            0 0 34px 2.8px color-mix(in srgb, var(--spin-color, #fff8) 19%, transparent);
-          opacity: 0;
-          transform: scale(0.91);
-          transition: opacity 160ms cubic-bezier(0.5, 0.1, 1, 1),
-            transform 160ms cubic-bezier(0.5, 0.1, 1, 1);
-          pointer-events: none;
-          will-change: opacity, transform;
-        }
-        .chest-spin-on .chest-spin-ring {
-          opacity: 1;
-          transform: scale(1.065);
-        }
-        .chest-spin-ring::before {
-          content: "";
-          position: absolute;
-          z-index: 1;
-          inset: -4px;
-          border-radius: 999px;
-          background: conic-gradient(
-            from 0deg,
-            transparent 2%,
-            color-mix(in srgb, var(--spin-color, #fff8) 42%, transparent) 25%,
-            transparent 50%,
-            color-mix(in srgb, var(--spin-color, #fff8) 18%, transparent) 80%,
-            transparent 100%
-          );
-          filter: blur(0.8px);
-          animation: chestSpin var(--spin-speed, 110ms) linear infinite;
-          opacity: 0.92;
-        }
-        .chest-burst-ring {
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          z-index: 11;
-          width: 256px;
-          height: 256px;
-          border-radius: 999px;
-          transform: translate(-50%, -50%);
-          border: 3px solid color-mix(in srgb, var(--spin-color, #fff8) 55%, transparent);
-          box-shadow: 0 0 38px color-mix(in srgb, var(--spin-color, #fff8) 29%, transparent),
-            0 0 108px color-mix(in srgb, var(--spin-color, #fff9) 21%, transparent);
-          opacity: 0;
-          pointer-events: none;
-        }
-        .chest-burst-on {
-          animation: burstRing 530ms cubic-bezier(0.25, 1.41, 0.58, 1.01) 1;
-        }
-        .chest-flare {
-          position: absolute;
-          z-index: 12;
-          left: 50%;
-          bottom: 22px;
-          width: 280px;
-          height: 190px;
-          transform: translateX(-50%);
-          background: radial-gradient(
-            100px 75px at 50% 76%,
-            color-mix(in srgb, var(--spin-color, #fff8) 53%, transparent 51%),
-            transparent 80%
-          );
-          filter: blur(2.6px);
-          opacity: 0;
-          pointer-events: none;
-        }
-        .chest-flare-on {
-          animation: flare 580ms cubic-bezier(0.24, 1.11, 0.83, 0.98) 1;
-        }
-        .reveal-sweep {
-          position: absolute;
-          z-index: 16;
-          top: -80px;
-          left: -40px;
-          right: -40px;
-          height: 186px;
-          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.79), transparent);
-          opacity: 0.19;
-          pointer-events: none;
-          transform: skewY(-11deg);
-        }
-        .reveal-sweep-on {
-          animation: shineSweep 840ms cubic-bezier(0.19, 1.16, 0.78, 0.93) 1;
         }
 
         .chest-3d-wrap {
@@ -604,33 +392,68 @@ export default function ChestPage() {
           overflow: visible;
         }
 
-        /* ✅ FIX: do NOT clip the Canvas */
+        /* Canvas not clipped */
         .chest-3d-canvas {
           position: absolute;
-          inset: -22px;            /* больше поля => сундук помещается */
+          inset: -22px;
           z-index: 0;
-          border-radius: 0;        /* убираем маску */
-          overflow: visible;       /* НЕ обрезаем 3D */
+          border-radius: 0;
+          overflow: visible;
           pointer-events: none;
           filter: drop-shadow(0 16px 44px rgba(0, 0, 0, 0.45));
         }
 
+        /* ✅ NEW: Simple aura (no ring/stripes on top) */
+        .chest-aura {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          width: 230px;
+          height: 230px;
+          border-radius: 999px;
+          transform: translate(-50%, -50%);
+          pointer-events: none;
+          z-index: 1;
+          opacity: 0;
+          transition: opacity 180ms ease;
+        }
+        .chest-aura::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          border-radius: 999px;
+          background:
+            radial-gradient(circle at 50% 50%,
+              color-mix(in srgb, var(--aura-color, #7ef6ff) 22%, transparent),
+              transparent 62%);
+          animation: auraPulse 2.8s ease-in-out infinite;
+        }
+        .chest-aura::after {
+          content: "";
+          position: absolute;
+          inset: -18px;
+          border-radius: 999px;
+          background:
+            conic-gradient(
+              from 0deg,
+              transparent 0%,
+              color-mix(in srgb, var(--aura-color, #7ef6ff) 14%, transparent) 18%,
+              transparent 45%,
+              color-mix(in srgb, var(--aura-color, #7ef6ff) 10%, transparent) 70%,
+              transparent 100%
+            );
+          filter: blur(8px);
+          opacity: 0.55;
+          animation: auraSpin 1.6s linear infinite;
+        }
+
+        /* show aura only while opening */
+        .opening-on .chest-aura { opacity: 1; }
+
         @media (max-width: 768px) {
-          .chest-3d-wrap {
-            width: 120px;
-            height: 120px;
-          }
-          .chest-3d-canvas {
-            inset: -24px; /* мобиле чуть больше поля */
-          }
-          .chest-burst-ring {
-            width: 180px;
-            height: 180px;
-          }
-          .chest-flare {
-            width: 160px;
-            height: 110px;
-          }
+          .chest-3d-wrap { width: 120px; height: 120px; }
+          .chest-3d-canvas { inset: -24px; }
+          .chest-aura { width: 190px; height: 190px; }
         }
       `}</style>
 
@@ -699,62 +522,26 @@ export default function ChestPage() {
           <div className="mt-9 flex justify-center relative z-0">
             <div className="chest-area-premium w-full max-w-sm min-h-[326px] flex items-center justify-center relative rounded-xl">
               <div className="altar-bg" />
-              <div className="altar-light-spot" />
               <div className="altar-emissive" />
-              <div className="altar-rings pointer-events-none">
-                <div className="altar-ring common" />
-                <div className="altar-ring rare" />
-                <div className="altar-ring epic" />
-                <div className="altar-ring legendary" />
-              </div>
-
-              <div
-                className={[
-                  "pointer-events-none absolute inset-0 z-[2]",
-                  phase === "opening" ? "opacity-100" : "opacity-0",
-                  "transition-opacity duration-200",
-                ].join(" ")}
-                style={{
-                  background: `radial-gradient(540px 260px at 50% 33%, color-mix(in srgb, ${fxColor(
-                    fx
-                  )} 24%, transparent), transparent 66%)`,
-                  opacity: phase === "opening" ? 0.47 : 0,
-                  filter: phase === "opening" && fx === "legendary" ? "blur(1.3px) brightness(1.09)" : undefined,
-                }}
-              />
 
               <div className="relative z-10 text-center w-full">
                 <div
-                  className={["chest-3d-wrap mx-auto", phase === "opening" ? "chest-spin-on" : ""].join(" ")}
+                  className={[
+                    "chest-3d-wrap mx-auto",
+                    phase === "opening" ? "opening-on" : "",
+                  ].join(" ")}
                   style={
                     {
-                      ["--spin-color" as any]: fxColor(fx),
-                      ["--spin-speed" as any]: `${spinSpeed}ms`,
-                      ["--shake-k" as any]: String(shakeIntensity),
+                      ["--aura-color" as any]: spinColor,
                     } as any
                   }
                 >
+                  {/* ✅ aura behind chest */}
+                  <div className="chest-aura" />
+
                   <div className="chest-3d-canvas">
                     <Chest3D phase={phase} />
                   </div>
-
-                  <div className="chest-spin-ring" />
-
-                  <div
-                    className={["chest-burst-ring", phase === "reveal" && !isError && drop ? "chest-burst-on" : ""].join(
-                      " "
-                    )}
-                  />
-
-                  <div
-                    className={["chest-flare", phase === "reveal" && !isError && drop ? "chest-flare-on" : ""].join(" ")}
-                    style={{
-                      ["--spin-color" as any]: fxColor(fx),
-                      ...(fx === "legendary" ? { filter: "blur(2.5px) brightness(1.15)" } : {}),
-                    }}
-                  />
-
-                  {phase === "opening" && <div className="reveal-sweep reveal-sweep-on" />}
                 </div>
 
                 {phase === "opening" && (
@@ -883,13 +670,7 @@ export default function ChestPage() {
                     style={{
                       borderColor: fxColor(fx),
                       color:
-                        fx === "legendary"
-                          ? "#ffdf4a"
-                          : fx === "epic"
-                          ? "#e0cefe"
-                          : fx === "rare"
-                          ? "#abebff"
-                          : "var(--text)",
+                        fx === "legendary" ? "#ffdf4a" : fx === "epic" ? "#e0cefe" : fx === "rare" ? "#abebff" : "var(--text)",
                       background:
                         fx === "legendary"
                           ? "linear-gradient(93deg,#f7e48fff 16%,#fff7dd88 61%,#fff4a4ff 90%)"
