@@ -603,19 +603,25 @@ export default function ChestPage() {
           border-radius: 1.2rem;
           overflow: visible;
         }
+
+        /* ✅ FIX: do NOT clip the Canvas */
         .chest-3d-canvas {
           position: absolute;
-          inset: -6px;
+          inset: -22px;            /* больше поля => сундук помещается */
           z-index: 0;
-          border-radius: 1.2rem;
-          overflow: hidden;
+          border-radius: 0;        /* убираем маску */
+          overflow: visible;       /* НЕ обрезаем 3D */
           pointer-events: none;
           filter: drop-shadow(0 16px 44px rgba(0, 0, 0, 0.45));
         }
+
         @media (max-width: 768px) {
           .chest-3d-wrap {
             width: 120px;
             height: 120px;
+          }
+          .chest-3d-canvas {
+            inset: -24px; /* мобиле чуть больше поля */
           }
           .chest-burst-ring {
             width: 180px;
@@ -877,7 +883,13 @@ export default function ChestPage() {
                     style={{
                       borderColor: fxColor(fx),
                       color:
-                        fx === "legendary" ? "#ffdf4a" : fx === "epic" ? "#e0cefe" : fx === "rare" ? "#abebff" : "var(--text)",
+                        fx === "legendary"
+                          ? "#ffdf4a"
+                          : fx === "epic"
+                          ? "#e0cefe"
+                          : fx === "rare"
+                          ? "#abebff"
+                          : "var(--text)",
                       background:
                         fx === "legendary"
                           ? "linear-gradient(93deg,#f7e48fff 16%,#fff7dd88 61%,#fff4a4ff 90%)"
