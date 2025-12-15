@@ -48,8 +48,9 @@ function unwrapCore(bootstrap: any): CoreBootstrap | null {
 
 type RarityFilter = "all" | "common" | "rare" | "epic" | "legendary";
 type SortMode = "power_desc" | "power_asc" | "newest";
+type TypeFilter = "all" | "emblem" | "item" | "character" | "pet";
 
-function normalizeRarity(rarity: string | null | undefined): RarityFilter {
+function normalizeRarity(rarity: string | null | undefined): Exclude<RarityFilter, "all"> {
   const r = String(rarity || "").trim().toLowerCase();
   if (r === "common" || r === "rare" || r === "epic" || r === "legendary") return r;
   return "common";
@@ -75,6 +76,20 @@ function rarityColorVar(r: string | null | undefined) {
   return "var(--rarity-common)";
 }
 
+function normalizeType(t: string | null | undefined): TypeFilter {
+  const x = String(t || "").trim().toLowerCase();
+  if (!x) return "item";
+
+  // поддержим возможные варианты из базы
+  if (x === "emblem" || x === "emblems") return "emblem";
+  if (x === "item" || x === "items") return "item";
+  if (x === "character" || x === "characters" || x === "hero" || x === "heroes") return "character";
+  if (x === "pet" || x === "pets") return "pet";
+
+  // дефолт, чтобы не ломалось
+  return "item";
+}
+
 function formatCompact(n: number) {
   const x = Number.isFinite(n) ? n : 0;
   if (x >= 1_000_000_000) return `${(x / 1_000_000_000).toFixed(1)}B`;
@@ -96,6 +111,18 @@ function formatDate(iso?: string) {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }
 
+const LS_LAST_DROP_ID = "696_last_drop_id";
+const LS_SEEN_IDS = "696_seen_item_ids";
+
+function safeReadJSON<T>(s: string | null, fallback: T): T {
+  try {
+    if (!s) return fallback;
+    return JSON.parse(s) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function InventoryPage() {
   const {
     loading: sessionLoading,
@@ -114,6 +141,7 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(false);
 
   const [rarityFilter, setRarityFilter] = useState<RarityFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("power_desc");
 
   const [selected, setSelected] = useState<InventoryItem | null>(null);
@@ -123,6 +151,42 @@ export default function InventoryPage() {
     const t = setTimeout(() => setShowGate(true), 900);
     return () => clearTimeout(t);
   }, []);
+
+  // NEW system (local)
+  const [lastDropId, setLastDropId] = useState<string | null>(null);
+  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    // read local markers once
+    const ld = typeof window !== "undefined" ? window.localStorage.getItem(LS_LAST_DROP_ID) : null;
+    const seen = typeof window !== "undefined" ? window.localStorage.getItem(LS_SEEN_IDS) : null;
+
+    setLastDropId(ld);
+    const arr = safeReadJSON<string[]>(seen, []);
+    setSeenIds(new Set(arr.filter(Boolean)));
+  }, []);
+
+  const persistSeen = (next: Set<string>) => {
+    setSeenIds(new Set(next));
+    try {
+      window.localStorage.setItem(LS_SEEN_IDS, JSON.stringify(Array.from(next)));
+    } catch {}
+  };
+
+  const markSeen = (invId: string) => {
+    if (!invId) return;
+    const next = new Set(seenIds);
+    next.add(invId);
+    persistSeen(next);
+
+    // если это был "last drop" — можно убрать, чтобы NEW не мигал дальше
+    if (lastDropId && invId === lastDropId) {
+      setLastDropId(null);
+      try {
+        window.localStorage.removeItem(LS_LAST_DROP_ID);
+      } catch {}
+    }
+  };
 
   const handleResync = () => {
     setInventory(null);
@@ -174,17 +238,33 @@ export default function InventoryPage() {
     };
   }, [selected]);
 
+  // when selecting an item -> mark seen
+  useEffect(() => {
+    if (!selected?.id) return;
+    markSeen(selected.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
+
   const items: InventoryItem[] = inventory?.items ?? [];
-  const totalPower =
-    typeof inventory?.totalPower === "number" ? inventory.totalPower : core?.totalPower ?? 0;
+  const totalPower = typeof inventory?.totalPower === "number" ? inventory.totalPower : core?.totalPower ?? 0;
+
+  const isNewItem = (ui: InventoryItem) => {
+    if (!ui?.id) return false;
+    if (!lastDropId) return false;
+    if (seenIds.has(ui.id)) return false;
+    return ui.id === lastDropId;
+  };
 
   const filteredSortedItems = useMemo(() => {
-    const base =
-      rarityFilter === "all"
-        ? items
-        : items.filter((ui) => normalizeRarity(ui.item?.rarity) === rarityFilter);
+    const baseByType =
+      typeFilter === "all" ? items : items.filter((ui) => normalizeType(ui.item?.type) === typeFilter);
 
-    const copy = [...base];
+    const baseByRarity =
+      rarityFilter === "all"
+        ? baseByType
+        : baseByType.filter((ui) => normalizeRarity(ui.item?.rarity) === rarityFilter);
+
+    const copy = [...baseByRarity];
 
     copy.sort((a, b) => {
       const ap = Number(a?.item?.power_value ?? 0);
@@ -198,8 +278,12 @@ export default function InventoryPage() {
       return bt - at;
     });
 
+    // NEW всегда сверху (не ломая сортировку полностью)
+    copy.sort((a, b) => Number(isNewItem(b)) - Number(isNewItem(a)));
+
     return copy;
-  }, [items, rarityFilter, sortMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, rarityFilter, sortMode, typeFilter, lastDropId, seenIds]);
 
   const shownCount = filteredSortedItems.length;
 
@@ -209,6 +293,14 @@ export default function InventoryPage() {
     { key: "rare", label: "Rare" },
     { key: "epic", label: "Epic" },
     { key: "legendary", label: "Legendary" },
+  ];
+
+  const typeOptions: { key: TypeFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "emblem", label: "Emblems" },
+    { key: "item", label: "Items" },
+    { key: "character", label: "Characters" },
+    { key: "pet", label: "Pets" },
   ];
 
   const pillBase = "ui-pill transition-transform duration-150 active:translate-y-[1px]";
@@ -308,7 +400,7 @@ export default function InventoryPage() {
       <style jsx global>{`
         @keyframes invModalIn {
           from {
-            transform: translateY(10px) scale(0.99);
+            transform: translateY(40px) scale(0.97);
             opacity: 0;
           }
           to {
@@ -318,64 +410,81 @@ export default function InventoryPage() {
         }
         @keyframes invShine {
           0% {
-            transform: translateX(-140%) rotate(14deg);
+            transform: translateX(-120%) rotate(14deg);
             opacity: 0;
           }
-          20% {
-            opacity: 0.13;
+          17% {
+            opacity: 0.11;
           }
           60% {
             opacity: 0;
           }
           100% {
-            transform: translateX(130%) rotate(14deg);
+            transform: translateX(120%) rotate(14deg);
             opacity: 0;
           }
         }
 
         .inv-tile {
+          position: relative;
           will-change: transform, box-shadow;
-          transition:
-            transform 0.17s cubic-bezier(0.23, 0.98, 0.36, 1.01),
-            box-shadow 0.16s cubic-bezier(0.17, 0.66, 0.55, 1);
+          box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--tile-glow, #fff8) 38%, transparent),
+            0 0 10px color-mix(in srgb, var(--tile-glow, #fff8) 7%, transparent);
+          background: linear-gradient(
+              105deg,
+              color-mix(in srgb, var(--tile-glow, #fff8) 4%, transparent 92%) 80%,
+              transparent 100%
+            ),
+            var(--panel);
+          transition: transform 0.16s cubic-bezier(0.18, 0.91, 0.47, 1.06),
+            box-shadow 0.16s cubic-bezier(0.18, 0.91, 0.47, 1.06),
+            filter 0.11s cubic-bezier(0.24, 1.02, 0.45, 1.05);
         }
-        .inv-tile:hover {
-          transform: translateY(-4px) scale(1.025);
-          z-index: 2;
-          box-shadow: 0 2px 16px 0
-              color-mix(in srgb, var(--tile-glow, #fff8) 16%, transparent),
-            0 0 0 1.5px var(--tile-outline, transparent);
+        .inv-tile:hover,
+        .inv-tile:focus-visible {
+          transform: translateY(-7px) scale(1.033);
+          z-index: 3;
+          filter: brightness(1.05) saturate(1.1);
+          box-shadow: 0 9px 38px 0 color-mix(in srgb, var(--tile-glow, #fff8) 32%, transparent),
+            0 0 0 1.9px var(--tile-outline, transparent),
+            0 1.6px 26px 0 color-mix(in srgb, var(--tile-glow, #fff8) 13%, transparent);
         }
         .inv-tile:active {
-          transform: translateY(1px) scale(0.985);
-          z-index: 1;
+          transform: translateY(1.7px) scale(0.985);
+          filter: brightness(0.96);
+          z-index: 2;
+          box-shadow: 0 1px 11px 0 color-mix(in srgb, var(--tile-glow, #fff8) 14%, transparent),
+            0 0 0 1px var(--tile-outline, transparent);
         }
 
         .inv-modal {
-          animation: invModalIn 160ms cubic-bezier(0.18, 0.72, 0.34, 1.03);
+          animation: invModalIn 185ms cubic-bezier(0.18, 0.74, 0.28, 1.03);
           will-change: transform, opacity;
-          margin-top: 0;
         }
 
         .inv-tile-power {
           background: linear-gradient(
               92deg,
-              color-mix(in srgb, var(--tile-glow, #fffa), transparent 74%),
-              color-mix(in srgb, #000c 14%, transparent 69%)
+              color-mix(in srgb, var(--tile-glow, #fffc) 92%, transparent 76%),
+              color-mix(in srgb, #050a2e 18%, transparent 64%)
             ),
-            rgba(0, 0, 0, 0.58);
-          border: 1.2px solid rgba(255, 255, 255, 0.15);
+            rgba(0, 0, 0, 0.74);
+          border: 1.2px solid rgba(255, 255, 255, 0.18);
+          backdrop-filter: blur(6px) saturate(1.03);
+          box-shadow: 0 2.5px 10px 0 color-mix(in srgb, var(--tile-glow, #fff8) 16%, transparent);
         }
 
         .inv-tile-image {
-          transition: box-shadow 0.12s, transform 0.14s;
+          transition: box-shadow 0.15s cubic-bezier(0.31, 1.15, 0.35, 1.08),
+            transform 0.14s cubic-bezier(0.31, 1.15, 0.35, 1.08);
+          box-shadow: 0 2px 10px 0 color-mix(in srgb, var(--tile-glow, #fff8) 6%, transparent);
         }
 
         .inv-tile-title {
-          font-size: 1.1rem;
+          font-size: 1.07rem;
           letter-spacing: 0.001em;
-          font-weight: 700;
-          line-height: 1.17;
+          font-weight: 800;
+          line-height: 1.13;
         }
 
         .inv-tile-title,
@@ -386,7 +495,56 @@ export default function InventoryPage() {
         }
 
         .inv-modal-img {
-          background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.23));
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.26));
+          box-shadow: 0 7px 34px 0 color-mix(in srgb, var(--tile-glow, #fff8) 16%, transparent);
+        }
+        .inv-modal-img img {
+          box-shadow: 0 6px 22px 0 color-mix(in srgb, var(--tile-glow, #fff8) 11%, transparent);
+        }
+        .inv-modal {
+          outline: none;
+        }
+
+        .inv-modal:focus {
+          outline: none;
+        }
+        .inv-modal:focus-visible {
+          outline: 2.5px solid var(--accent);
+        }
+
+        .inv-modal-overlay {
+          background: radial-gradient(ellipse at 70% 10%, #181a2328 0%, #010101ef 100%);
+          backdrop-filter: blur(2.5px) saturate(1.035);
+          pointer-events: all;
+        }
+
+        /* NEW badge */
+        @keyframes newPulse {
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          55% {
+            transform: scale(1.06);
+            opacity: 0.92;
+          }
+        }
+        .inv-new-badge {
+          position: absolute;
+          top: 10px;
+          left: 10px;
+          z-index: 20;
+          padding: 6px 10px;
+          border-radius: 999px;
+          font-weight: 900;
+          font-size: 11px;
+          letter-spacing: 0.22em;
+          text-transform: uppercase;
+          background: linear-gradient(90deg, rgba(0, 0, 0, 0.72), rgba(24, 35, 60, 0.62));
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          box-shadow: 0 8px 26px rgba(0, 0, 0, 0.38);
+          animation: newPulse 1.35s ease-in-out infinite;
         }
       `}</style>
 
@@ -410,9 +568,7 @@ export default function InventoryPage() {
               <div className="ui-subtitle">Total Power</div>
               <span className="ui-pill">CORE</span>
             </div>
-            <div className="text-3xl font-semibold mt-3 tabular-nums">
-              {formatCompact(totalPower)}
-            </div>
+            <div className="text-3xl font-semibold mt-3 tabular-nums">{formatCompact(totalPower)}</div>
             <div className="text-xs ui-subtle mt-2">Inventory power (fallback: core power).</div>
           </div>
 
@@ -423,9 +579,7 @@ export default function InventoryPage() {
                 {shownCount}/{items.length}
               </span>
             </div>
-            <div className="text-3xl font-semibold mt-3 tabular-nums">
-              {formatCompact(items.length)}
-            </div>
+            <div className="text-3xl font-semibold mt-3 tabular-nums">{formatCompact(items.length)}</div>
             <div className="text-xs ui-subtle mt-2">
               Showing: <span className="text-[color:var(--text)]">{shownCount}</span>
             </div>
@@ -435,6 +589,24 @@ export default function InventoryPage() {
         {/* Filters */}
         <div className="ui-card p-4 mb-5">
           <div className="flex flex-col gap-3">
+            {/* TYPE */}
+            <div className="flex flex-wrap gap-2 justify-center">
+              {typeOptions.map((opt) => {
+                const active = typeFilter === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setTypeFilter(opt.key)}
+                    className={[pillBase, active ? pillActive : pillIdle].join(" ")}
+                    aria-pressed={active}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* RARITY */}
             <div className="flex flex-wrap gap-2 justify-center">
               {rarityOptions.map((opt) => {
                 const active = rarityFilter === opt.key;
@@ -451,6 +623,7 @@ export default function InventoryPage() {
               })}
             </div>
 
+            {/* SORT */}
             <div className="flex items-center justify-center gap-2 flex-wrap">
               <div className="ui-subtitle">Sort</div>
 
@@ -493,9 +666,7 @@ export default function InventoryPage() {
         {!loading && !inventory?.error && filteredSortedItems.length === 0 && (
           <div className="ui-card p-6 text-center">
             <div className="text-lg font-semibold">No items yet</div>
-            <div className="mt-2 text-sm ui-subtle">
-              Open chests to collect emblems, items, characters and pets.
-            </div>
+            <div className="mt-2 text-sm ui-subtle">Open chests to collect emblems, items, characters and pets.</div>
             <a href="/chest" className="ui-btn ui-btn-primary mt-4">
               Go to Chest
             </a>
@@ -508,9 +679,9 @@ export default function InventoryPage() {
             {filteredSortedItems.map((ui) => {
               const rClass = rarityFxClass(ui.item?.rarity);
               const rColor = rarityColorVar(ui.item?.rarity);
-
-              const frameShadow = `0 0 0 1.5px color-mix(in srgb, ${rColor} 38%, transparent),
-                                   0 0 10px color-mix(in srgb, ${rColor} 12%, transparent)`;
+              const showNew = isNewItem(ui);
+              const typeNorm = normalizeType(ui.item?.type);
+              const imgFit = typeNorm === "character" || typeNorm === "pet" ? "object-contain" : "object-cover";
 
               return (
                 <button
@@ -524,37 +695,34 @@ export default function InventoryPage() {
                   ].join(" ")}
                   style={
                     {
-                      boxShadow: frameShadow,
                       "--tile-glow": rColor,
                       "--tile-outline": rColor,
                     } as CSSProperties
                   }
                   aria-label={`Preview ${ui.item?.name || "item"}`}
                 >
+                  {showNew && (
+                    <div className="inv-new-badge" style={{ color: "var(--text)" }}>
+                      NEW
+                    </div>
+                  )}
+
+                  {/* Rarity subtle glow overlay */}
                   <div
                     className="pointer-events-none absolute inset-0"
                     style={{
-                      background: `radial-gradient(220px 118px at 50% 0%, color-mix(in srgb, ${rColor} 16%, transparent), transparent 70%)`,
-                      opacity: 0.83,
+                      background: `radial-gradient(250px 130px at 50% 0%, color-mix(in srgb, ${rColor} 13%, transparent), transparent 80%)`,
+                      opacity: 0.69,
                     }}
                   />
 
-                  <div
-                    className="pointer-events-none absolute -inset-y-10 -left-1/2 w-1/2 rotate-[14deg]"
-                    style={{
-                      background:
-                        "linear-gradient(90deg, transparent, rgba(255,255,255,0.11), transparent)",
-                      animation: "invShine 3.7s ease-in-out infinite",
-                      opacity: 0.0,
-                    }}
-                  />
-                  <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  {/* Always animate loot tile shine on hover only */}
+                  <div className="pointer-events-none absolute inset-0 flex overflow-hidden">
                     <div
-                      className="absolute -inset-y-10 -left-1/2 w-1/2 rotate-[14deg]"
+                      className="absolute -inset-y-10 -left-1/2 w-1/2 rotate-[14deg] opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                       style={{
-                        background:
-                          "linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent)",
-                        animation: "invShine 3.1s ease-in-out infinite",
+                        background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.11), transparent)",
+                        animation: "invShine 4s cubic-bezier(0.6,0,.69,1.02) infinite",
                       }}
                     />
                   </div>
@@ -562,18 +730,13 @@ export default function InventoryPage() {
                   <div className="relative z-10 p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="inv-tile-title font-bold leading-tight truncate">
-                          {ui.item.name}
-                        </div>
+                        <div className="inv-tile-title font-bold leading-tight truncate">{ui.item.name}</div>
                         <div className="inv-tile-type-label mt-0.5 text-[11px] ui-subtle font-semibold uppercase tracking-wide truncate">
                           {String(ui.item.type || "")}
                         </div>
                       </div>
 
-                      <span
-                        className="ui-pill whitespace-nowrap"
-                        style={{ borderColor: rColor, color: "var(--text)" }}
-                      >
+                      <span className="ui-pill whitespace-nowrap" style={{ borderColor: rColor, color: "var(--text)" }}>
                         {rarityLabel(ui.item.rarity)}
                       </span>
                     </div>
@@ -582,8 +745,7 @@ export default function InventoryPage() {
                       className="mt-3 inv-tile-image rounded-[var(--r-lg)] overflow-hidden aspect-square relative flex items-end"
                       style={{
                         boxShadow: `inset 0 0 0 1.1px color-mix(in srgb, ${rColor} 22%, rgba(255,255,255,0.13))`,
-                        background:
-                          "linear-gradient(180deg, rgba(255,255,255,0.07), rgba(0,0,0,0.18))",
+                        background: "linear-gradient(180deg, rgba(255,255,255,0.10), rgba(0,0,0,0.19))",
                       }}
                     >
                       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120px_90px_at_50%_74%,rgba(0,0,0,0.00),rgba(0,0,0,0.38))]" />
@@ -593,7 +755,7 @@ export default function InventoryPage() {
                         <img
                           src={ui.item.image_url}
                           alt={ui.item.name}
-                          className="w-full h-full object-cover transition-transform duration-150 group-hover:scale-[1.027] rounded-[var(--r-lg)]"
+                          className={`w-full h-full ${imgFit} transition-transform duration-150 group-hover:scale-[1.03] group-active:scale-[0.98] rounded-[var(--r-lg)]`}
                           loading="lazy"
                           draggable={false}
                         />
@@ -604,10 +766,8 @@ export default function InventoryPage() {
                       )}
 
                       <div className="absolute left-2 right-2 bottom-2">
-                        <div className="inv-tile-power rounded-[var(--r-md)] px-2 py-[6px] flex items-center justify-between gap-2 backdrop-blur-[1px]">
-                          <span className="text-[10px] ui-subtle font-semibold opacity-90 select-none">
-                            POWER
-                          </span>
+                        <div className="inv-tile-power rounded-[var(--r-md)] px-2 py-[6px] flex items-center justify-between gap-2 backdrop-blur-[2px]">
+                          <span className="text-[10px] ui-subtle font-semibold opacity-90 select-none">POWER</span>
                           <span
                             className="text-sm font-bold tabular-nums tracking-tight text-white drop-shadow-sm"
                             style={{
@@ -642,7 +802,7 @@ export default function InventoryPage() {
           <button
             type="button"
             onClick={() => setSelected(null)}
-            className="absolute inset-0 bg-black/80 cursor-pointer"
+            className="absolute inset-0 inv-modal-overlay cursor-pointer"
             aria-label="Close preview"
             tabIndex={-1}
           />
@@ -651,22 +811,23 @@ export default function InventoryPage() {
             className={[
               "inv-modal relative w-full max-w-md ui-card-strong p-4 rounded-[var(--r-xl)]",
               rarityFxClass(selected.item?.rarity),
-              "overflow-hidden select-none",
+              "overflow-hidden select-none outline-none",
             ].join(" ")}
             style={{
-              boxShadow: `0 0 0 1.5px color-mix(in srgb, ${rarityColorVar(
+              boxShadow: `0 0 0 1.8px color-mix(in srgb, ${rarityColorVar(
                 selected.item?.rarity
-              )} 33%, rgba(255,255,255,0.15)),
-                          0 12px 36px rgba(0,0,0,0.56)`,
+              )} 36%, rgba(255,255,255,0.18)),
+                          0 22px 60px rgba(0,0,0,0.62)`,
             }}
+            tabIndex={0}
           >
             <div
               className="pointer-events-none absolute inset-0"
               style={{
-                background: `radial-gradient(560px 320px at 50% 0%, color-mix(in srgb, ${rarityColorVar(
+                background: `radial-gradient(660px 360px at 50% 0%, color-mix(in srgb, ${rarityColorVar(
                   selected.item?.rarity
-                )} 14%, transparent), transparent 65%)`,
-                opacity: 0.91,
+                )} 16%, transparent), transparent 63%)`,
+                opacity: 0.93,
               }}
             />
 
@@ -679,13 +840,12 @@ export default function InventoryPage() {
                     style={{
                       borderColor: rarityColorVar(selected.item?.rarity),
                       color: "var(--text)",
+                      background: "rgba(255,255,255,0.10)",
                     }}
                   >
                     {rarityLabel(selected.item.rarity)}
                   </span>
-                  <span className="ui-pill font-semibold">
-                    {String(selected.item.type || "").toUpperCase()}
-                  </span>
+                  <span className="ui-pill font-semibold">{String(selected.item.type || "").toUpperCase()}</span>
                 </div>
               </div>
 
@@ -693,6 +853,8 @@ export default function InventoryPage() {
                 type="button"
                 onClick={() => setSelected(null)}
                 className="ui-btn ui-btn-ghost"
+                tabIndex={0}
+                aria-label="Close"
               >
                 Close
               </button>
@@ -703,9 +865,8 @@ export default function InventoryPage() {
               style={{
                 boxShadow: `inset 0 0 0 1.1px color-mix(in srgb, ${rarityColorVar(
                   selected.item?.rarity
-                )} 20%, rgba(255,255,255,0.16))`,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.20))",
+                )} 23%, rgba(255,255,255,0.21))`,
+                background: "linear-gradient(180deg, rgba(255,255,255,0.07), rgba(0,0,0,0.21))",
               }}
             >
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(140px_110px_at_50%_70%,rgba(0,0,0,0.00),rgba(0,0,0,0.44))]" />
@@ -714,7 +875,7 @@ export default function InventoryPage() {
                 <img
                   src={selected.item.image_url}
                   alt={selected.item.name}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain"
                   draggable={false}
                 />
               ) : (
@@ -735,9 +896,7 @@ export default function InventoryPage() {
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <div>
                   <div className="ui-subtitle">Obtained</div>
-                  <div className="text-sm ui-muted mt-1">
-                    {formatDate(selected.created_at) || "Unknown"}
-                  </div>
+                  <div className="text-sm ui-muted mt-1">{formatDate(selected.created_at) || "Unknown"}</div>
                 </div>
 
                 <div>
@@ -753,11 +912,7 @@ export default function InventoryPage() {
               <a href="/chest" className="ui-btn ui-btn-primary flex-1">
                 Open more
               </a>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                className="ui-btn ui-btn-ghost flex-1"
-              >
+              <button type="button" onClick={() => setSelected(null)} className="ui-btn ui-btn-ghost flex-1">
                 Done
               </button>
             </div>
