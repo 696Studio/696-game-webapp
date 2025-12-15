@@ -115,7 +115,10 @@ export default function ChestPage() {
   const [fxSeed, setFxSeed] = useState(0);
   const revealTimerRef = useRef<number | null>(null);
 
-  const core = useMemo(() => unwrapCore(overrideBootstrap || bootstrap), [overrideBootstrap, bootstrap]);
+  const core = useMemo(
+    () => unwrapCore(overrideBootstrap || bootstrap),
+    [overrideBootstrap, bootstrap]
+  );
   const hasCore = !!core;
 
   const soft = core?.balance?.soft_balance ?? 0;
@@ -331,8 +334,7 @@ export default function ChestPage() {
           z-index: 0;
           border-radius: 2.5rem;
           overflow: hidden;
-          background:
-            radial-gradient(950px 380px at 50% -45px, #45e3ff26 0%, transparent 70%),
+          background: radial-gradient(950px 380px at 50% -45px, #45e3ff26 0%, transparent 70%),
             radial-gradient(580px 180px at 50% 420px, #ae41fa14 0%, transparent 70%);
         }
         @media (max-width: 600px) {
@@ -429,7 +431,9 @@ export default function ChestPage() {
               <span className="ui-subtle tracking-wide">Crystals</span>
               <span className="font-semibold tabular-nums text-lg text-blue-300">{hard}</span>
             </div>
-            {refreshing && <div className="mt-4 text-[12px] text-[#aaf8ff] opacity-80">Syncing...</div>}
+            {refreshing && (
+              <div className="mt-4 text-[12px] text-[#aaf8ff] opacity-80">Syncing...</div>
+            )}
           </div>
 
           <div className="ui-card p-6 shadow-[0_2px_16px_0_rgba(184,92,255,0.08)] bg-gradient-to-tr from-[#1c1736cc] to-[#131325] border border-[#211944] min-h-[108px]">
@@ -449,7 +453,9 @@ export default function ChestPage() {
               </div>
               <div className="text-sm text-[#afc8e4bb] mt-2 tracking-wide">
                 Cost:{" "}
-                <span className="font-extrabold text-cyan-100 tabular-nums text-lg">{CHEST_COST_SHARDS}</span>{" "}
+                <span className="font-extrabold text-cyan-100 tabular-nums text-lg">
+                  {CHEST_COST_SHARDS}
+                </span>{" "}
                 <span className="ui-subtle">Shards</span>
               </div>
             </div>
@@ -482,7 +488,9 @@ export default function ChestPage() {
                     <div className="ui-progress">
                       <div className="w-3/4 h-2 rounded bg-cyan-200/70 opacity-90 animate-pulse" />
                     </div>
-                    <div className="mt-3 text-[12px] text-[#60e6ffcd] font-semibold">Spinning the matrix...</div>
+                    <div className="mt-3 text-[12px] text-[#60e6ffcd] font-semibold">
+                      Spinning the matrix...
+                    </div>
                   </div>
                 )}
               </div>
@@ -493,8 +501,9 @@ export default function ChestPage() {
             <div className="mt-7 ui-card-strong p-5 text-center bg-yellow-900/10 border border-yellow-500/25 rounded-xl shadow">
               <div className="text-base font-bold text-yellow-100">Not enough Shards</div>
               <div className="text-xs ui-subtle mt-1 text-yellow-200/80">
-                You need <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span> more Shards to
-                open this chest.
+                You need{" "}
+                <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span>{" "}
+                more Shards to open this chest.
               </div>
               <a href="/" className="ui-btn ui-btn-ghost mt-3">
                 Go to Home
@@ -565,10 +574,13 @@ export default function ChestPage() {
             ) : drop ? (
               <div
                 key={`reveal-${fxSeed}`}
-                className="text-center motion-safe:animate-[popIn_340ms_ease-out_1] pt-4 pb-1"
+                // ✅ FIX #1: больше места сверху, чтобы баннер не залезал на "Drop"
+                className="text-center motion-safe:animate-[popIn_340ms_ease-out_1] pt-12 pb-1"
                 style={{ minHeight: 305 }}
               >
-                <div className="text-lg font-black tracking-wider text-slate-50 drop-shadow mb-2">Drop</div>
+                <div className="text-lg font-black tracking-wider text-slate-50 drop-shadow mb-2">
+                  Drop
+                </div>
 
                 <div
                   className={[
@@ -585,7 +597,13 @@ export default function ChestPage() {
                 >
                   {drop.image_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={drop.image_url} alt={drop.name} className="w-full h-full object-cover" />
+                    // ✅ FIX #2: персонаж/предмет целиком (contain + небольшой padding)
+                    <img
+                      src={drop.image_url}
+                      alt={drop.name}
+                      className="w-full h-full object-contain p-2"
+                      draggable={false}
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <div className="text-[13px] ui-subtle">NO IMAGE</div>
@@ -631,7 +649,9 @@ export default function ChestPage() {
                 <div className="mt-5 text-base font-medium text-cyan-100/85">
                   Total Power after drop:{" "}
                   <span className="text-cyan-50 font-extrabold tabular-nums text-lg">
-                    {typeof result?.totalPowerAfter === "number" ? result.totalPowerAfter : totalPower}
+                    {typeof result?.totalPowerAfter === "number"
+                      ? result.totalPowerAfter
+                      : totalPower}
                   </span>
                 </div>
 
@@ -655,7 +675,8 @@ export default function ChestPage() {
 
                 {!canAfford && (
                   <div className="mt-5 text-[13px] ui-subtle text-cyan-100/80">
-                    Need <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span> more Shards.
+                    Need <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span>{" "}
+                    more Shards.
                   </div>
                 )}
               </div>
