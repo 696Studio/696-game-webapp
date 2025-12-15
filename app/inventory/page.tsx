@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { useGameSessionContext } from "../context/GameSessionContext";
 
 type InventoryItem = {
@@ -210,8 +211,7 @@ export default function InventoryPage() {
     { key: "legendary", label: "Legendary" },
   ];
 
-  const pillBase =
-    "ui-pill transition-transform duration-150 active:translate-y-[1px]";
+  const pillBase = "ui-pill transition-transform duration-150 active:translate-y-[1px]";
   const pillActive =
     "border-[rgba(255,255,255,0.40)] text-[color:var(--text)] bg-[rgba(255,255,255,0.08)]";
   const pillIdle = "hover:bg-[rgba(255,255,255,0.06)]";
@@ -222,9 +222,7 @@ export default function InventoryPage() {
       <main className="min-h-screen flex items-center justify-center px-4">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Open in Telegram</div>
-          <div className="text-sm ui-subtle">
-            This page works only inside Telegram WebApp.
-          </div>
+          <div className="text-sm ui-subtle">This page works only inside Telegram WebApp.</div>
         </div>
       </main>
     );
@@ -306,6 +304,92 @@ export default function InventoryPage() {
 
   return (
     <main className="min-h-screen flex flex-col items-center pt-10 px-4 pb-28">
+      {/* local keyframes (UI only) */}
+      <style jsx global>{`
+        @keyframes invModalIn {
+          from {
+            transform: translateY(10px) scale(0.99);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+          }
+        }
+        @keyframes invShine {
+          0% {
+            transform: translateX(-140%) rotate(14deg);
+            opacity: 0;
+          }
+          20% {
+            opacity: 0.13;
+          }
+          60% {
+            opacity: 0;
+          }
+          100% {
+            transform: translateX(130%) rotate(14deg);
+            opacity: 0;
+          }
+        }
+
+        .inv-tile {
+          will-change: transform, box-shadow;
+          transition:
+            transform 0.17s cubic-bezier(0.23, 0.98, 0.36, 1.01),
+            box-shadow 0.16s cubic-bezier(0.17, 0.66, 0.55, 1);
+        }
+        .inv-tile:hover {
+          transform: translateY(-4px) scale(1.025);
+          z-index: 2;
+          box-shadow: 0 2px 16px 0
+              color-mix(in srgb, var(--tile-glow, #fff8) 16%, transparent),
+            0 0 0 1.5px var(--tile-outline, transparent);
+        }
+        .inv-tile:active {
+          transform: translateY(1px) scale(0.985);
+          z-index: 1;
+        }
+
+        .inv-modal {
+          animation: invModalIn 160ms cubic-bezier(0.18, 0.72, 0.34, 1.03);
+          will-change: transform, opacity;
+          margin-top: 0;
+        }
+
+        .inv-tile-power {
+          background: linear-gradient(
+              92deg,
+              color-mix(in srgb, var(--tile-glow, #fffa), transparent 74%),
+              color-mix(in srgb, #000c 14%, transparent 69%)
+            ),
+            rgba(0, 0, 0, 0.58);
+          border: 1.2px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .inv-tile-image {
+          transition: box-shadow 0.12s, transform 0.14s;
+        }
+
+        .inv-tile-title {
+          font-size: 1.1rem;
+          letter-spacing: 0.001em;
+          font-weight: 700;
+          line-height: 1.17;
+        }
+
+        .inv-tile-title,
+        .inv-tile-type-label {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .inv-modal-img {
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.23));
+        }
+      `}</style>
+
       <div className="w-full max-w-5xl">
         {/* Header */}
         <div className="flex items-start justify-between mb-5">
@@ -335,7 +419,9 @@ export default function InventoryPage() {
           <div className="ui-card p-4">
             <div className="flex items-center justify-between">
               <div className="ui-subtitle">Items</div>
-              <span className="ui-pill">{shownCount}/{items.length}</span>
+              <span className="ui-pill">
+                {shownCount}/{items.length}
+              </span>
             </div>
             <div className="text-3xl font-semibold mt-3 tabular-nums">
               {formatCompact(items.length)}
@@ -395,16 +481,12 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {loading && (
-          <div className="mb-4 ui-subtle text-sm text-center">Loading items...</div>
-        )}
+        {loading && <div className="mb-4 ui-subtle text-sm text-center">Loading items...</div>}
 
         {inventory?.error && (
           <div className="mb-4 ui-card p-4 border border-[rgba(255,80,80,0.35)]">
             <div className="text-sm font-semibold text-red-300">Error</div>
-            <div className="mt-1 text-sm text-red-200/80 break-words">
-              {inventory.error}
-            </div>
+            <div className="mt-1 text-sm text-red-200/80 break-words">{inventory.error}</div>
           </div>
         )}
 
@@ -420,12 +502,15 @@ export default function InventoryPage() {
           </div>
         )}
 
-        {/* Fortnite-ish loot grid */}
+        {/* Inventory UI v2 — loot tiles */}
         {filteredSortedItems.length > 0 && (
           <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {filteredSortedItems.map((ui) => {
               const rClass = rarityFxClass(ui.item?.rarity);
               const rColor = rarityColorVar(ui.item?.rarity);
+
+              const frameShadow = `0 0 0 1.5px color-mix(in srgb, ${rColor} 38%, transparent),
+                                   0 0 10px color-mix(in srgb, ${rColor} 12%, transparent)`;
 
               return (
                 <button
@@ -433,67 +518,111 @@ export default function InventoryPage() {
                   type="button"
                   onClick={() => setSelected(ui)}
                   className={[
-                    "ui-card p-3 text-left w-full relative overflow-hidden",
-                    "transition-transform duration-150 active:translate-y-[1px]",
-                    "hover:bg-[rgba(255,255,255,0.06)]",
+                    "inv-tile group ui-card p-0 text-left w-full relative overflow-hidden",
+                    "rounded-[var(--r-xl)]",
                     rClass,
                   ].join(" ")}
+                  style={
+                    {
+                      boxShadow: frameShadow,
+                      "--tile-glow": rColor,
+                      "--tile-outline": rColor,
+                    } as CSSProperties
+                  }
+                  aria-label={`Preview ${ui.item?.name || "item"}`}
                 >
-                  {/* rarity glow */}
                   <div
                     className="pointer-events-none absolute inset-0"
                     style={{
-                      background: `radial-gradient(220px 120px at 50% 0%, color-mix(in srgb, ${rColor} 22%, transparent), transparent 60%)`,
-                      opacity: 0.9,
+                      background: `radial-gradient(220px 118px at 50% 0%, color-mix(in srgb, ${rColor} 16%, transparent), transparent 70%)`,
+                      opacity: 0.83,
                     }}
                   />
 
-                  {/* badge */}
-                  <div className="relative z-10 flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="font-semibold leading-snug truncate">
-                        {ui.item.name}
+                  <div
+                    className="pointer-events-none absolute -inset-y-10 -left-1/2 w-1/2 rotate-[14deg]"
+                    style={{
+                      background:
+                        "linear-gradient(90deg, transparent, rgba(255,255,255,0.11), transparent)",
+                      animation: "invShine 3.7s ease-in-out infinite",
+                      opacity: 0.0,
+                    }}
+                  />
+                  <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <div
+                      className="absolute -inset-y-10 -left-1/2 w-1/2 rotate-[14deg]"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent)",
+                        animation: "invShine 3.1s ease-in-out infinite",
+                      }}
+                    />
+                  </div>
+
+                  <div className="relative z-10 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="inv-tile-title font-bold leading-tight truncate">
+                          {ui.item.name}
+                        </div>
+                        <div className="inv-tile-type-label mt-0.5 text-[11px] ui-subtle font-semibold uppercase tracking-wide truncate">
+                          {String(ui.item.type || "")}
+                        </div>
                       </div>
-                      <div className="mt-1 text-[11px] ui-subtle">
-                        {String(ui.item.type || "").toUpperCase()}
-                      </div>
+
+                      <span
+                        className="ui-pill whitespace-nowrap"
+                        style={{ borderColor: rColor, color: "var(--text)" }}
+                      >
+                        {rarityLabel(ui.item.rarity)}
+                      </span>
                     </div>
 
-                    <span
-                      className="ui-pill whitespace-nowrap"
-                      style={{ borderColor: rColor, color: "var(--text)" }}
+                    <div
+                      className="mt-3 inv-tile-image rounded-[var(--r-lg)] overflow-hidden aspect-square relative flex items-end"
+                      style={{
+                        boxShadow: `inset 0 0 0 1.1px color-mix(in srgb, ${rColor} 22%, rgba(255,255,255,0.13))`,
+                        background:
+                          "linear-gradient(180deg, rgba(255,255,255,0.07), rgba(0,0,0,0.18))",
+                      }}
                     >
-                      {rarityLabel(ui.item.rarity)}
-                    </span>
-                  </div>
+                      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120px_90px_at_50%_74%,rgba(0,0,0,0.00),rgba(0,0,0,0.38))]" />
 
-                  {/* image (square loot tile) */}
-                  <div className="relative z-10 mt-3 rounded-[var(--r-md)] border border-[color:var(--border)] bg-[rgba(0,0,0,0.25)] overflow-hidden aspect-square">
-                    {ui.item.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={ui.item.image_url}
-                        alt={ui.item.name}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <div className="ui-subtitle">No image</div>
+                      {ui.item.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={ui.item.image_url}
+                          alt={ui.item.name}
+                          className="w-full h-full object-cover transition-transform duration-150 group-hover:scale-[1.027] rounded-[var(--r-lg)]"
+                          loading="lazy"
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-black/10">
+                          <div className="ui-subtitle">No image</div>
+                        </div>
+                      )}
+
+                      <div className="absolute left-2 right-2 bottom-2">
+                        <div className="inv-tile-power rounded-[var(--r-md)] px-2 py-[6px] flex items-center justify-between gap-2 backdrop-blur-[1px]">
+                          <span className="text-[10px] ui-subtle font-semibold opacity-90 select-none">
+                            POWER
+                          </span>
+                          <span
+                            className="text-sm font-bold tabular-nums tracking-tight text-white drop-shadow-sm"
+                            style={{
+                              textShadow: "0 1px 4px #16192555,0 1px 2px #0006",
+                            }}
+                          >
+                            {formatCompact(Number(ui.item.power_value ?? 0))}
+                          </span>
+                        </div>
                       </div>
-                    )}
-                  </div>
-
-                  {/* power */}
-                  <div className="relative z-10 mt-3 flex items-center justify-between">
-                    <div className="text-[11px] ui-subtle">POWER</div>
-                    <div className="text-base font-semibold tabular-nums">
-                      {formatCompact(Number(ui.item.power_value ?? 0))}
                     </div>
-                  </div>
 
-                  <div className="relative z-10 mt-2 text-[11px] ui-subtle">
-                    Tap to preview
+                    <div className="mt-3 text-[11px] ui-subtle text-center opacity-80 group-hover:opacity-100 transition-opacity select-none pointer-events-none">
+                      Tap to preview
+                    </div>
                   </div>
                 </button>
               );
@@ -513,33 +642,37 @@ export default function InventoryPage() {
           <button
             type="button"
             onClick={() => setSelected(null)}
-            className="absolute inset-0 bg-black/75"
+            className="absolute inset-0 bg-black/80 cursor-pointer"
             aria-label="Close preview"
+            tabIndex={-1}
           />
 
           <div
             className={[
-              "relative w-full max-w-md ui-card-strong p-4 rounded-[var(--r-xl)]",
-              "motion-safe:animate-[invModalIn_180ms_ease-out_1]",
+              "inv-modal relative w-full max-w-md ui-card-strong p-4 rounded-[var(--r-xl)]",
               rarityFxClass(selected.item?.rarity),
-              "overflow-hidden",
+              "overflow-hidden select-none",
             ].join(" ")}
+            style={{
+              boxShadow: `0 0 0 1.5px color-mix(in srgb, ${rarityColorVar(
+                selected.item?.rarity
+              )} 33%, rgba(255,255,255,0.15)),
+                          0 12px 36px rgba(0,0,0,0.56)`,
+            }}
           >
             <div
               className="pointer-events-none absolute inset-0"
               style={{
-                background: `radial-gradient(520px 260px at 50% 0%, color-mix(in srgb, ${rarityColorVar(
+                background: `radial-gradient(560px 320px at 50% 0%, color-mix(in srgb, ${rarityColorVar(
                   selected.item?.rarity
-                )} 18%, transparent), transparent 62%)`,
-                opacity: 0.95,
+                )} 14%, transparent), transparent 65%)`,
+                opacity: 0.91,
               }}
             />
 
             <div className="relative z-10 flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-lg font-semibold truncate">
-                  {selected.item.name}
-                </div>
+                <div className="text-lg font-semibold truncate">{selected.item.name}</div>
                 <div className="mt-1 flex items-center gap-2 flex-wrap">
                   <span
                     className="ui-pill"
@@ -550,7 +683,7 @@ export default function InventoryPage() {
                   >
                     {rarityLabel(selected.item.rarity)}
                   </span>
-                  <span className="ui-pill">
+                  <span className="ui-pill font-semibold">
                     {String(selected.item.type || "").toUpperCase()}
                   </span>
                 </div>
@@ -565,16 +698,27 @@ export default function InventoryPage() {
               </button>
             </div>
 
-            <div className="relative z-10 mt-4 rounded-[var(--r-lg)] border border-[color:var(--border)] bg-[rgba(0,0,0,0.25)] overflow-hidden aspect-square">
+            <div
+              className="relative z-10 mt-4 inv-modal-img rounded-[var(--r-lg)] overflow-hidden aspect-square"
+              style={{
+                boxShadow: `inset 0 0 0 1.1px color-mix(in srgb, ${rarityColorVar(
+                  selected.item?.rarity
+                )} 20%, rgba(255,255,255,0.16))`,
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.20))",
+              }}
+            >
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(140px_110px_at_50%_70%,rgba(0,0,0,0.00),rgba(0,0,0,0.44))]" />
               {selected.item.image_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={selected.item.image_url}
                   alt={selected.item.name}
                   className="w-full h-full object-cover"
+                  draggable={false}
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center">
+                <div className="w-full h-full flex items-center justify-center bg-black/10">
                   <div className="ui-subtitle">No image</div>
                 </div>
               )}

@@ -91,15 +91,8 @@ function fxColor(fx: RarityFx) {
 }
 
 export default function ChestPage() {
-  const {
-    telegramId,
-    bootstrap,
-    isTelegramEnv,
-    loading,
-    error,
-    timedOut,
-    refreshSession,
-  } = useGameSessionContext() as any;
+  const { telegramId, bootstrap, isTelegramEnv, loading, error, timedOut, refreshSession } =
+    useGameSessionContext() as any;
 
   const [showGate, setShowGate] = useState(false);
   useEffect(() => {
@@ -313,12 +306,191 @@ export default function ChestPage() {
   const showReveal = phase === "reveal" && !!result;
   const fx = drop ? rarityFx(drop.rarity) : "none";
 
-  const auraOpacity = fx === "legendary" ? 0.26 : fx === "epic" ? 0.18 : fx === "rare" ? 0.12 : 0;
-  const confettiCount = fx === "legendary" ? 18 : fx === "epic" ? 12 : fx === "rare" ? 7 : 0;
+  const auraOpacity = fx === "legendary" ? 0.30 : fx === "epic" ? 0.22 : fx === "rare" ? 0.14 : 0;
+  const confettiCount = fx === "legendary" ? 22 : fx === "epic" ? 14 : fx === "rare" ? 8 : 0;
   const bannerText = rarityBannerText(fx);
+
+  const spinSpeed = fx === "legendary" ? 70 : fx === "epic" ? 95 : fx === "rare" ? 120 : 140;
+  const shakeIntensity = fx === "legendary" ? 1.0 : fx === "epic" ? 0.85 : fx === "rare" ? 0.65 : 0.55;
 
   return (
     <main className="min-h-screen flex flex-col items-center pt-10 px-4 pb-24">
+      {/* Chest UX v2 — local FX (UI only) */}
+      <style jsx global>{`
+        @keyframes chestFloat {
+          0% { transform: translateY(0); }
+          50% { transform: translateY(-6px); }
+          100% { transform: translateY(0); }
+        }
+        @keyframes chestShake {
+          0% { transform: translateX(0) rotate(0deg); }
+          20% { transform: translateX(-2px) rotate(-1deg); }
+          40% { transform: translateX(2px) rotate(1deg); }
+          60% { transform: translateX(-3px) rotate(-1.2deg); }
+          80% { transform: translateX(3px) rotate(1.2deg); }
+          100% { transform: translateX(0) rotate(0deg); }
+        }
+        @keyframes chestSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes chestCrack {
+          0% { transform: scale(1); filter: brightness(1); }
+          55% { transform: scale(1.02); filter: brightness(1.2); }
+          100% { transform: scale(0.985); filter: brightness(0.95); }
+        }
+        @keyframes burstRing {
+          0% { transform: scale(0.65); opacity: 0; }
+          20% { opacity: 0.7; }
+          100% { transform: scale(1.25); opacity: 0; }
+        }
+        @keyframes flare {
+          0% { transform: translateY(12px) scale(0.75); opacity: 0; }
+          18% { opacity: 0.9; }
+          100% { transform: translateY(-42px) scale(1.12); opacity: 0; }
+        }
+        @keyframes shineSweep {
+          0% { transform: translateX(-60%) skewY(-12deg); opacity: 0; }
+          25% { opacity: 0.28; }
+          100% { transform: translateX(60%) skewY(-12deg); opacity: 0; }
+        }
+        @keyframes popIn {
+          from { transform: translateY(10px) scale(0.98); opacity: 0; }
+          to { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        @keyframes bannerPop {
+          0% { transform: translate(-50%, -10px) scale(0.92); opacity: 0; }
+          30% { opacity: 1; }
+          100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+        }
+        @keyframes confettiFloat {
+          0% { transform: translateY(0); opacity: 0; }
+          15% { opacity: 0.8; }
+          100% { transform: translateY(110px); opacity: 0; }
+        }
+
+        .chest-stage {
+          position: relative;
+          border-radius: var(--r-xl);
+          overflow: hidden;
+        }
+
+        .chest-core {
+          position: relative;
+          width: 132px;
+          height: 132px;
+          border-radius: var(--r-xl);
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(0,0,0,0.30);
+          box-shadow: 0 18px 70px rgba(0,0,0,0.35);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          will-change: transform, filter;
+        }
+
+        .chest-float-idle {
+          animation: chestFloat 2.8s ease-in-out infinite;
+        }
+
+        .chest-opening {
+          animation: chestShake 180ms ease-in-out infinite;
+        }
+
+        .chest-crack {
+          animation: chestCrack 240ms ease-out 1;
+        }
+
+        .chest-spin-ring {
+          position: absolute;
+          inset: -14px;
+          border-radius: 999px;
+          border: 1.5px solid color-mix(in srgb, var(--spin-color, #fff8) 32%, transparent);
+          box-shadow: 0 0 0 1px color-mix(in srgb, var(--spin-color, #fff8) 18%, transparent),
+            0 0 22px color-mix(in srgb, var(--spin-color, #fff8) 14%, transparent);
+          opacity: 0;
+          transform: scale(0.95);
+          transition: opacity 180ms ease, transform 180ms ease;
+          pointer-events: none;
+        }
+
+        .chest-spin-on .chest-spin-ring {
+          opacity: 1;
+          transform: scale(1);
+        }
+
+        .chest-spin-ring::before {
+          content: "";
+          position: absolute;
+          inset: -2px;
+          border-radius: 999px;
+          background: conic-gradient(
+            from 0deg,
+            transparent,
+            color-mix(in srgb, var(--spin-color, #fff8) 38%, transparent),
+            transparent,
+            color-mix(in srgb, var(--spin-color, #fff8) 22%, transparent),
+            transparent
+          );
+          filter: blur(0.4px);
+          animation: chestSpin var(--spin-speed, 120ms) linear infinite;
+          opacity: 0.9;
+        }
+
+        .chest-burst-ring {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          width: 210px;
+          height: 210px;
+          border-radius: 999px;
+          transform: translate(-50%, -50%);
+          border: 2px solid color-mix(in srgb, var(--spin-color, #fff8) 42%, transparent);
+          box-shadow: 0 0 26px color-mix(in srgb, var(--spin-color, #fff8) 20%, transparent);
+          opacity: 0;
+          pointer-events: none;
+        }
+
+        .chest-burst-on {
+          animation: burstRing 420ms ease-out 1;
+        }
+
+        .chest-flare {
+          position: absolute;
+          left: 50%;
+          bottom: 18px;
+          width: 180px;
+          height: 120px;
+          transform: translateX(-50%);
+          background: radial-gradient(
+            80px 60px at 50% 70%,
+            color-mix(in srgb, var(--spin-color, #fff8) 32%, transparent),
+            transparent 70%
+          );
+          filter: blur(0.2px);
+          opacity: 0;
+          pointer-events: none;
+        }
+
+        .chest-flare-on {
+          animation: flare 520ms ease-out 1;
+        }
+
+        .reveal-sweep {
+          position: absolute;
+          inset: -40px -40px auto -40px;
+          height: 170px;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.65), transparent);
+          opacity: 0.22;
+          transform: skewY(-10deg);
+          pointer-events: none;
+        }
+
+        .reveal-sweep-on {
+          animation: shineSweep 900ms ease-out 1;
+        }
+      `}</style>
+
       <div className="w-full max-w-3xl">
         <div className="flex items-start justify-between mb-5">
           <div>
@@ -357,19 +529,18 @@ export default function ChestPage() {
             <div>
               <div className="ui-subtitle">Basic Chest</div>
               <div className="text-sm ui-muted mt-1">
-                Cost:{" "}
-                <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS}</span>{" "}
+                Cost: <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS}</span>{" "}
                 <span className="ui-subtle">Shards</span>
               </div>
             </div>
 
-            <span className="ui-pill">
-              {canAfford ? "READY" : `NEED ${CHEST_COST_SHARDS - soft}`}
-            </span>
+            <span className="ui-pill">{canAfford ? "READY" : `NEED ${CHEST_COST_SHARDS - soft}`}</span>
           </div>
 
+          {/* Stage */}
           <div className="mt-5 flex justify-center">
-            <div className="w-full max-w-sm h-44 rounded-[var(--r-xl)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.04)] flex items-center justify-center relative overflow-hidden">
+            <div className="w-full max-w-sm h-48 chest-stage border border-[color:var(--border)] bg-[rgba(255,255,255,0.04)] flex items-center justify-center relative">
+              {/* background gradients */}
               <div
                 className="pointer-events-none absolute inset-0 opacity-90"
                 style={{
@@ -378,27 +549,81 @@ export default function ChestPage() {
                 }}
               />
 
+              {/* opening ring (fx-colored only on reveal, but animated during opening) */}
+              <div
+                className={[
+                  "pointer-events-none absolute inset-0",
+                  phase === "opening" ? "opacity-100" : "opacity-0",
+                  "transition-opacity duration-200",
+                ].join(" ")}
+                style={{
+                  background: `radial-gradient(520px 240px at 50% 40%, color-mix(in srgb, ${fxColor(
+                    fx
+                  )} 18%, transparent), transparent 60%)`,
+                  opacity: phase === "opening" ? 0.55 : 0,
+                }}
+              />
+
               <div className="relative z-10 text-center">
+                {/* Chest core */}
                 <div
                   className={[
-                    "mx-auto w-28 h-28 rounded-[var(--r-lg)] border border-[rgba(255,255,255,0.18)]",
-                    "bg-[rgba(0,0,0,0.28)] flex items-center justify-center",
-                    "shadow-[0_12px_55px_rgba(0,0,0,0.35)]",
-                    phase === "opening" ? "motion-safe:animate-[wiggle_180ms_ease-in-out_infinite]" : "",
+                    "mx-auto chest-core",
+                    phase === "idle" ? "chest-float-idle" : "",
+                    phase === "opening" ? "chest-opening chest-spin-on" : "",
+                    phase === "reveal" && !isError && drop ? "chest-crack" : "",
                   ].join(" ")}
+                  style={
+                    {
+                      // spin color and speed are CSS variables (UI only)
+                      ["--spin-color" as any]: fxColor(fx),
+                      ["--spin-speed" as any]: `${spinSpeed}ms`,
+                      // keep shake intensity as subtle multiplier if needed later
+                      ["--shake-k" as any]: String(shakeIntensity),
+                    } as any
+                  }
                 >
-                  <div className="text-[11px] ui-subtle px-3">
-                    {phase === "opening" ? "OPENING..." : "CHEST"}
+                  {/* spinning ring */}
+                  <div className="chest-spin-ring" />
+                  {/* burst ring on reveal */}
+                  <div
+                    className={[
+                      "chest-burst-ring",
+                      phase === "reveal" && !isError && drop ? "chest-burst-on" : "",
+                    ].join(" ")}
+                  />
+                  {/* flare on reveal */}
+                  <div
+                    className={[
+                      "chest-flare",
+                      phase === "reveal" && !isError && drop ? "chest-flare-on" : "",
+                    ].join(" ")}
+                    style={{
+                      ["--spin-color" as any]: fxColor(fx),
+                    }}
+                  />
+
+                  {/* icon/content */}
+                  <div className="relative z-10 text-center px-3">
+                    <div className="text-[11px] ui-subtle font-semibold tracking-[0.22em]">
+                      {phase === "opening" ? "ROLLING..." : "CHEST"}
+                    </div>
+                    <div className="mt-2 text-[10px] ui-subtle opacity-80">
+                      {phase === "opening" ? "Decrypting drop" : "Tap Open to roll a drop"}
+                    </div>
                   </div>
+
+                  {/* subtle shine sweep during opening */}
+                  {phase === "opening" && <div className="reveal-sweep reveal-sweep-on" />}
                 </div>
 
-                <div className="mt-3 text-xs ui-subtle">
-                  {phase === "opening" ? "Decrypting drop..." : "Tap Open to roll a drop."}
-                </div>
-
+                {/* progress */}
                 {phase === "opening" && (
-                  <div className="mt-3 ui-progress">
-                    <div className="w-2/3 opacity-90 animate-pulse" />
+                  <div className="mt-4">
+                    <div className="ui-progress">
+                      <div className="w-2/3 opacity-90 animate-pulse" />
+                    </div>
+                    <div className="mt-2 text-[11px] ui-subtle">Spinning the matrix...</div>
                   </div>
                 )}
               </div>
@@ -410,10 +635,12 @@ export default function ChestPage() {
               <div className="text-sm font-semibold">Not enough Shards</div>
               <div className="text-xs ui-subtle mt-1">
                 You need{" "}
-                <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span>{" "}
-                more Shards to open this chest.
+                <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span> more
+                Shards to open this chest.
               </div>
-              <a href="/" className="ui-btn ui-btn-ghost mt-3">Go to Home</a>
+              <a href="/" className="ui-btn ui-btn-ghost mt-3">
+                Go to Home
+              </a>
             </div>
           )}
 
@@ -436,6 +663,7 @@ export default function ChestPage() {
           </div>
         </div>
 
+        {/* Reveal */}
         {showReveal && (
           <div className="mt-5 ui-card p-5 relative overflow-hidden">
             {fx !== "none" && !isError && drop && (
@@ -450,7 +678,7 @@ export default function ChestPage() {
                 ].join(" ")}
                 style={{
                   borderColor: fxColor(fx),
-                  boxShadow: `0 18px 80px color-mix(in srgb, ${fxColor(fx)} 20%, transparent)`,
+                  boxShadow: `0 18px 80px color-mix(in srgb, ${fxColor(fx)} 22%, transparent)`,
                 }}
               >
                 {bannerText}
@@ -464,8 +692,12 @@ export default function ChestPage() {
                   className="pointer-events-none absolute inset-0"
                   style={{
                     opacity: auraOpacity,
-                    background: `radial-gradient(540px 260px at 50% 20%, color-mix(in srgb, ${fxColor(fx)} 65%, white 10%), transparent 60%),
-                                radial-gradient(820px 420px at 50% 115%, color-mix(in srgb, ${fxColor(fx)} 45%, transparent), transparent 60%)`,
+                    background: `radial-gradient(540px 260px at 50% 20%, color-mix(in srgb, ${fxColor(
+                      fx
+                    )} 65%, white 10%), transparent 60%),
+                                radial-gradient(820px 420px at 50% 115%, color-mix(in srgb, ${fxColor(
+                                  fx
+                                )} 45%, transparent), transparent 60%)`,
                   }}
                 />
 
@@ -482,7 +714,7 @@ export default function ChestPage() {
                   {Array.from({ length: confettiCount }).map((_, i) => {
                     const left = (i * (100 / Math.max(1, confettiCount))) % 100;
                     const delay = (i % 6) * 70;
-                    const size = i % 3 === 0 ? 6 : i % 3 === 1 ? 4 : 3;
+                    const size = i % 3 === 0 ? 7 : i % 3 === 1 ? 5 : 3;
 
                     return (
                       <span
@@ -520,9 +752,16 @@ export default function ChestPage() {
 
                 <div
                   className={[
-                    "mx-auto w-28 h-28 rounded-[var(--r-xl)] border bg-[rgba(255,255,255,0.04)] overflow-hidden",
+                    "mx-auto w-32 h-32 rounded-[var(--r-xl)] border bg-[rgba(255,255,255,0.04)] overflow-hidden",
+                    "shadow-[0_18px_70px_rgba(0,0,0,0.35)]",
                     rarityFxClass(drop.rarity),
                   ].join(" ")}
+                  style={{
+                    borderColor: `color-mix(in srgb, ${fxColor(fx)} 45%, rgba(255,255,255,0.22))`,
+                    boxShadow: `0 0 0 1.8px color-mix(in srgb, ${fxColor(
+                      fx
+                    )} 28%, transparent), 0 20px 90px color-mix(in srgb, ${fxColor(fx)} 14%, transparent)`,
+                  }}
                 >
                   {drop.image_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -541,8 +780,7 @@ export default function ChestPage() {
                     {rarityLabel(drop.rarity)}
                   </span>
                   <span className="ui-pill">
-                    POWER{" "}
-                    <span className="ml-1 font-semibold tabular-nums">{drop.power_value}</span>
+                    POWER <span className="ml-1 font-semibold tabular-nums">{drop.power_value}</span>
                   </span>
                 </div>
 
