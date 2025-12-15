@@ -91,6 +91,13 @@ function fxColor(fx: RarityFx) {
   return "var(--rarity-common)";
 }
 
+function fxClassFor(fx: RarityFx) {
+  if (fx === "legendary") return "ui-fx ui-fx-legendary";
+  if (fx === "epic") return "ui-fx ui-fx-epic";
+  if (fx === "rare") return "ui-fx ui-fx-rare";
+  return "ui-fx ui-fx-common";
+}
+
 export default function ChestPage() {
   const { telegramId, bootstrap, isTelegramEnv, loading, error, timedOut, refreshSession } =
     useGameSessionContext() as any;
@@ -114,6 +121,10 @@ export default function ChestPage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [fxSeed, setFxSeed] = useState(0);
   const revealTimerRef = useRef<number | null>(null);
+
+  // Reveal overlay short life timer (so it feels like impact)
+  const [revealOverlayOn, setRevealOverlayOn] = useState(false);
+  const revealOverlayTimerRef = useRef<number | null>(null);
 
   const core = useMemo(
     () => unwrapCore(overrideBootstrap || bootstrap),
@@ -147,7 +158,21 @@ export default function ChestPage() {
     setOverrideBootstrap(null);
     setResult(null);
     setPhase("idle");
+    setRevealOverlayOn(false);
+    if (revealOverlayTimerRef.current) {
+      window.clearTimeout(revealOverlayTimerRef.current);
+      revealOverlayTimerRef.current = null;
+    }
     refreshSession?.();
+  };
+
+  const triggerRevealOverlay = () => {
+    setRevealOverlayOn(true);
+    if (revealOverlayTimerRef.current) window.clearTimeout(revealOverlayTimerRef.current);
+    revealOverlayTimerRef.current = window.setTimeout(() => {
+      setRevealOverlayOn(false);
+      revealOverlayTimerRef.current = null;
+    }, 720);
   };
 
   async function openChestWithReveal() {
@@ -161,6 +186,7 @@ export default function ChestPage() {
         setResult({ error: "Insufficient funds", code: "INSUFFICIENT_FUNDS" });
         setPhase("reveal");
         setFxSeed((s) => s + 1);
+        triggerRevealOverlay();
         return;
       }
 
@@ -209,6 +235,7 @@ export default function ChestPage() {
       setOpening(false);
       setPhase("reveal");
       setFxSeed((s) => s + 1);
+      triggerRevealOverlay();
     } finally {
       openingRef.current = false;
     }
@@ -229,13 +256,17 @@ export default function ChestPage() {
         window.clearTimeout(revealTimerRef.current);
         revealTimerRef.current = null;
       }
+      if (revealOverlayTimerRef.current) {
+        window.clearTimeout(revealOverlayTimerRef.current);
+        revealOverlayTimerRef.current = null;
+      }
       openingRef.current = false;
     };
   }, []);
 
   if (!isTelegramEnv) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Open in Telegram</div>
           <div className="text-sm ui-subtle">This page works only inside Telegram WebApp.</div>
@@ -247,7 +278,7 @@ export default function ChestPage() {
   if (!hasCore) {
     if (!showGate || loading) {
       return (
-        <main className="min-h-screen flex items-center justify-center px-4">
+        <main className="min-h-screen flex items-center justify-center px-4 pb-24">
           <div className="w-full max-w-md ui-card p-5 text-center">
             <div className="text-sm font-semibold">Loading...</div>
             <div className="mt-2 text-sm ui-subtle">Syncing session.</div>
@@ -261,7 +292,7 @@ export default function ChestPage() {
 
     if (timedOut || !!error) {
       return (
-        <main className="min-h-screen flex items-center justify-center px-4">
+        <main className="min-h-screen flex items-center justify-center px-4 pb-24">
           <div className="w-full max-w-md ui-card p-5">
             <div className="text-lg font-semibold">
               {timedOut ? "Connection timeout" : "Couldn’t load your session"}
@@ -294,7 +325,7 @@ export default function ChestPage() {
     }
 
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Loading...</div>
           <div className="mt-2 text-sm ui-subtle">Still syncing.</div>
@@ -305,7 +336,7 @@ export default function ChestPage() {
 
   if (loading || !telegramId) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Loading...</div>
           <div className="mt-2 text-sm ui-subtle">Syncing session.</div>
@@ -321,56 +352,296 @@ export default function ChestPage() {
   const isError = !!result?.error;
   const showReveal = phase === "reveal" && !!result;
   const fx = drop ? rarityFx(drop.rarity) : "none";
-
   const bannerText = rarityBannerText(fx);
+  const glow = fxColor(fx);
+
+  // overlay should feel like an impact only on successful drop reveal
+  const showImpactOverlay = revealOverlayOn && showReveal && !isError && !!drop && fx !== "none";
+  const overlayGlow = fx !== "none" ? glow : "var(--accent)";
 
   return (
-    <main className="min-h-screen flex flex-col items-center pt-8 px-0 sm:px-4 pb-24 bg-gradient-to-b from-[#12141d] via-[#191d28] to-[#0d0f17]">
+    <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
       <style jsx global>{`
-        .altar-bg {
-          pointer-events: none;
-          position: absolute;
-          inset: -8px;
-          z-index: 0;
-          border-radius: 2.5rem;
-          overflow: hidden;
-          background: radial-gradient(950px 380px at 50% -45px, #45e3ff26 0%, transparent 70%),
-            radial-gradient(580px 180px at 50% 420px, #ae41fa14 0%, transparent 70%);
+        @keyframes bannerPop {
+          0% {
+            transform: translateX(-50%) translateY(-10px) scale(0.92);
+            opacity: 0;
+          }
+          65% {
+            transform: translateX(-50%) translateY(0) scale(1.03);
+            opacity: 1;
+          }
+          100% {
+            transform: translateX(-50%) translateY(0) scale(1);
+            opacity: 1;
+          }
         }
-        @media (max-width: 600px) {
-          .altar-bg {
-            border-radius: 1.5rem;
+        @keyframes popIn {
+          from {
+            transform: translateY(16px) scale(0.985);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+          }
+        }
+        @keyframes altarFog {
+          0% {
+            transform: translateX(-6%) translateY(0);
+            opacity: 0.25;
+          }
+          50% {
+            transform: translateX(6%) translateY(-2%);
+            opacity: 0.4;
+          }
+          100% {
+            transform: translateX(-6%) translateY(0);
+            opacity: 0.25;
+          }
+        }
+        @keyframes altarRays {
+          0% {
+            opacity: 0.18;
+            transform: translateY(0);
+          }
+          50% {
+            opacity: 0.32;
+            transform: translateY(-1%);
+          }
+          100% {
+            opacity: 0.18;
+            transform: translateY(0);
           }
         }
 
-        .altar-emissive {
+        /* =========================
+           REVEAL IMPACT OVERLAY (full screen)
+        ========================== */
+        @keyframes revealFlash {
+          0% {
+            opacity: 0;
+            transform: scale(0.98);
+            filter: blur(0px);
+          }
+          14% {
+            opacity: 1;
+            transform: scale(1);
+            filter: blur(0.5px);
+          }
+          100% {
+            opacity: 0;
+            transform: scale(1.02);
+            filter: blur(1.6px);
+          }
+        }
+        @keyframes particleDriftA {
+          0% {
+            transform: translate3d(-6%, 8%, 0) scale(1);
+            opacity: 0.0;
+          }
+          12% {
+            opacity: 0.55;
+          }
+          100% {
+            transform: translate3d(8%, -10%, 0) scale(1.03);
+            opacity: 0;
+          }
+        }
+        @keyframes particleDriftB {
+          0% {
+            transform: translate3d(10%, 10%, 0) scale(1);
+            opacity: 0.0;
+          }
+          10% {
+            opacity: 0.42;
+          }
+          100% {
+            transform: translate3d(-8%, -12%, 0) scale(1.05);
+            opacity: 0;
+          }
+        }
+
+        .reveal-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 80;
+          pointer-events: none;
+          animation: revealFlash 720ms cubic-bezier(0.18, 0.8, 0.2, 1) 1;
+          mix-blend-mode: screen;
+        }
+
+        .reveal-overlay::before {
+          content: "";
+          position: absolute;
+          inset: -20px;
+          background:
+            radial-gradient(1100px 540px at 50% 18%,
+              color-mix(in srgb, var(--revealGlow) 30%, transparent) 0%,
+              transparent 62%
+            ),
+            radial-gradient(900px 520px at 65% 28%,
+              color-mix(in srgb, var(--revealGlow) 18%, transparent) 0%,
+              transparent 66%
+            ),
+            linear-gradient(to bottom,
+              rgba(255,255,255,0.05),
+              transparent 45%,
+              rgba(0,0,0,0.18)
+            );
+          opacity: 0.95;
+          filter: blur(0.2px);
+        }
+
+        .reveal-overlay::after {
+          content: "";
+          position: absolute;
+          inset: -40px;
+          background:
+            radial-gradient(2px 2px at 12% 34%, rgba(255,255,255,0.55), transparent 60%),
+            radial-gradient(2px 2px at 18% 54%, rgba(255,255,255,0.42), transparent 60%),
+            radial-gradient(2px 2px at 26% 28%, rgba(255,255,255,0.32), transparent 60%),
+            radial-gradient(2px 2px at 33% 62%, rgba(255,255,255,0.44), transparent 60%),
+            radial-gradient(2px 2px at 41% 38%, rgba(255,255,255,0.30), transparent 60%),
+            radial-gradient(2px 2px at 52% 24%, rgba(255,255,255,0.45), transparent 60%),
+            radial-gradient(2px 2px at 58% 58%, rgba(255,255,255,0.36), transparent 60%),
+            radial-gradient(2px 2px at 66% 36%, rgba(255,255,255,0.40), transparent 60%),
+            radial-gradient(2px 2px at 74% 52%, rgba(255,255,255,0.34), transparent 60%),
+            radial-gradient(2px 2px at 82% 30%, rgba(255,255,255,0.42), transparent 60%),
+            radial-gradient(2px 2px at 88% 62%, rgba(255,255,255,0.30), transparent 60%),
+            radial-gradient(2px 2px at 92% 42%, rgba(255,255,255,0.38), transparent 60%);
+          opacity: 0;
+          animation: particleDriftA 720ms cubic-bezier(0.18, 0.8, 0.2, 1) 1;
+        }
+
+        .reveal-overlay .particles {
+          position: absolute;
+          inset: -40px;
+          background:
+            radial-gradient(2px 2px at 14% 24%, rgba(255,255,255,0.40), transparent 60%),
+            radial-gradient(2px 2px at 22% 72%, rgba(255,255,255,0.34), transparent 60%),
+            radial-gradient(2px 2px at 36% 42%, rgba(255,255,255,0.30), transparent 60%),
+            radial-gradient(2px 2px at 44% 68%, rgba(255,255,255,0.38), transparent 60%),
+            radial-gradient(2px 2px at 56% 36%, rgba(255,255,255,0.34), transparent 60%),
+            radial-gradient(2px 2px at 64% 78%, rgba(255,255,255,0.30), transparent 60%),
+            radial-gradient(2px 2px at 76% 46%, rgba(255,255,255,0.40), transparent 60%),
+            radial-gradient(2px 2px at 84% 70%, rgba(255,255,255,0.34), transparent 60%),
+            radial-gradient(2px 2px at 90% 30%, rgba(255,255,255,0.32), transparent 60%);
+          opacity: 0;
+          animation: particleDriftB 720ms cubic-bezier(0.18, 0.8, 0.2, 1) 1;
+          mix-blend-mode: screen;
+        }
+
+        /* =========================
+           RARITY WAVE (under banner)
+        ========================== */
+        @keyframes rarityWave {
+          0% {
+            transform: translateX(-50%) scaleX(0.55);
+            opacity: 0;
+            filter: blur(10px);
+          }
+          18% {
+            opacity: 0.88;
+          }
+          100% {
+            transform: translateX(-50%) scaleX(1.18);
+            opacity: 0;
+            filter: blur(18px);
+          }
+        }
+
+        .rarity-wave {
           pointer-events: none;
           position: absolute;
-          z-index: 2;
           left: 50%;
-          bottom: 27px;
-          width: 200px;
-          height: 62px;
+          top: 40px;
+          width: min(680px, 92%);
+          height: 96px;
           transform: translateX(-50%);
-          border-radius: 50%;
-          background: radial-gradient(
-            ellipse 60% 40% at 50% 60%,
-            rgba(255, 255, 255, 0.13),
-            transparent 74%
-          );
-          opacity: 0.55;
+          background:
+            radial-gradient(closest-side at 50% 50%,
+              color-mix(in srgb, var(--waveGlow) 28%, transparent) 0%,
+              transparent 70%
+            ),
+            radial-gradient(closest-side at 50% 60%,
+              color-mix(in srgb, var(--waveGlow) 16%, transparent) 0%,
+              transparent 74%
+            );
+          animation: rarityWave 860ms cubic-bezier(0.18, 0.8, 0.2, 1) 1;
+          mix-blend-mode: screen;
         }
 
-        .chest-area-premium {
+        /* =========================
+           ALTAR / STAGE
+        ========================== */
+        .altar {
           position: relative;
-          min-height: 328px;
-          padding-bottom: 0.5rem;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          overflow: hidden;
+          border-radius: var(--r-xl);
         }
 
-        .chest-3d-wrap {
+        .altar::before {
+          content: "";
+          position: absolute;
+          inset: -20px;
+          pointer-events: none;
+          background:
+            radial-gradient(900px 420px at 50% -8%, rgba(88, 240, 255, 0.22) 0%, transparent 62%),
+            radial-gradient(720px 520px at 70% 34%, rgba(184, 92, 255, 0.16) 0%, transparent 65%),
+            radial-gradient(720px 520px at 30% 44%, rgba(255, 204, 87, 0.10) 0%, transparent 70%),
+            linear-gradient(to bottom, rgba(255,255,255,0.05), transparent 40%, rgba(0,0,0,0.22));
+          opacity: 0.95;
+        }
+
+        .altar .rays {
+          position: absolute;
+          inset: -20px;
+          pointer-events: none;
+          opacity: 0.22;
+          animation: altarRays 4.8s ease-in-out infinite;
+          background:
+            conic-gradient(from 200deg at 50% 34%,
+              rgba(88,240,255,0.0),
+              rgba(88,240,255,0.10),
+              rgba(184,92,255,0.08),
+              rgba(255,204,87,0.06),
+              rgba(88,240,255,0.0)
+            );
+          mix-blend-mode: screen;
+          filter: blur(0.4px);
+        }
+
+        .altar .fog {
+          position: absolute;
+          inset: -20px;
+          pointer-events: none;
+          opacity: 0.35;
+          animation: altarFog 5.6s ease-in-out infinite;
+          background:
+            radial-gradient(680px 240px at 50% 66%, rgba(255,255,255,0.10), transparent 70%),
+            radial-gradient(560px 200px at 44% 72%, rgba(88,240,255,0.08), transparent 72%),
+            radial-gradient(520px 180px at 60% 76%, rgba(184,92,255,0.06), transparent 72%);
+          filter: blur(8px);
+        }
+
+        .altar .platform {
+          position: absolute;
+          left: 50%;
+          bottom: 28px;
+          transform: translateX(-50%);
+          width: 240px;
+          height: 82px;
+          border-radius: 999px;
+          border: 1px solid rgba(88,240,255,0.24);
+          background: radial-gradient(circle at 50% 40%, rgba(88,240,255,0.18), transparent 70%);
+          box-shadow:
+            0 18px 70px rgba(0,0,0,0.35),
+            0 18px 70px rgba(88,240,255,0.12);
+          pointer-events: none;
+        }
+
+        .chest-wrap {
           position: relative;
           width: 152px;
           height: 152px;
@@ -383,179 +654,250 @@ export default function ChestPage() {
           overflow: visible;
         }
 
-        /* Canvas not clipped */
-        .chest-3d-canvas {
+        .chest-canvas {
           position: absolute;
           inset: -22px;
-          z-index: 0;
-          border-radius: 0;
-          overflow: visible;
           pointer-events: none;
           filter: drop-shadow(0 16px 44px rgba(0, 0, 0, 0.45));
         }
 
         @media (max-width: 768px) {
-          .chest-3d-wrap {
+          .chest-wrap {
             width: 120px;
             height: 120px;
           }
-          .chest-3d-canvas {
+          .chest-canvas {
             inset: -24px;
           }
+          .altar .platform {
+            width: 210px;
+            height: 72px;
+          }
+        }
+
+        /* =========================
+           UI FX PRIMITIVES (auto classes)
+        ========================== */
+        @keyframes uiFxShimmer {
+          0% {
+            transform: translateX(-140%) rotate(10deg);
+            opacity: 0;
+          }
+          16% {
+            opacity: 0.22;
+          }
+          55% {
+            opacity: 0.14;
+          }
+          100% {
+            transform: translateX(140%) rotate(10deg);
+            opacity: 0;
+          }
+        }
+
+        .ui-fx {
+          position: relative;
+          overflow: hidden;
+          will-change: transform;
+        }
+
+        .ui-fx::after {
+          content: "";
+          position: absolute;
+          inset: -22px;
+          pointer-events: none;
+          background:
+            linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+          transform: translateX(-140%) rotate(10deg);
+          opacity: 0;
+          animation: uiFxShimmer 3.9s cubic-bezier(0.6,0,.69,1.02) infinite;
+        }
+
+        .ui-fx-common { --fxGlow: rgba(255,255,255,0.18); }
+        .ui-fx-rare { --fxGlow: color-mix(in srgb, var(--rarity-rare) 40%, transparent); }
+        .ui-fx-epic { --fxGlow: color-mix(in srgb, var(--rarity-epic) 40%, transparent); }
+        .ui-fx-legendary { --fxGlow: color-mix(in srgb, var(--rarity-legendary) 42%, transparent); }
+
+        .ui-fx.ui-btn,
+        .ui-fx.ui-pill {
+          box-shadow:
+            0 0 0 1px color-mix(in srgb, var(--fxGlow) 44%, transparent),
+            0 14px 60px var(--fxGlow);
+        }
+
+        .ui-fx.ui-btn:hover {
+          filter: brightness(1.03) saturate(1.08);
+          box-shadow:
+            0 0 0 1px color-mix(in srgb, var(--fxGlow) 62%, transparent),
+            0 18px 78px var(--fxGlow);
         }
       `}</style>
 
-      <div className="w-full max-w-3xl mx-auto">
-        <div className="flex items-start justify-between mb-7 px-1">
-          <div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-widest leading-snug text-slate-100 drop-shadow-[0_2px_10px_rgba(112,202,247,0.08)]">
-              696 Chest
-            </h1>
-            <div className="text-base font-semibold text-[#99e4ffdd] tracking-wider mt-1 sm:mt-2 mb-1 select-none leading-none">
-              Open. Reveal. Collect.
-            </div>
-          </div>
-          <button onClick={handleResync} className="ui-btn ui-btn-ghost mt-1">
-            Re-sync
-          </button>
+      {/* FULLSCREEN reveal punch */}
+      {showImpactOverlay && (
+        <div
+          key={`reveal-overlay-${fxSeed}`}
+          className="reveal-overlay"
+          style={
+            {
+              // @ts-ignore
+              "--revealGlow": overlayGlow,
+            } as any
+          }
+          aria-hidden="true"
+        >
+          <div className="particles" />
         </div>
+      )}
 
-        <div className="ui-grid grid-cols-2 mb-7 gap-4">
-          <div className="ui-card p-6 shadow-[0_2px_16px_0_rgba(63,240,255,0.02)] bg-gradient-to-bl from-[#172331bb] to-[#121826] border border-[#222b3d] min-h-[108px]">
-            <div className="ui-subtitle text-[#77e9fc] mb-0.5 tracking-wide uppercase">Balance</div>
-            <div className="mt-4 text-base flex items-center justify-between">
-              <span className="ui-subtle tracking-wide">Shards</span>
-              <span className="font-semibold tabular-nums text-xl text-cyan-200">{soft}</span>
-            </div>
-            <div className="mt-2 text-base flex items-center justify-between">
-              <span className="ui-subtle tracking-wide">Crystals</span>
-              <span className="font-semibold tabular-nums text-lg text-blue-300">{hard}</span>
-            </div>
-            {refreshing && (
-              <div className="mt-4 text-[12px] text-[#aaf8ff] opacity-80">Syncing...</div>
-            )}
-          </div>
-
-          <div className="ui-card p-6 shadow-[0_2px_16px_0_rgba(184,92,255,0.08)] bg-gradient-to-tr from-[#1c1736cc] to-[#131325] border border-[#211944] min-h-[108px]">
-            <div className="ui-subtitle text-[#b48fff] mb-1.5 tracking-wide uppercase">Total Power</div>
-            <div className="text-3xl font-extrabold mt-1 tabular-nums text-[#e7dfff] drop-shadow-[0_2px_16px_rgba(184,92,255,0.14)]">
-              {totalPower}
-            </div>
-            <div className="text-xs ui-subtle mt-3 text-[#8589a2]">Updated after each drop.</div>
-          </div>
-        </div>
-
-        <div className="ui-card p-7 py-10 relative bg-gradient-to-br from-[#202230e6] to-[#141423] border border-[#253a5e80] shadow-[0_10px_48px_0_rgba(0,68,230,.10)]">
-          <div className="flex items-center justify-between gap-6 mb-2 select-none">
-            <div>
-              <div className="ui-subtitle text-[#99a5be] uppercase font-semibold tracking-wider text-sm">
-                Basic Chest
+      <div className="w-full max-w-3xl">
+        {/* HUD header */}
+        <header className="ui-card px-4 py-3 rounded-[var(--r-xl)] mb-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="ui-subtitle">696 Chest</div>
+              <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base truncate">
+                Open. Reveal. Collect.
               </div>
-              <div className="text-sm text-[#afc8e4bb] mt-2 tracking-wide">
+              <div className="text-[11px] ui-subtle mt-1">
                 Cost:{" "}
-                <span className="font-extrabold text-cyan-100 tabular-nums text-lg">
+                <span className="text-[color:var(--text)] font-semibold tabular-nums">
                   {CHEST_COST_SHARDS}
                 </span>{" "}
-                <span className="ui-subtle">Shards</span>
+                Shards
               </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className={["ui-pill", fxClassFor(fx)].join(" ")}>
+                Shards{" "}
+                <span className="ml-2 font-extrabold tabular-nums">{soft}</span>
+              </span>
+              <span className={["ui-pill", fxClassFor(fx)].join(" ")}>
+                Crystals{" "}
+                <span className="ml-2 font-extrabold tabular-nums">{hard}</span>
+              </span>
+              <button onClick={handleResync} className="ui-btn ui-btn-ghost">
+                Re-sync
+              </button>
+            </div>
+          </div>
+
+          {refreshing && <div className="mt-3 text-[12px] ui-subtle">Syncing...</div>}
+        </header>
+
+        {/* Main altar */}
+        <section className="ui-card-strong p-5 rounded-[var(--r-xl)]">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="ui-subtitle">Basic Chest</div>
+              <div className="text-sm ui-muted mt-1">Ready → Open → Reveal</div>
             </div>
 
             <span
-              className={`ui-pill px-5 h-8 font-bold tracking-widest uppercase ring-1 ring-offset-1 ${
+              className={[
+                "ui-pill px-5 h-8 font-extrabold uppercase tracking-[0.22em]",
                 canAfford
-                  ? "border-cyan-300 bg-gradient-to-r from-cyan-700/10 to-violet-800/0 text-cyan-100"
-                  : "border-yellow-300 text-yellow-200 bg-yellow-500/5"
-              }`}
+                  ? "border-[rgba(88,240,255,0.45)] bg-[rgba(88,240,255,0.08)]"
+                  : "border-[rgba(255,204,87,0.45)] bg-[rgba(255,204,87,0.06)]",
+              ].join(" ")}
             >
               {canAfford ? "READY" : `NEED ${CHEST_COST_SHARDS - soft}`}
             </span>
           </div>
 
-          <div className="mt-9 flex justify-center relative z-0">
-            <div className="chest-area-premium w-full max-w-sm min-h-[326px] flex items-center justify-center relative rounded-xl">
-              <div className="altar-bg" />
-              <div className="altar-emissive" />
+          <div className="mt-4 altar border border-[color:var(--border)] bg-[rgba(255,255,255,0.04)]">
+            <div className="rays" />
+            <div className="fog" />
+            <div className="platform" />
 
-              <div className="relative z-10 text-center w-full">
-                <div className="chest-3d-wrap mx-auto">
-                  <div className="chest-3d-canvas">
-                    <Chest3D phase={phase} />
-                  </div>
+            <div className="relative z-10 px-6 py-10 flex flex-col items-center">
+              <div className="chest-wrap">
+                <div className="chest-canvas">
+                  <Chest3D phase={phase} />
                 </div>
+              </div>
 
-                {phase === "opening" && (
-                  <div className="mt-8 w-40 mx-auto">
-                    <div className="ui-progress">
-                      <div className="w-3/4 h-2 rounded bg-cyan-200/70 opacity-90 animate-pulse" />
-                    </div>
-                    <div className="mt-3 text-[12px] text-[#60e6ffcd] font-semibold">
-                      Spinning the matrix...
-                    </div>
+              {phase === "opening" && (
+                <div className="mt-8 w-44">
+                  <div className="ui-progress">
+                    <div className="w-3/4 opacity-70 animate-pulse" />
                   </div>
-                )}
+                  <div className="mt-3 text-[12px] ui-subtitle text-center">OPENING...</div>
+                </div>
+              )}
+
+              {!canAfford && (
+                <div className="mt-8 ui-card p-4 text-center w-full max-w-md border border-[rgba(255,204,87,0.32)]">
+                  <div className="text-base font-bold text-[color:var(--text)]">Not enough Shards</div>
+                  <div className="text-xs ui-subtle mt-1">
+                    You need{" "}
+                    <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span>{" "}
+                    more.
+                  </div>
+                  <a href="/" className="ui-btn ui-btn-ghost mt-3">
+                    Go to Home
+                  </a>
+                </div>
+              )}
+
+              <div className="mt-8 flex flex-col items-center gap-3 w-full">
+                <button
+                  onClick={handleOpenChest}
+                  disabled={opening || !canAfford}
+                  className={["ui-btn ui-btn-primary w-full max-w-sm text-base", fxClassFor(fx)].join(" ")}
+                >
+                  {opening ? "Opening..." : "Open Chest"}
+                </button>
+
+                <a
+                  href={INVENTORY_PATH}
+                  className={["ui-btn ui-btn-ghost w-full max-w-sm !font-semibold", fxClassFor(fx)].join(" ")}
+                >
+                  Go to Inventory
+                </a>
+
+                <div className="text-[12px] ui-subtle text-center">
+                  Drops include emblems, items, characters and pets.
+                </div>
               </div>
             </div>
           </div>
+        </section>
 
-          {!canAfford && (
-            <div className="mt-7 ui-card-strong p-5 text-center bg-yellow-900/10 border border-yellow-500/25 rounded-xl shadow">
-              <div className="text-base font-bold text-yellow-100">Not enough Shards</div>
-              <div className="text-xs ui-subtle mt-1 text-yellow-200/80">
-                You need{" "}
-                <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span>{" "}
-                more Shards to open this chest.
-              </div>
-              <a href="/" className="ui-btn ui-btn-ghost mt-3">
-                Go to Home
-              </a>
-            </div>
-          )}
-
-          <div className="mt-7 flex flex-col items-center gap-4">
-            <button
-              onClick={handleOpenChest}
-              disabled={opening || !canAfford}
-              className={`ui-btn ui-btn-primary w-full max-w-sm py-3 text-lg font-bold tracking-wide rounded-md
-                shadow-lg transition-all duration-100
-                ${opening ? "bg-gradient-to-r from-cyan-800/40 to-indigo-800/40 saturate-150" : ""}
-              `}
-            >
-              {opening ? "Opening..." : "Open Chest"}
-            </button>
-
-            <a
-              href={INVENTORY_PATH}
-              className="ui-btn ui-btn-ghost w-full max-w-sm !font-semibold rounded-md py-2.5 text-base"
-            >
-              Go to Inventory
-            </a>
-
-            <div className="text-[13px] ui-subtle text-center text-cyan-100/70 mt-1">
-              Drops include emblems, items, characters and pets.
-            </div>
-          </div>
-        </div>
-
+        {/* Reveal */}
         {showReveal && (
-          <div className="mt-8 ui-card p-7 relative overflow-hidden bg-gradient-to-b from-[#1e232e] to-[#181726] rounded-2xl border border-[#234b6177] shadow-[0_10px_64px_rgba(63,240,255,0.06)]">
+          <section className="mt-5 ui-card p-6 rounded-[var(--r-xl)] overflow-hidden relative">
+            {/* rarity wave shock under banner */}
+            {!isError && drop && fx !== "none" && (
+              <div
+                key={`wave-${fxSeed}`}
+                className="rarity-wave"
+                style={
+                  {
+                    // @ts-ignore
+                    "--waveGlow": glow,
+                  } as any
+                }
+                aria-hidden="true"
+              />
+            )}
+
             {fx !== "none" && !isError && drop && (
               <div
                 key={`banner-${fxSeed}`}
                 className={[
-                  "pointer-events-none absolute left-1/2 -translate-x-1/2 top-5",
+                  "pointer-events-none absolute left-1/2 top-5",
                   "px-5 py-2 rounded-full ring-2 ring-inset",
-                  "bg-gradient-to-r from-black/65 to-[#203456DE] backdrop-blur",
-                  "text-xs tracking-[0.28em] font-extrabold uppercase drop-shadow-lg",
-                  "motion-safe:animate-[bannerPop_820ms_ease-out_1]",
+                  "bg-[rgba(0,0,0,0.55)] backdrop-blur",
+                  "text-xs tracking-[0.28em] font-extrabold uppercase",
                 ].join(" ")}
                 style={{
-                  borderColor: fxColor(fx),
-                  boxShadow: `0 18px 110px color-mix(in srgb, ${fxColor(fx)} 45%, transparent)`,
-                  color: ["legendary", "epic"].includes(fx) ? "#fff" : "var(--text)",
-                  background:
-                    fx === "legendary"
-                      ? "linear-gradient(90deg,#1d191299,#fffbe2c0 36%,#fffac48b 67%,#34280599)"
-                      : undefined,
+                  transform: "translateX(-50%)",
+                  animation: "bannerPop 820ms ease-out 1",
+                  borderColor: glow,
+                  boxShadow: `0 18px 110px color-mix(in srgb, ${glow} 45%, transparent)`,
+                  color: "#fff",
                 }}
               >
                 {bannerText}
@@ -563,7 +905,7 @@ export default function ChestPage() {
             )}
 
             {isError ? (
-              <div className="text-center p-3">
+              <div className="text-center py-6">
                 <div className="text-sm font-bold text-red-300 tracking-wide">Error</div>
                 <div className="mt-2 text-base text-red-200/80 font-semibold">
                   {result?.code === "INSUFFICIENT_FUNDS"
@@ -574,30 +916,25 @@ export default function ChestPage() {
             ) : drop ? (
               <div
                 key={`reveal-${fxSeed}`}
-                // ✅ FIX #1: больше места сверху, чтобы баннер не залезал на "Drop"
-                className="text-center motion-safe:animate-[popIn_340ms_ease-out_1] pt-12 pb-1"
-                style={{ minHeight: 305 }}
+                className="text-center pt-12 pb-2"
+                style={{ animation: "popIn 340ms ease-out 1" }}
               >
-                <div className="text-lg font-black tracking-wider text-slate-50 drop-shadow mb-2">
-                  Drop
-                </div>
+                <div className="text-lg font-black tracking-wider drop-shadow mb-2">Drop</div>
 
                 <div
                   className={[
-                    "mx-auto w-36 h-36 rounded-[1.2rem] border-2 bg-gradient-to-tr from-[#237cae19] to-[#35246a13] overflow-hidden",
-                    "shadow-[0_22px_76px_0_rgba(0,0,0,0.38)]",
+                    "mx-auto w-36 h-36 rounded-[1.2rem] border-2 overflow-hidden",
+                    "bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(0,0,0,0.18))]",
+                    "shadow-[0_22px_76px_rgba(0,0,0,0.38)]",
                     rarityFxClass(drop.rarity),
                   ].join(" ")}
                   style={{
-                    borderColor: `color-mix(in srgb, ${fxColor(fx)} 65%, rgba(255,255,255,0.25))`,
-                    boxShadow: `0 0 0 2.3px color-mix(in srgb, ${fxColor(
-                      fx
-                    )} 41%, transparent), 0 22px 120px color-mix(in srgb, ${fxColor(fx)} 22%, transparent)`,
+                    borderColor: `color-mix(in srgb, ${glow} 65%, rgba(255,255,255,0.25))`,
+                    boxShadow: `0 0 0 2.3px color-mix(in srgb, ${glow} 41%, transparent), 0 22px 120px color-mix(in srgb, ${glow} 22%, transparent)`,
                   }}
                 >
                   {drop.image_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    // ✅ FIX #2: персонаж/предмет целиком (contain + небольшой padding)
                     <img
                       src={drop.image_url}
                       alt={drop.name}
@@ -611,77 +948,69 @@ export default function ChestPage() {
                   )}
                 </div>
 
-                <div className="mt-6 text-xl font-black text-[#f0f3f6] tracking-widest leading-none min-h-[32px]">
-                  {drop.name}
-                </div>
+                <div className="mt-5 text-xl font-black tracking-widest leading-none">{drop.name}</div>
 
-                <div className="mt-2 flex items-center justify-center gap-3 flex-wrap mb-1">
+                <div className="mt-2 flex items-center justify-center gap-3 flex-wrap">
                   <span
-                    className="ui-pill text-base px-7 py-2 font-extrabold ring-1 ring-inset"
+                    className={["ui-pill text-base px-7 py-2 font-extrabold ring-1 ring-inset", fxClassFor(fx)].join(
+                      " "
+                    )}
                     style={{
-                      borderColor: fxColor(fx),
-                      color:
-                        fx === "legendary"
-                          ? "#ffdf4a"
-                          : fx === "epic"
-                          ? "#e0cefe"
-                          : fx === "rare"
-                          ? "#abebff"
-                          : "var(--text)",
+                      borderColor: glow,
+                      color: "#fff",
                       background:
                         fx === "legendary"
                           ? "linear-gradient(93deg,#f7e48fff 16%,#fff7dd88 61%,#fff4a4ff 90%)"
                           : fx === "epic"
                           ? "linear-gradient(90deg,#be80fd40 0%,#85e1ff24 100%)"
                           : fx === "rare"
-                          ? "linear-gradient(93deg,#2cf2f680 30%,#fff7 60%,#bcdcff2a 100%)"
-                          : undefined,
+                          ? "linear-gradient(93deg,#2cf2f640 30%,#bcdcff22 100%)"
+                          : "rgba(255,255,255,0.08)",
                     }}
                   >
                     {rarityLabel(drop.rarity)}
                   </span>
 
-                  <span className="ui-pill text-base px-7 py-2 font-bold border border-cyan-200/30 bg-gradient-to-r from-cyan-300/10 to-slate-500/2 text-cyan-100">
-                    POWER <span className="ml-2 font-extrabold tabular-nums">{drop.power_value}</span>
+                  <span
+                    className={["ui-pill text-base px-7 py-2 font-bold border border-[rgba(88,240,255,0.28)] bg-[rgba(88,240,255,0.06)]", fxClassFor(fx)].join(
+                      " "
+                    )}
+                  >
+                    POWER{" "}
+                    <span className="ml-2 font-extrabold tabular-nums">{drop.power_value}</span>
                   </span>
                 </div>
 
-                <div className="mt-5 text-base font-medium text-cyan-100/85">
+                <div className="mt-4 text-sm ui-subtle">
                   Total Power after drop:{" "}
-                  <span className="text-cyan-50 font-extrabold tabular-nums text-lg">
-                    {typeof result?.totalPowerAfter === "number"
-                      ? result.totalPowerAfter
-                      : totalPower}
+                  <span className="text-[color:var(--text)] font-extrabold tabular-nums">
+                    {typeof result?.totalPowerAfter === "number" ? result.totalPowerAfter : totalPower}
                   </span>
                 </div>
 
-                <div className="mt-7 flex gap-4 justify-center flex-wrap items-center">
+                <div className="mt-6 flex gap-3 justify-center flex-wrap">
                   <button
                     onClick={handleOpenAgain}
                     disabled={opening || !canAfford}
-                    className={`ui-btn ui-btn-primary px-8 py-3 rounded-lg text-base font-bold shadow-md
-                      ${opening ? "bg-gradient-to-r from-cyan-800/60 to-indigo-800/30 saturate-150" : ""}
-                    `}
+                    className={["ui-btn ui-btn-primary px-8", fxClassFor(fx)].join(" ")}
                   >
                     {opening ? "Opening..." : "Open again"}
                   </button>
-                  <a
-                    href={INVENTORY_PATH}
-                    className="ui-btn ui-btn-ghost px-8 py-3 font-semibold rounded-lg text-base tracking-wide"
-                  >
+                  <a href={INVENTORY_PATH} className={["ui-btn ui-btn-ghost px-8", fxClassFor(fx)].join(" ")}>
                     Inventory
                   </a>
                 </div>
 
                 {!canAfford && (
-                  <div className="mt-5 text-[13px] ui-subtle text-cyan-100/80">
-                    Need <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span>{" "}
+                  <div className="mt-4 text-[12px] ui-subtle">
+                    Need{" "}
+                    <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span>{" "}
                     more Shards.
                   </div>
                 )}
               </div>
             ) : null}
-          </div>
+          </section>
         )}
       </div>
     </main>

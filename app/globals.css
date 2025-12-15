@@ -2,25 +2,38 @@
 
 /* -------------------------------------------------------
    696 GAME UI FOUNDATION (Fortnite-ish, brighter, clean)
-   Premium game feel – energetic but balanced.
+   Phase A: Design Tokens + Lighting Layer + Primitives
+   Phase B: FX Pack (rarity glow + shine) WITHOUT pseudo conflicts
 -------------------------------------------------------- */
 
 :root {
+  /* ---------------------------------
+     Core surfaces
+  ---------------------------------- */
   --bg: #070709;
 
-  /* Panels */
-  --panel: rgba(255, 255, 255, 0.065); /* +depth */
+  /* Panel glass */
+  --panel: rgba(255, 255, 255, 0.065);
   --panel-2: rgba(255, 255, 255, 0.12);
+  --panel-3: rgba(255, 255, 255, 0.16);
 
   /* Borders & text */
   --border: rgba(255, 255, 255, 0.25);
+  --border-2: rgba(255, 255, 255, 0.18);
+
   --muted: rgba(255, 255, 255, 0.74);
   --muted-2: rgba(255, 255, 255, 0.54);
   --text: rgba(255, 255, 255, 0.97);
 
-  /* Fortnite-ish accents */
+  /* ---------------------------------
+     Fortnite-ish accents (glow)
+  ---------------------------------- */
   --accent: #58f0ff; /* cyan */
   --accent-2: #b85cff; /* purple */
+
+  --glow-cyan: rgba(88, 240, 255, 0.34);
+  --glow-violet: rgba(184, 92, 255, 0.28);
+  --glow-gold: rgba(255, 204, 87, 0.24);
 
   /* Rarity colors */
   --rarity-common: rgba(255, 255, 255, 0.7);
@@ -28,14 +41,43 @@
   --rarity-epic: #b25cff;
   --rarity-legendary: #ffcc57;
 
-  /* focus ring */
+  /* Focus ring */
   --ring: rgba(88, 240, 255, 0.27);
 
-  /* radius scale */
+  /* Radius scale */
   --r-sm: 10px;
   --r-md: 14px;
   --r-lg: 18px;
   --r-xl: 22px;
+
+  /* ---------------------------------
+     Shadows (consistent across app)
+  ---------------------------------- */
+  --shadow-soft: 0 2px 9px rgba(24, 32, 64, 0.16);
+  --shadow-med: 0 12px 38px rgba(0, 0, 0, 0.22);
+  --shadow-deep: 0 24px 80px rgba(0, 0, 0, 0.28);
+
+  /* ---------------------------------
+     Motion
+  ---------------------------------- */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-1: 120ms;
+  --dur-2: 160ms;
+  --dur-3: 260ms;
+
+  /* -------------------------------------------------------
+     Phase B: FX Pack tokens (safe, optional)
+  -------------------------------------------------------- */
+  --noise-opacity: 0.055; /* subtle film grain */
+  --shine-opacity: 0.14;
+
+  --fx-rare: rgba(74, 163, 255, 0.22);
+  --fx-epic: rgba(178, 92, 255, 0.22);
+  --fx-legendary: rgba(255, 204, 87, 0.20);
+
+  /* computed per element via classes */
+  --fxGlow: rgba(255, 255, 255, 0.14);
 }
 
 /* keep your theme tokens (Next/font) */
@@ -46,24 +88,45 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Light mode mapping (kept + tuned) */
 @media (prefers-color-scheme: light) {
   :root {
     --bg: #ffffff;
+
     --panel: rgba(0, 0, 0, 0.05);
     --panel-2: rgba(0, 0, 0, 0.1);
+    --panel-3: rgba(0, 0, 0, 0.14);
+
     --border: rgba(0, 0, 0, 0.19);
+    --border-2: rgba(0, 0, 0, 0.14);
+
     --muted: rgba(0, 0, 0, 0.7);
     --muted-2: rgba(0, 0, 0, 0.52);
     --text: rgba(0, 0, 0, 0.95);
+
     --ring: rgba(0, 0, 0, 0.22);
 
     --accent: #008cff;
     --accent-2: #7b2dff;
 
+    --glow-cyan: rgba(0, 140, 255, 0.22);
+    --glow-violet: rgba(123, 45, 255, 0.18);
+    --glow-gold: rgba(176, 106, 0, 0.16);
+
     --rarity-common: rgba(0, 0, 0, 0.7);
     --rarity-rare: #006dff;
     --rarity-epic: #7b2dff;
     --rarity-legendary: #b06a00;
+
+    /* Phase B tweak for light */
+    --noise-opacity: 0.035;
+    --shine-opacity: 0.10;
+
+    --fx-rare: rgba(0, 109, 255, 0.14);
+    --fx-epic: rgba(123, 45, 255, 0.14);
+    --fx-legendary: rgba(176, 106, 0, 0.12);
+
+    --fxGlow: rgba(0, 0, 0, 0.10);
   }
 }
 
@@ -78,9 +141,18 @@ body {
   font-family: var(--font-sans, Arial, Helvetica, sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  position: relative;
 }
 
-/* Fortnite-ish background (added subtle extra punch, cleaner fade) */
+/* -------------------------
+   Global lighting stack
+   1) bloom blobs + subtle gradients
+   2) vignette / depth
+   3) light noise (cheap)
+-------------------------- */
+
+/* Bloom blobs */
 body::before {
   content: "";
   position: fixed;
@@ -92,6 +164,45 @@ body::before {
     radial-gradient(960px 560px at 88% 20%, rgba(255, 204, 87, 0.11) 0%, transparent 60%),
     linear-gradient(to bottom, rgba(52, 64, 81, 0.03) 0%, transparent 36%);
   opacity: 0.96;
+  z-index: 0;
+}
+
+/* Vignette + depth */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      1200px 700px at 50% 20%,
+      transparent 0%,
+      rgba(0, 0, 0, 0.22) 68%,
+      rgba(0, 0, 0, 0.48) 100%
+    ),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.18), transparent 40%, rgba(0, 0, 0, 0.22));
+  opacity: 0.9;
+  mix-blend-mode: multiply;
+  z-index: 0;
+}
+
+/* Keep content above fixed overlays */
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* -------------------------------------------------------
+   Phase B: Global noise overlay (no assets)
+   - Optional disable: add class "no-noise" to body
+-------------------------------------------------------- */
+body:not(.no-noise) {
+  background-image:
+    radial-gradient(rgba(255, 255, 255, var(--noise-opacity)) 1px, transparent 1px),
+    radial-gradient(rgba(0, 0, 0, calc(var(--noise-opacity) * 0.55)) 1px, transparent 1px);
+  background-size: 28px 28px, 34px 34px;
+  background-position: 0 0, 12px 18px;
+  background-attachment: fixed, fixed;
 }
 
 /* -------------------------
@@ -103,10 +214,64 @@ body::before {
     text-decoration: none;
   }
 
+  ::selection {
+    background: rgba(88, 240, 255, 0.22);
+    color: var(--text);
+  }
+
   *:focus-visible {
     outline: none;
     box-shadow: 0 0 0 3px var(--ring);
     border-radius: var(--r-sm);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* -------------------------------------------------------
+   Phase B: Global keyframes (shared)
+-------------------------------------------------------- */
+@layer utilities {
+  @keyframes ui-shimmer-sweep {
+    0% {
+      background-position: -140% 0%;
+      opacity: 0;
+    }
+    18% {
+      opacity: var(--shine-opacity);
+    }
+    55% {
+      opacity: 0.06;
+    }
+    100% {
+      background-position: 140% 0%;
+      opacity: 0;
+    }
+  }
+
+  @keyframes ui-ambient-float {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+    100% { transform: translateY(0); }
+  }
+
+  @keyframes ui-glow-pulse {
+    0%,
+    100% {
+      filter: brightness(1) saturate(1);
+      opacity: 1;
+    }
+    50% {
+      filter: brightness(1.06) saturate(1.15);
+      opacity: 0.92;
+    }
   }
 }
 
@@ -125,132 +290,221 @@ body::before {
     color: var(--muted);
   }
 
-  .ui-muted {
-    color: var(--muted);
-  }
-  .ui-subtle {
-    color: var(--muted-2);
-  }
+  .ui-muted { color: var(--muted); }
+  .ui-subtle { color: var(--muted-2); }
 
+  /* Card base */
   .ui-card {
+    position: relative;
     background: linear-gradient(112deg, var(--panel) 80%, rgba(88, 240, 255, 0.02) 100%);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
     backdrop-filter: blur(12px) saturate(1.1);
     box-shadow:
-      0 2px 9px 0 rgba(24, 32, 64, 0.16),
-      0 2px 10px 0 rgba(88, 240, 255, 0.04),
+      var(--shadow-soft),
+      0 2px 10px rgba(88, 240, 255, 0.04),
       0 13px 48px rgba(0, 0, 0, 0.24);
     transition:
-      box-shadow 160ms cubic-bezier(0.4, 0, 0.2, 1),
-      transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow var(--dur-2) var(--ease),
+      transform var(--dur-2) var(--ease);
   }
 
-  /* ✅ FIX: transform only on hover (no layout shift on focus) */
+  .ui-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+      linear-gradient(
+        145deg,
+        rgba(255, 255, 255, 0.18) 0%,
+        rgba(255, 255, 255, 0.06) 22%,
+        transparent 44%
+      );
+    opacity: 0.55;
+    mix-blend-mode: screen;
+  }
+
+  .ui-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    opacity: 0.9;
+  }
+
   .ui-card:hover {
     box-shadow:
-      0 6px 24px 0 rgba(24, 32, 64, 0.22),
-      0 4px 22px 0 rgba(88, 240, 255, 0.08),
-      0 24px 60px rgba(0, 0, 0, 0.25);
+      0 6px 24px rgba(24, 32, 64, 0.22),
+      0 4px 22px rgba(88, 240, 255, 0.08),
+      var(--shadow-deep);
     transform: translateY(-3px) scale(1.012);
   }
 
   .ui-card:focus-visible {
     box-shadow:
-      0 6px 24px 0 rgba(24, 32, 64, 0.22),
-      0 4px 22px 0 rgba(88, 240, 255, 0.08),
-      0 24px 60px rgba(0, 0, 0, 0.25);
+      0 6px 24px rgba(24, 32, 64, 0.22),
+      0 4px 22px rgba(88, 240, 255, 0.08),
+      var(--shadow-deep);
   }
 
   .ui-card:active {
     box-shadow:
-      0 2px 10px 0 rgba(24, 32, 64, 0.12),
-      0 2px 10px 0 rgba(88, 240, 255, 0.03),
+      0 2px 10px rgba(24, 32, 64, 0.12),
+      0 2px 10px rgba(88, 240, 255, 0.03),
       0 13px 32px rgba(0, 0, 0, 0.18);
     transform: scale(0.98);
   }
 
+  /* Strong card */
   .ui-card-strong {
+    position: relative;
     background: linear-gradient(108deg, var(--panel-2) 70%, rgba(184, 92, 255, 0.025) 100%);
     border: 2px solid var(--border);
     border-radius: var(--r-lg);
     backdrop-filter: blur(16px) saturate(1.14);
     box-shadow:
-      0 5px 19px 0 rgba(24, 32, 64, 0.19),
-      0 4px 16px 0 rgba(184, 92, 255, 0.07),
+      0 5px 19px rgba(24, 32, 64, 0.19),
+      0 4px 16px rgba(184, 92, 255, 0.07),
       0 20px 70px rgba(50, 30, 80, 0.19);
     transition:
-      box-shadow 160ms cubic-bezier(0.4, 0, 0.2, 1),
-      transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow var(--dur-2) var(--ease),
+      transform var(--dur-2) var(--ease);
   }
 
-  /* ✅ FIX: transform only on hover */
+  .ui-card-strong::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+      linear-gradient(
+        145deg,
+        rgba(255, 255, 255, 0.20) 0%,
+        rgba(255, 255, 255, 0.07) 22%,
+        transparent 48%
+      );
+    opacity: 0.6;
+    mix-blend-mode: screen;
+  }
+
   .ui-card-strong:hover {
     box-shadow:
-      0 12px 36px 0 rgba(88, 240, 255, 0.12),
-      0 10px 38px 0 rgba(184, 92, 255, 0.07),
+      0 12px 36px rgba(88, 240, 255, 0.12),
+      0 10px 38px rgba(184, 92, 255, 0.07),
       0 40px 100px rgba(50, 30, 80, 0.2);
     transform: translateY(-3px) scale(1.014);
   }
 
   .ui-card-strong:focus-visible {
     box-shadow:
-      0 12px 36px 0 rgba(88, 240, 255, 0.12),
-      0 10px 38px 0 rgba(184, 92, 255, 0.07),
+      0 12px 36px rgba(88, 240, 255, 0.12),
+      0 10px 38px rgba(184, 92, 255, 0.07),
       0 40px 100px rgba(50, 30, 80, 0.2);
   }
 
   .ui-card-strong:active {
     box-shadow:
-      0 6px 15px 0 rgba(88, 240, 255, 0.08),
-      0 8px 18px 0 rgba(184, 92, 255, 0.04),
+      0 6px 15px rgba(88, 240, 255, 0.08),
+      0 8px 18px rgba(184, 92, 255, 0.04),
       0 12px 40px rgba(50, 30, 80, 0.17);
     transform: scale(0.983);
   }
 
+  /* Pill */
   .ui-pill {
     @apply inline-flex items-center justify-center;
+    position: relative;
     border: 1px solid var(--border);
     border-radius: 999px;
     padding: 7px 14px;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--muted);
     background: rgba(255, 255, 255, 0.1);
-
-    /* ✅ FIX: real glass blur */
     backdrop-filter: blur(10px);
-
     text-shadow: 0 1px 3px rgba(30, 40, 70, 0.1);
     letter-spacing: 0.08em;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.09);
-    transition: box-shadow 120ms cubic-bezier(0.4, 0, 0.2, 1);
+    transition: box-shadow var(--dur-1) var(--ease), filter var(--dur-2) var(--ease);
   }
 
+  .ui-pill::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    opacity: 0.9;
+  }
+
+  /* Buttons */
   .ui-btn {
     @apply inline-flex items-center justify-center gap-2;
+    position: relative;
     border: 1px solid var(--border);
     border-radius: 999px;
     padding: 12px 22px;
     font-size: 15px;
-    font-weight: 700;
+    font-weight: 800;
     color: var(--text);
     background: rgba(255, 255, 255, 0.06);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
     transition:
-      transform 140ms cubic-bezier(0.4, 0, 0.2, 1),
-      background 140ms cubic-bezier(0.4, 0, 0.2, 1),
-      opacity 140ms cubic-bezier(0.4, 0, 0.2, 1),
-      box-shadow 140ms cubic-bezier(0.4, 0, 0.2, 1);
+      transform var(--dur-2) var(--ease),
+      background var(--dur-2) var(--ease),
+      opacity var(--dur-2) var(--ease),
+      box-shadow var(--dur-2) var(--ease),
+      filter var(--dur-2) var(--ease);
+    will-change: transform;
+  }
+
+  /* plastic/specular highlight */
+  .ui-btn::before {
+    content: "";
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    top: 7px;
+    height: 44%;
+    border-radius: 999px;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.22),
+      rgba(255, 255, 255, 0.08),
+      rgba(255, 255, 255, 0)
+    );
+    opacity: 0.55;
+    mix-blend-mode: screen;
+  }
+
+  .ui-btn::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    opacity: 0.95;
   }
 
   .ui-btn:hover {
     background: rgba(88, 240, 255, 0.1);
-    box-shadow: 0 5px 19px rgba(88, 240, 255, 0.13);
+    box-shadow:
+      0 5px 19px rgba(88, 240, 255, 0.13),
+      0 18px 60px rgba(0, 0, 0, 0.18);
+    filter: brightness(1.02);
   }
 
   .ui-btn:active {
     transform: translateY(1px) scale(0.98);
+    filter: brightness(0.99);
   }
 
   .ui-btn:disabled {
@@ -270,15 +524,17 @@ body::before {
       rgba(184, 92, 255, 0.92) 100%
     );
     box-shadow:
-      0 7px 26px 0 rgba(88, 240, 255, 0.15),
+      0 7px 26px rgba(88, 240, 255, 0.15),
       0 2px 8px rgba(88, 240, 255, 0.13),
-      0 0.5px 4px 0 rgba(184, 92, 255, 0.075);
+      0 0.5px 4px rgba(184, 92, 255, 0.075);
     text-shadow: 0 0.5px 3.5px rgba(88, 240, 255, 0.14);
     letter-spacing: 0.09em;
     transition:
-      background 120ms cubic-bezier(0.4, 0, 0.2, 1),
-      box-shadow 130ms cubic-bezier(0.4, 0, 0.2, 1),
-      color 100ms cubic-bezier(0.4, 0, 0.2, 1);
+      background var(--dur-1) var(--ease),
+      box-shadow var(--dur-2) var(--ease),
+      color var(--dur-1) var(--ease),
+      transform var(--dur-2) var(--ease),
+      filter var(--dur-2) var(--ease);
   }
 
   .ui-btn-primary:hover {
@@ -289,58 +545,161 @@ body::before {
       rgba(184, 92, 255, 1) 100%
     );
     box-shadow:
-      0 14px 44px 0 rgba(88, 240, 255, 0.21),
-      0 8px 24px rgba(184, 92, 255, 0.15);
+      0 14px 44px rgba(88, 240, 255, 0.21),
+      0 8px 24px rgba(184, 92, 255, 0.15),
+      0 30px 90px rgba(0, 0, 0, 0.2);
     filter: brightness(1.04);
   }
 
   .ui-btn-primary:active {
-    filter: brightness(0.98);
     box-shadow:
       0 3px 10px rgba(88, 240, 255, 0.15),
       0 1.5px 6px rgba(184, 92, 255, 0.07);
   }
 
-  .ui-btn-ghost {
-    background: transparent;
-  }
+  .ui-btn-ghost { background: transparent; }
 
   .ui-btn-ghost:hover {
     background: rgba(255, 255, 255, 0.06);
+    box-shadow:
+      0 4px 14px rgba(0, 0, 0, 0.16),
+      0 10px 44px rgba(0, 0, 0, 0.12);
   }
 
-  .ui-grid {
-    @apply grid gap-4;
-  }
+  .ui-grid { @apply grid gap-4; }
 
+  /* Progress */
   .ui-progress {
     height: 10px;
     border-radius: 999px;
     overflow: hidden;
     border: 1px solid var(--border);
     background: rgba(255, 255, 255, 0.04);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .ui-progress > div {
     height: 100%;
     background: linear-gradient(90deg, rgba(88, 240, 255, 0.95), rgba(184, 92, 255, 0.9));
+    box-shadow: 0 0 18px rgba(88, 240, 255, 0.12);
   }
 
-  /* Rarity helpers */
-  .ui-rarity-common {
-    border-color: rgba(255, 255, 255, 0.2);
-  }
+  /* ---------------------------------
+     Rarity helpers (base)
+  ---------------------------------- */
+  .ui-rarity-common { border-color: rgba(255, 255, 255, 0.2); }
+
   .ui-rarity-rare {
-    border-color: rgba(74, 163, 255, 0.38);
-    box-shadow: 0 16px 60px rgba(74, 163, 255, 0.1);
+    border-color: rgba(74, 163, 255, 0.42);
+    box-shadow:
+      0 16px 60px rgba(74, 163, 255, 0.11),
+      0 0 0 1px rgba(74, 163, 255, 0.08);
   }
+
   .ui-rarity-epic {
-    border-color: rgba(178, 92, 255, 0.4);
-    box-shadow: 0 18px 70px rgba(178, 92, 255, 0.12);
+    border-color: rgba(178, 92, 255, 0.44);
+    box-shadow:
+      0 18px 70px rgba(178, 92, 255, 0.13),
+      0 0 0 1px rgba(178, 92, 255, 0.09);
   }
+
   .ui-rarity-legendary {
-    border-color: rgba(255, 204, 87, 0.45);
-    box-shadow: 0 20px 80px rgba(255, 204, 87, 0.12);
+    border-color: rgba(255, 204, 87, 0.48);
+    box-shadow:
+      0 20px 80px rgba(255, 204, 87, 0.13),
+      0 0 0 1px rgba(255, 204, 87, 0.09);
+  }
+
+  /* ---------------------------------
+     FX-ready hooks
+  ---------------------------------- */
+  .ui-glow-cyan {
+    box-shadow: 0 0 0 1px rgba(88, 240, 255, 0.12), 0 18px 80px var(--glow-cyan);
+  }
+  .ui-glow-violet {
+    box-shadow: 0 0 0 1px rgba(184, 92, 255, 0.12), 0 18px 80px var(--glow-violet);
+  }
+
+  /* -------------------------------------------------------
+     Phase B: Rarity FX pack (SAFE)
+     - Works on ui-btn/ui-pill without overriding their pseudo elements
+     Usage: add "ui-fx ui-fx-rare|epic|legendary" (+ optional ui-fx-pulse)
+  -------------------------------------------------------- */
+  .ui-fx {
+    --fxGlow: rgba(255, 255, 255, 0.14);
+    filter: drop-shadow(0 0 0 rgba(0,0,0,0));
+  }
+
+  .ui-fx-common { --fxGlow: rgba(255, 255, 255, 0.14); }
+  .ui-fx-rare { --fxGlow: var(--fx-rare); }
+  .ui-fx-epic { --fxGlow: var(--fx-epic); }
+  .ui-fx-legendary { --fxGlow: var(--fx-legendary); }
+
+  /* Outer aura for common elements */
+  .ui-btn.ui-fx,
+  .ui-pill.ui-fx {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--fxGlow) 44%, transparent),
+      0 18px 90px var(--fxGlow);
+  }
+
+  .ui-btn.ui-fx:hover,
+  .ui-pill.ui-fx:hover {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--fxGlow) 64%, transparent),
+      0 22px 120px var(--fxGlow);
+    filter: brightness(1.03) saturate(1.08);
+  }
+
+  /* Shine WITHOUT extra pseudo elements:
+     - we inject animated streak into EXISTING ::before (btn) and ::after (pill) */
+  .ui-btn.ui-fx::before {
+    background:
+      linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.22),
+        rgba(255, 255, 255, 0.08),
+        rgba(255, 255, 255, 0)
+      ),
+      linear-gradient(
+        90deg,
+        transparent,
+        color-mix(in srgb, var(--fxGlow) 55%, rgba(255,255,255,0.16)),
+        transparent
+      );
+    background-size: auto, 220% 100%;
+    background-position: center, -140% 0%;
+  }
+
+  .ui-btn.ui-fx:hover::before,
+  .ui-btn.ui-fx:focus-visible::before {
+    animation: ui-shimmer-sweep 1.9s var(--ease-out) 1;
+  }
+
+  .ui-pill.ui-fx::after {
+    /* keep rim light + add a subtle moving shine */
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    background:
+      linear-gradient(
+        90deg,
+        transparent,
+        color-mix(in srgb, var(--fxGlow) 42%, rgba(255,255,255,0.14)),
+        transparent
+      );
+    background-size: 220% 100%;
+    background-position: -140% 0%;
+    opacity: 0.95;
+    mix-blend-mode: screen;
+  }
+
+  .ui-pill.ui-fx:hover::after,
+  .ui-pill.ui-fx:focus-visible::after {
+    animation: ui-shimmer-sweep 2.05s var(--ease-out) 1;
+  }
+
+  .ui-fx-pulse {
+    animation: ui-glow-pulse 2.6s var(--ease-out) infinite;
   }
 }
 
@@ -348,7 +707,38 @@ body::before {
    Small utilities
 -------------------------- */
 @layer utilities {
-  .text-696 {
-    letter-spacing: 0.35em;
+  .text-696 { letter-spacing: 0.35em; }
+
+  @keyframes ui-shimmer {
+    0% { transform: translateX(-30%) rotate(8deg); opacity: 0; }
+    20% { opacity: 0.35; }
+    60% { opacity: 0.22; }
+    100% { transform: translateX(120%) rotate(8deg); opacity: 0; }
+  }
+
+  @keyframes ui-float {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+    100% { transform: translateY(0); }
+  }
+
+  .ui-float { animation: ui-float 3.6s var(--ease-out) infinite; }
+
+  .ui-ambient { animation: ui-ambient-float 4.2s var(--ease-out) infinite; }
+
+  .ui-shimmer-once {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .ui-shimmer-once::after {
+    content: "";
+    position: absolute;
+    inset: -30%;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+    transform: translateX(-140%) rotate(14deg);
+    opacity: 0.12;
+    animation: ui-shimmer-sweep 2.1s var(--ease-out) 1;
   }
 }

@@ -16,25 +16,44 @@ export default function BottomNav() {
   const pathname = usePathname();
   const active = useMemo(() => getActiveTab(pathname || "/"), [pathname]);
 
+  /**
+   * Base tab style
+   * Fortnite-like: pill, lift on hover, soft glass
+   */
   const tabBase =
-    "ui-pill px-4 py-2 text-sm text-[color:var(--text)] bg-transparent " +
-    "transition-transform duration-150 active:translate-y-[1px] " +
-    "hover:bg-[rgba(255,255,255,0.06)]";
+    "relative ui-pill px-4 py-2 text-sm font-extrabold uppercase " +
+    "tracking-[0.18em] text-[color:var(--text)] bg-transparent " +
+    "transition-all duration-150 ease-out " +
+    "hover:-translate-y-[1px] active:translate-y-[1px]";
 
+  /**
+   * Active tab
+   * Glow + rim light + slight scale
+   */
   const tabActive =
-    "border-[rgba(255,255,255,0.38)] bg-[rgba(255,255,255,0.08)] " +
-    "shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_12px_40px_rgba(255,255,255,0.04)]";
+    "border-[rgba(88,240,255,0.55)] " +
+    "bg-[linear-gradient(180deg,rgba(255,255,255,0.16),rgba(255,255,255,0.06))] " +
+    "shadow-[0_0_0_1px_rgba(88,240,255,0.18),0_12px_48px_rgba(88,240,255,0.18)] " +
+    "scale-[1.04]";
 
-  const tabIdle = "border-[color:var(--border)] opacity-90";
+  /**
+   * Idle tab
+   */
+  const tabIdle =
+    "border-[color:var(--border)] opacity-85 " +
+    "hover:bg-[rgba(255,255,255,0.06)]";
 
   return (
     <nav className="fixed left-0 right-0 bottom-0 z-50 px-4 pb-4">
       <div className="max-w-md mx-auto">
-        <div className="ui-card px-2 py-2 rounded-full">
+        {/* Floating capsule */}
+        <div className="ui-card ui-glow-cyan px-2 py-2 rounded-full">
           <div className="flex gap-2 justify-center">
             <a
               href="/"
-              className={`${tabBase} ${active === "home" ? tabActive : tabIdle}`}
+              className={`${tabBase} ${
+                active === "home" ? tabActive : tabIdle
+              }`}
               aria-current={active === "home" ? "page" : undefined}
             >
               Home
@@ -42,7 +61,9 @@ export default function BottomNav() {
 
             <a
               href="/chest"
-              className={`${tabBase} ${active === "chest" ? tabActive : tabIdle}`}
+              className={`${tabBase} ${
+                active === "chest" ? tabActive : tabIdle
+              }`}
               aria-current={active === "chest" ? "page" : undefined}
             >
               Chest
@@ -70,7 +91,7 @@ export default function BottomNav() {
           </div>
         </div>
 
-        {/* safe area padding for iOS home indicator */}
+        {/* iOS safe-area */}
         <div className="h-[env(safe-area-inset-bottom)]" />
       </div>
     </nav>

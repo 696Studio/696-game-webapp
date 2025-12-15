@@ -28,14 +28,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
+      <body
+        className={[
+          geistSans.variable,
+          geistMono.variable,
+          "antialiased",
+          "min-h-dvh",
+          "overflow-x-hidden",
+        ].join(" ")}
+        style={{ isolation: "isolate" }}
+      >
         <Script
           src="https://telegram.org/js/telegram-web-app.js"
           strategy="beforeInteractive"
         />
-      </head>
 
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <GameSessionProvider>
           {children}
           <BottomNav />

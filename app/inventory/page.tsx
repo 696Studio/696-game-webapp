@@ -79,14 +79,10 @@ function rarityColorVar(r: string | null | undefined) {
 function normalizeType(t: string | null | undefined): TypeFilter {
   const x = String(t || "").trim().toLowerCase();
   if (!x) return "item";
-
-  // поддержим возможные варианты из базы
   if (x === "emblem" || x === "emblems") return "emblem";
   if (x === "item" || x === "items") return "item";
   if (x === "character" || x === "characters" || x === "hero" || x === "heroes") return "character";
   if (x === "pet" || x === "pets") return "pet";
-
-  // дефолт, чтобы не ломалось
   return "item";
 }
 
@@ -157,7 +153,6 @@ export default function InventoryPage() {
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    // read local markers once
     const ld = typeof window !== "undefined" ? window.localStorage.getItem(LS_LAST_DROP_ID) : null;
     const seen = typeof window !== "undefined" ? window.localStorage.getItem(LS_SEEN_IDS) : null;
 
@@ -179,7 +174,6 @@ export default function InventoryPage() {
     next.add(invId);
     persistSeen(next);
 
-    // если это был "last drop" — можно убрать, чтобы NEW не мигал дальше
     if (lastDropId && invId === lastDropId) {
       setLastDropId(null);
       try {
@@ -246,7 +240,8 @@ export default function InventoryPage() {
   }, [selected?.id]);
 
   const items: InventoryItem[] = inventory?.items ?? [];
-  const totalPower = typeof inventory?.totalPower === "number" ? inventory.totalPower : core?.totalPower ?? 0;
+  const totalPower =
+    typeof inventory?.totalPower === "number" ? inventory.totalPower : core?.totalPower ?? 0;
 
   const isNewItem = (ui: InventoryItem) => {
     if (!ui?.id) return false;
@@ -278,7 +273,7 @@ export default function InventoryPage() {
       return bt - at;
     });
 
-    // NEW всегда сверху (не ломая сортировку полностью)
+    // NEW всегда сверху
     copy.sort((a, b) => Number(isNewItem(b)) - Number(isNewItem(a)));
 
     return copy;
@@ -303,15 +298,16 @@ export default function InventoryPage() {
     { key: "pet", label: "Pets" },
   ];
 
-  const pillBase = "ui-pill transition-transform duration-150 active:translate-y-[1px]";
+  const pillBase =
+    "ui-pill transition-all duration-150 ease-out font-extrabold uppercase tracking-[0.18em] text-[11px] px-4 py-2 hover:-translate-y-[1px] active:translate-y-[1px]";
   const pillActive =
-    "border-[rgba(255,255,255,0.40)] text-[color:var(--text)] bg-[rgba(255,255,255,0.08)]";
-  const pillIdle = "hover:bg-[rgba(255,255,255,0.06)]";
+    "border-[rgba(88,240,255,0.45)] text-[color:var(--text)] bg-[rgba(88,240,255,0.08)] shadow-[0_12px_40px_rgba(88,240,255,0.10)]";
+  const pillIdle = "border-[color:var(--border)] hover:bg-[rgba(255,255,255,0.06)] opacity-90";
 
   // ---------- UI ----------
   if (!isTelegramEnv) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Open in Telegram</div>
           <div className="text-sm ui-subtle">This page works only inside Telegram WebApp.</div>
@@ -323,7 +319,7 @@ export default function InventoryPage() {
   if (!hasCore) {
     if (!showGate || sessionLoading) {
       return (
-        <main className="min-h-screen flex items-center justify-center px-4">
+        <main className="min-h-screen flex items-center justify-center px-4 pb-24">
           <div className="w-full max-w-md ui-card p-5 text-center">
             <div className="text-sm font-semibold">Loading inventory...</div>
             <div className="mt-2 text-sm ui-subtle">Syncing session.</div>
@@ -337,7 +333,7 @@ export default function InventoryPage() {
 
     if (timedOut || !!sessionError) {
       return (
-        <main className="min-h-screen flex items-center justify-center px-4">
+        <main className="min-h-screen flex items-center justify-center px-4 pb-24">
           <div className="w-full max-w-md ui-card p-5">
             <div className="text-lg font-semibold">
               {timedOut ? "Connection timeout" : "Couldn’t load your session"}
@@ -371,7 +367,7 @@ export default function InventoryPage() {
     }
 
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Loading...</div>
           <div className="mt-2 text-sm ui-subtle">Still syncing.</div>
@@ -382,7 +378,7 @@ export default function InventoryPage() {
 
   if (!telegramId) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Loading inventory...</div>
           <div className="mt-2 text-sm ui-subtle">Getting Telegram ID.</div>
@@ -395,8 +391,8 @@ export default function InventoryPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center pt-10 px-4 pb-28">
-      {/* local keyframes (UI only) */}
+    <main className="min-h-screen px-4 pt-6 pb-28 flex justify-center">
+      {/* твой локальный CSS (как был) */}
       <style jsx global>{`
         @keyframes invModalIn {
           from {
@@ -501,16 +497,6 @@ export default function InventoryPage() {
         .inv-modal-img img {
           box-shadow: 0 6px 22px 0 color-mix(in srgb, var(--tile-glow, #fff8) 11%, transparent);
         }
-        .inv-modal {
-          outline: none;
-        }
-
-        .inv-modal:focus {
-          outline: none;
-        }
-        .inv-modal:focus-visible {
-          outline: 2.5px solid var(--accent);
-        }
 
         .inv-modal-overlay {
           background: radial-gradient(ellipse at 70% 10%, #181a2328 0%, #010101ef 100%);
@@ -518,7 +504,6 @@ export default function InventoryPage() {
           pointer-events: all;
         }
 
-        /* NEW badge */
         @keyframes newPulse {
           0%,
           100% {
@@ -549,47 +534,48 @@ export default function InventoryPage() {
       `}</style>
 
       <div className="w-full max-w-5xl">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-5">
-          <div>
-            <h1 className="ui-title text-696">Inventory</h1>
-            <div className="ui-subtitle mt-2">Your drops & power</div>
-          </div>
-
-          <button onClick={handleResync} className="ui-btn ui-btn-ghost">
-            Re-sync
-          </button>
-        </div>
-
-        {/* KPIs */}
-        <div className="ui-grid grid-cols-2 mb-5">
-          <div className="ui-card p-4">
-            <div className="flex items-center justify-between">
-              <div className="ui-subtitle">Total Power</div>
-              <span className="ui-pill">CORE</span>
+        {/* HUD header */}
+        <header className="ui-card px-4 py-3 rounded-[var(--r-xl)] mb-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="ui-subtitle">Inventory</div>
+              <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base truncate">
+                Your drops & power
+              </div>
             </div>
-            <div className="text-3xl font-semibold mt-3 tabular-nums">{formatCompact(totalPower)}</div>
-            <div className="text-xs ui-subtle mt-2">Inventory power (fallback: core power).</div>
-          </div>
 
-          <div className="ui-card p-4">
-            <div className="flex items-center justify-between">
-              <div className="ui-subtitle">Items</div>
+            <div className="flex items-center gap-2">
               <span className="ui-pill">
-                {shownCount}/{items.length}
+                POWER{" "}
+                <span className="ml-2 font-extrabold tabular-nums">
+                  {formatCompact(totalPower)}
+                </span>
               </span>
-            </div>
-            <div className="text-3xl font-semibold mt-3 tabular-nums">{formatCompact(items.length)}</div>
-            <div className="text-xs ui-subtle mt-2">
-              Showing: <span className="text-[color:var(--text)]">{shownCount}</span>
+              <span className="ui-pill">
+                ITEMS{" "}
+                <span className="ml-2 font-extrabold tabular-nums">
+                  {shownCount}/{items.length}
+                </span>
+              </span>
+              <button onClick={handleResync} className="ui-btn ui-btn-ghost">
+                Re-sync
+              </button>
             </div>
           </div>
-        </div>
+        </header>
+
+        {loading && <div className="mb-4 ui-subtle text-sm text-center">Loading items...</div>}
+
+        {inventory?.error && (
+          <div className="mb-4 ui-card p-4 border border-[rgba(255,80,80,0.35)]">
+            <div className="text-sm font-semibold text-red-300">Error</div>
+            <div className="mt-1 text-sm text-red-200/80 break-words">{inventory.error}</div>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="ui-card p-4 mb-5">
           <div className="flex flex-col gap-3">
-            {/* TYPE */}
             <div className="flex flex-wrap gap-2 justify-center">
               {typeOptions.map((opt) => {
                 const active = typeFilter === opt.key;
@@ -606,7 +592,6 @@ export default function InventoryPage() {
               })}
             </div>
 
-            {/* RARITY */}
             <div className="flex flex-wrap gap-2 justify-center">
               {rarityOptions.map((opt) => {
                 const active = rarityFilter === opt.key;
@@ -623,7 +608,6 @@ export default function InventoryPage() {
               })}
             </div>
 
-            {/* SORT */}
             <div className="flex items-center justify-center gap-2 flex-wrap">
               <div className="ui-subtitle">Sort</div>
 
@@ -654,26 +638,19 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {loading && <div className="mb-4 ui-subtle text-sm text-center">Loading items...</div>}
-
-        {inventory?.error && (
-          <div className="mb-4 ui-card p-4 border border-[rgba(255,80,80,0.35)]">
-            <div className="text-sm font-semibold text-red-300">Error</div>
-            <div className="mt-1 text-sm text-red-200/80 break-words">{inventory.error}</div>
-          </div>
-        )}
-
         {!loading && !inventory?.error && filteredSortedItems.length === 0 && (
           <div className="ui-card p-6 text-center">
             <div className="text-lg font-semibold">No items yet</div>
-            <div className="mt-2 text-sm ui-subtle">Open chests to collect emblems, items, characters and pets.</div>
+            <div className="mt-2 text-sm ui-subtle">
+              Open chests to collect emblems, items, characters and pets.
+            </div>
             <a href="/chest" className="ui-btn ui-btn-primary mt-4">
               Go to Chest
             </a>
           </div>
         )}
 
-        {/* Inventory UI v2 — loot tiles */}
+        {/* Tiles */}
         {filteredSortedItems.length > 0 && (
           <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {filteredSortedItems.map((ui) => {
@@ -681,7 +658,8 @@ export default function InventoryPage() {
               const rColor = rarityColorVar(ui.item?.rarity);
               const showNew = isNewItem(ui);
               const typeNorm = normalizeType(ui.item?.type);
-              const imgFit = typeNorm === "character" || typeNorm === "pet" ? "object-contain" : "object-cover";
+              const imgFit =
+                typeNorm === "character" || typeNorm === "pet" ? "object-contain" : "object-cover";
 
               return (
                 <button
@@ -701,13 +679,8 @@ export default function InventoryPage() {
                   }
                   aria-label={`Preview ${ui.item?.name || "item"}`}
                 >
-                  {showNew && (
-                    <div className="inv-new-badge" style={{ color: "var(--text)" }}>
-                      NEW
-                    </div>
-                  )}
+                  {showNew && <div className="inv-new-badge">NEW</div>}
 
-                  {/* Rarity subtle glow overlay */}
                   <div
                     className="pointer-events-none absolute inset-0"
                     style={{
@@ -716,13 +689,14 @@ export default function InventoryPage() {
                     }}
                   />
 
-                  {/* Always animate loot tile shine on hover only */}
                   <div className="pointer-events-none absolute inset-0 flex overflow-hidden">
                     <div
                       className="absolute -inset-y-10 -left-1/2 w-1/2 rotate-[14deg] opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                       style={{
-                        background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.11), transparent)",
-                        animation: "invShine 4s cubic-bezier(0.6,0,.69,1.02) infinite",
+                        background:
+                          "linear-gradient(90deg, transparent, rgba(255,255,255,0.11), transparent)",
+                        animation:
+                          "invShine 4s cubic-bezier(0.6,0,.69,1.02) infinite",
                       }}
                     />
                   </div>
@@ -730,13 +704,16 @@ export default function InventoryPage() {
                   <div className="relative z-10 p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="inv-tile-title font-bold leading-tight truncate">{ui.item.name}</div>
+                        <div className="inv-tile-title truncate">{ui.item.name}</div>
                         <div className="inv-tile-type-label mt-0.5 text-[11px] ui-subtle font-semibold uppercase tracking-wide truncate">
                           {String(ui.item.type || "")}
                         </div>
                       </div>
 
-                      <span className="ui-pill whitespace-nowrap" style={{ borderColor: rColor, color: "var(--text)" }}>
+                      <span
+                        className="ui-pill whitespace-nowrap"
+                        style={{ borderColor: rColor, color: "var(--text)" }}
+                      >
                         {rarityLabel(ui.item.rarity)}
                       </span>
                     </div>
@@ -745,7 +722,8 @@ export default function InventoryPage() {
                       className="mt-3 inv-tile-image rounded-[var(--r-lg)] overflow-hidden aspect-square relative flex items-end"
                       style={{
                         boxShadow: `inset 0 0 0 1.1px color-mix(in srgb, ${rColor} 22%, rgba(255,255,255,0.13))`,
-                        background: "linear-gradient(180deg, rgba(255,255,255,0.10), rgba(0,0,0,0.19))",
+                        background:
+                          "linear-gradient(180deg, rgba(255,255,255,0.10), rgba(0,0,0,0.19))",
                       }}
                     >
                       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120px_90px_at_50%_74%,rgba(0,0,0,0.00),rgba(0,0,0,0.38))]" />
@@ -766,12 +744,15 @@ export default function InventoryPage() {
                       )}
 
                       <div className="absolute left-2 right-2 bottom-2">
-                        <div className="inv-tile-power rounded-[var(--r-md)] px-2 py-[6px] flex items-center justify-between gap-2 backdrop-blur-[2px]">
-                          <span className="text-[10px] ui-subtle font-semibold opacity-90 select-none">POWER</span>
+                        <div className="inv-tile-power rounded-[var(--r-md)] px-2 py-[6px] flex items-center justify-between gap-2">
+                          <span className="text-[10px] ui-subtle font-semibold opacity-90 select-none">
+                            POWER
+                          </span>
                           <span
                             className="text-sm font-bold tabular-nums tracking-tight text-white drop-shadow-sm"
                             style={{
-                              textShadow: "0 1px 4px #16192555,0 1px 2px #0006",
+                              textShadow:
+                                "0 1px 4px #16192555,0 1px 2px #0006",
                             }}
                           >
                             {formatCompact(Number(ui.item.power_value ?? 0))}
@@ -845,7 +826,9 @@ export default function InventoryPage() {
                   >
                     {rarityLabel(selected.item.rarity)}
                   </span>
-                  <span className="ui-pill font-semibold">{String(selected.item.type || "").toUpperCase()}</span>
+                  <span className="ui-pill font-semibold">
+                    {String(selected.item.type || "").toUpperCase()}
+                  </span>
                 </div>
               </div>
 
@@ -853,7 +836,6 @@ export default function InventoryPage() {
                 type="button"
                 onClick={() => setSelected(null)}
                 className="ui-btn ui-btn-ghost"
-                tabIndex={0}
                 aria-label="Close"
               >
                 Close
@@ -896,7 +878,9 @@ export default function InventoryPage() {
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <div>
                   <div className="ui-subtitle">Obtained</div>
-                  <div className="text-sm ui-muted mt-1">{formatDate(selected.created_at) || "Unknown"}</div>
+                  <div className="text-sm ui-muted mt-1">
+                    {formatDate(selected.created_at) || "Unknown"}
+                  </div>
                 </div>
 
                 <div>
