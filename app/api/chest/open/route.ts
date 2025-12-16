@@ -258,41 +258,53 @@ export async function POST(request: Request) {
       );
     }
 
-    // ✅ PVP FIX (правильный): ищем карту по cards.item_id == selectedItem.id
-    // Требование: в public.cards есть колонка item_id uuid (см. SQL в чате)
+    // ✅ PVP FIX (ПРАВИЛЬНЫЙ ПОД ТВОЮ СХЕМУ):
+    // - cards: item_id uuid
+    // - user_cards: item_id uuid, copies
+    // если выпал item, который является картой → пишем/инкрементим user_cards по (user_id,item_id)
     try {
-      const { data: maybeCard } = await supabaseAdmin
+      const { data: maybeCard, error: cardLookupErr } = await supabaseAdmin
         .from("cards")
-        .select("id")
+        .select("id,item_id")
         .eq("item_id", selectedItem.id)
         .maybeSingle();
 
-      if (maybeCard?.id) {
-        const cardId = String(maybeCard.id);
+      if (cardLookupErr) {
+        console.error("PVP FIX cards lookup error:", cardLookupErr);
+      }
 
-        const { data: existing } = await supabaseAdmin
+      if (maybeCard?.item_id) {
+        const itemId = maybeCard.item_id; // uuid
+
+        const { data: existing, error: existingErr } = await supabaseAdmin
           .from("user_cards")
           .select("id,copies")
           .eq("user_id", user.id)
-          .eq("card_id", cardId)
+          .eq("item_id", itemId)
           .maybeSingle();
 
-        if (existing?.id) {
+        if (existingErr) {
+          console.error("PVP FIX user_cards select error:", existingErr);
+        } else if (existing?.id) {
           const curr = Number(existing.copies || 0);
-          await supabaseAdmin
+          const { error: updErr } = await supabaseAdmin
             .from("user_cards")
             .update({ copies: curr + 1 })
             .eq("id", existing.id);
+
+          if (updErr) console.error("PVP FIX user_cards update error:", updErr);
         } else {
-          await supabaseAdmin.from("user_cards").insert({
+          const { error: insErr } = await supabaseAdmin.from("user_cards").insert({
             user_id: user.id,
-            card_id: cardId,
+            item_id: itemId,
             copies: 1,
           });
+
+          if (insErr) console.error("PVP FIX user_cards insert error:", insErr);
         }
       }
     } catch (e) {
-      console.error("PVP FIX user_cards error:", e);
+      console.error("PVP FIX user_cards unexpected error:", e);
     }
 
     // total_minted best effort (admin)
@@ -358,7 +370,6 @@ export async function POST(request: Request) {
         request_id: requestId,
       });
 
-    // Если request_id UNIQUE — duplicate считаем окей (повторный запрос)
     if (chestOpenEventError) {
       const msg =
         (chestOpenEventError as any)?.message ||

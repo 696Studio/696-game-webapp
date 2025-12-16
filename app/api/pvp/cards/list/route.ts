@@ -9,7 +9,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "telegramId required" }, { status: 400 });
   }
 
-  // 1) user id
   const { data: userRow, error: userErr } = await supabaseAdmin
     .from("users")
     .select("id")
@@ -23,29 +22,57 @@ export async function GET(req: Request) {
     );
   }
 
-  // 2) owned cards (через user_cards -> cards)
-  const { data, error } = await supabaseAdmin
+  // user_cards: user_id, item_id(uuid), copies
+  const { data: owned, error: ownedErr } = await supabaseAdmin
     .from("user_cards")
-    .select(
-      `
-      card_id,
-      copies,
-      cards:card_id ( id, name, rarity, base_power, image_url )
-    `
-    )
-    .eq("user_id", userRow.id)
-    .order("card_id", { ascending: true });
+    .select("item_id, copies")
+    .eq("user_id", userRow.id);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (ownedErr) {
+    return NextResponse.json({ error: ownedErr.message }, { status: 500 });
   }
 
-  const cards = (data ?? [])
-    .map((row: any) => ({
-      ...(row.cards || {}),
-      owned_copies: Number(row.copies || 0),
-    }))
-    .filter((c: any) => c.id && c.owned_copies > 0);
+  const rows = (owned ?? []).filter(
+    (r: any) => r?.item_id && Number(r?.copies || 0) > 0
+  );
+
+  if (rows.length === 0) {
+    return NextResponse.json({ ok: true, cards: [] });
+  }
+
+  const itemIds = rows.map((r: any) => r.item_id);
+
+  // cards: id(text), ... , item_id(uuid)
+  const { data: cardsData, error: cardsErr } = await supabaseAdmin
+    .from("cards")
+    .select("id, name_ru, name_en, rarity, base_power, image_url, item_id")
+    .in("item_id", itemIds);
+
+  if (cardsErr) {
+    return NextResponse.json({ error: cardsErr.message }, { status: 500 });
+  }
+
+  const cardByItemId = new Map<string, any>();
+  for (const c of cardsData ?? []) {
+    if (c?.item_id) cardByItemId.set(String(c.item_id), c);
+  }
+
+  const cards = rows
+    .map((r: any) => {
+      const c: any = cardByItemId.get(String(r.item_id));
+      if (!c) return null;
+
+      return {
+        id: c.id, // text — это то, что PVP использует как card_id
+        name: c.name_ru ?? c.name_en ?? "Card",
+        rarity: c.rarity,
+        base_power: Number(c.base_power || 0),
+        image_url: c.image_url ?? null,
+        owned_copies: Number(r.copies || 0),
+        item_id: c.item_id, // debug
+      };
+    })
+    .filter(Boolean);
 
   return NextResponse.json({ ok: true, cards });
 }
