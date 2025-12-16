@@ -23,7 +23,10 @@ export async function POST(request: Request) {
         `req_${Date.now()}_${Math.random()}`);
 
     if (!telegramId) {
-      return NextResponse.json({ error: "telegramId is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "telegramId is required" },
+        { status: 400 }
+      );
     }
 
     if (!/^\d+$/.test(telegramId)) {
@@ -255,6 +258,46 @@ export async function POST(request: Request) {
       );
     }
 
+    // ✅ PVP FIX: если выпавший item является картой (есть в public.cards),
+    // то начисляем её в user_cards (user_id + card_id + copies)
+    // (у тебя user_cards.card_id = text, так что кладём строковый id)
+    try {
+      const { data: maybeCard } = await supabaseAdmin
+        .from("cards")
+        .select("id")
+        .eq("id", selectedItem.id)
+        .maybeSingle();
+
+      if (maybeCard?.id) {
+        const cardId = String(maybeCard.id);
+
+        // если уже есть строка — увеличиваем copies
+        const { data: existing } = await supabaseAdmin
+          .from("user_cards")
+          .select("id,copies")
+          .eq("user_id", user.id)
+          .eq("card_id", cardId)
+          .maybeSingle();
+
+        if (existing?.id) {
+          const curr = Number(existing.copies || 0);
+          await supabaseAdmin
+            .from("user_cards")
+            .update({ copies: curr + 1 })
+            .eq("id", existing.id);
+        } else {
+          await supabaseAdmin.from("user_cards").insert({
+            user_id: user.id,
+            card_id: cardId,
+            copies: 1,
+          });
+        }
+      }
+    } catch (e) {
+      // не ломаем сундук из-за pvp-учёта
+      console.error("PVP FIX user_cards error:", e);
+    }
+
     // total_minted best effort (admin)
     await supabaseAdmin
       .from("items")
@@ -285,7 +328,10 @@ export async function POST(request: Request) {
 
     if (itemsPowerError) {
       return NextResponse.json(
-        { error: "Failed to fetch user items for power", details: itemsPowerError },
+        {
+          error: "Failed to fetch user items for power",
+          details: itemsPowerError,
+        },
         { status: 500 }
       );
     }
@@ -330,7 +376,10 @@ export async function POST(request: Request) {
 
       if (!isDuplicate) {
         return NextResponse.json(
-          { error: "Failed to log chest open event", details: chestOpenEventError },
+          {
+            error: "Failed to log chest open event",
+            details: chestOpenEventError,
+          },
           { status: 500 }
         );
       }
