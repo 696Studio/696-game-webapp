@@ -314,7 +314,7 @@ export default function ProfilePage() {
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
       <div className="w-full max-w-3xl">
-        {/* Header / HUD */}
+        {/* HUD header */}
         <header className="ui-card px-4 py-3 rounded-[var(--r-xl)] mb-4">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -397,7 +397,9 @@ export default function ProfilePage() {
 
           <div className="ui-card p-4">
             <div className="ui-subtitle mb-2">Spins</div>
-            <div className="text-3xl font-extrabold tabular-nums">{typeof spinsCount === "number" ? spinsCount : 0}</div>
+            <div className="text-3xl font-extrabold tabular-nums">
+              {typeof spinsCount === "number" ? spinsCount : 0}
+            </div>
             <div className="mt-2 text-[11px] ui-subtle truncate">Last: {lastSpinText}</div>
           </div>
 
@@ -410,7 +412,7 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* Daily reward + stats */}
+        {/* Daily reward + session */}
         <section className="mt-4 ui-grid sm:grid-cols-2">
           <div className="ui-card p-5">
             <div className="flex items-center justify-between gap-3">
@@ -466,10 +468,9 @@ export default function ProfilePage() {
                   <button
                     onClick={handleClaimDaily}
                     disabled={claimLoading || !daily.canClaim}
-                    className={[
-                      "ui-btn",
-                      daily.canClaim ? "ui-btn-primary" : "ui-btn-ghost",
-                    ].join(" ")}
+                    className={["ui-btn", daily.canClaim ? "ui-btn-primary" : "ui-btn-ghost"].join(
+                      " "
+                    )}
                   >
                     {claimLoading
                       ? "Claiming..."
@@ -500,8 +501,7 @@ export default function ProfilePage() {
           <div className="ui-card p-5">
             <div className="ui-subtitle">Session</div>
             <div className="mt-2 text-sm ui-subtle">
-              Telegram env:{" "}
-              <span className="font-semibold text-[color:var(--text)]">OK</span>
+              Telegram env: <span className="font-semibold text-[color:var(--text)]">OK</span>
             </div>
             <div className="mt-2 text-sm ui-subtle">
               Telegram ID:{" "}
