@@ -163,9 +163,11 @@ function BattleInner() {
     return 3;
   }, [timeline, rounds.length]);
 
-  // playback state
+  // playback
   const [playing, setPlaying] = useState(true);
   const [t, setT] = useState(0);
+  const [rate, setRate] = useState<0.5 | 1 | 2>(1);
+
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
@@ -195,6 +197,22 @@ function BattleInner() {
     p2: null,
   });
 
+  // round-end banner
+  const [roundBanner, setRoundBanner] = useState<{
+    visible: boolean;
+    tick: number;
+    text: string;
+    tone: "p1" | "p2" | "draw";
+  }>({ visible: false, tick: 0, text: "", tone: "draw" });
+
+  const prevEndSigRef = useRef<string>("");
+
+  function seek(nextT: number) {
+    const clamped = Math.max(0, Math.min(durationSec, Number(nextT) || 0));
+    setT(clamped);
+    startAtRef.current = null;
+  }
+
   useEffect(() => {
     if (!matchId) {
       setErrText("matchId required");
@@ -223,7 +241,7 @@ function BattleInner() {
     };
   }, [matchId]);
 
-  // timeline → game state at time t
+  // timeline → state at time t
   useEffect(() => {
     if (!timeline.length) return;
 
@@ -267,7 +285,7 @@ function BattleInner() {
       }
     }
 
-    // trigger reveal anim
+    // reveal anim trigger
     const sigLeft = (cf1?.map((x) => x?.id).join("|") || c1.join("|")) ?? "";
     const sigRight = (cf2?.map((x) => x?.id).join("|") || c2.join("|")) ?? "";
     const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
@@ -305,15 +323,19 @@ function BattleInner() {
     setRoundWinner(rw);
   }, [t, timeline]);
 
-  // playback loop
+  // playback loop with rate
   useEffect(() => {
     if (!match) return;
 
     const step = (now: number) => {
       if (!playing) return;
 
-      if (startAtRef.current == null) startAtRef.current = now - t * 1000;
-      const elapsed = (now - startAtRef.current) / 1000;
+      if (startAtRef.current == null) {
+        startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
+      }
+
+      const elapsedWall = (now - startAtRef.current) / 1000;
+      const elapsed = elapsedWall * rate;
 
       const nextT = Math.min(durationSec, Math.max(0, elapsed));
       setT(nextT);
@@ -335,11 +357,11 @@ function BattleInner() {
       rafRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, durationSec]);
+  }, [match, playing, durationSec, rate]);
 
   useEffect(() => {
     startAtRef.current = null;
-  }, [playing]);
+  }, [playing, rate]);
 
   function togglePlay() {
     setPlaying((p) => !p);
@@ -372,6 +394,46 @@ function BattleInner() {
     if (hasReveal) return "reveal";
     return "start";
   }, [timeline, roundN, t]);
+
+  // show banner when entering round_end
+  useEffect(() => {
+    if (phase !== "end") return;
+    if (!roundWinner) return;
+
+    const sig = `${roundN}:${roundWinner}`;
+    if (sig === prevEndSigRef.current) return;
+    prevEndSigRef.current = sig;
+
+    let tone: "p1" | "p2" | "draw" = "draw";
+    let text = "DRAW";
+
+    if (roundWinner === "p1") {
+      tone = "p1";
+      text = "YOU WIN ROUND";
+    } else if (roundWinner === "p2") {
+      tone = "p2";
+      text = "ENEMY WIN ROUND";
+    } else if (roundWinner === "draw") {
+      tone = "draw";
+      text = "DRAW";
+    } else {
+      tone = "draw";
+      text = String(roundWinner).toUpperCase();
+    }
+
+    setRoundBanner((b) => ({
+      visible: true,
+      tick: b.tick + 1,
+      text,
+      tone,
+    }));
+
+    const to = window.setTimeout(() => {
+      setRoundBanner((b) => ({ ...b, visible: false }));
+    }, 900);
+
+    return () => window.clearTimeout(to);
+  }, [phase, roundWinner, roundN]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -427,7 +489,11 @@ function BattleInner() {
 
     return (
       <div
-        className={["bb-card", revealed ? "is-revealed" : "", `rt-${revealTick}`].join(" ")}
+        className={[
+          "bb-card",
+          revealed ? "is-revealed" : "",
+          `rt-${revealTick}`,
+        ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
         <div className="bb-card-inner">
@@ -437,7 +503,10 @@ function BattleInner() {
 
           <div className={["bb-face bb-front", rarityFxClass(r)].join(" ")}>
             {img ? (
-              <div className="bb-art" style={{ backgroundImage: `url(${img})` }} />
+              <div
+                className="bb-art"
+                style={{ backgroundImage: `url(${img})` }}
+              />
             ) : (
               <div className="bb-art bb-art--ph">
                 <div className="bb-mark-sm">CARD</div>
@@ -515,7 +584,10 @@ function BattleInner() {
         <div className="w-full max-w-md ui-card p-5">
           <div className="text-lg font-semibold">Ошибка</div>
           <div className="mt-2 text-sm ui-subtle">{errText}</div>
-          <button onClick={backToPvp} className="mt-5 ui-btn ui-btn-ghost w-full">
+          <button
+            onClick={backToPvp}
+            className="mt-5 ui-btn ui-btn-ghost w-full"
+          >
             Назад
           </button>
         </div>
@@ -529,7 +601,8 @@ function BattleInner() {
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загружаю матч…</div>
           <div className="mt-2 text-sm ui-subtle">
-            MatchId: <span className="font-semibold">{matchId.slice(0, 8)}…</span>
+            MatchId:{" "}
+            <span className="font-semibold">{matchId.slice(0, 8)}…</span>
           </div>
           <div className="mt-4 ui-progress">
             <div className="w-1/3 opacity-70 animate-pulse" />
@@ -566,12 +639,24 @@ function BattleInner() {
           100% { transform: translate3d(0,0,0); }
         }
 
+        @keyframes bannerIn {
+          0% { transform: translateY(10px) scale(0.98); opacity: 0; }
+          60% { transform: translateY(0) scale(1.02); opacity: 1; }
+          100% { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        @keyframes bannerGlow {
+          0% { opacity: 0.0; transform: scale(0.96); }
+          40% { opacity: 0.65; transform: scale(1.05); }
+          100% { opacity: 0.0; transform: scale(1.18); }
+        }
+
         .battle-progress {
           height: 10px;
           border-radius: 999px;
           overflow: hidden;
           border: 1px solid var(--border);
           background: rgba(255, 255, 255, 0.04);
+          cursor: pointer;
         }
         .battle-progress > div {
           height: 100%;
@@ -579,7 +664,33 @@ function BattleInner() {
           box-shadow: 0 0 16px rgba(255, 255, 255, 0.18);
         }
 
-        /* ===== BOARD WRAPPER ===== */
+        .scrub-row {
+          margin-top: 10px;
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        .scrub-row .rate-pill {
+          padding: 7px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(0,0,0,0.18);
+          font-size: 11px;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          opacity: 0.9;
+          cursor: pointer;
+        }
+        .scrub-row .rate-pill.is-on {
+          background: rgba(255,255,255,0.12);
+          border-color: rgba(255,255,255,0.26);
+        }
+        .scrub-row input[type="range"] {
+          flex: 1 1 260px;
+          accent-color: rgba(255, 255, 255, 0.7);
+        }
+
         .board {
           border: 1px solid rgba(255,255,255,0.18);
           border-radius: var(--r-xl);
@@ -632,15 +743,12 @@ function BattleInner() {
 
         .hud-actions { display: flex; gap: 8px; align-items: center; }
 
-        /* ===== ARENA WITH PNG BACKGROUND ===== */
         .arena {
           position: relative;
           padding: 14px;
           overflow: hidden;
           background: rgba(0,0,0,0.22);
         }
-
-        /* Слой доски (PNG) */
         .arena::before {
           content: "";
           position: absolute;
@@ -653,8 +761,6 @@ function BattleInner() {
           transform: scale(1.02);
           opacity: 1;
         }
-
-        /* Чуть глубины/блюма поверх, чтобы UI читался */
         .arena::after {
           content: "";
           position: absolute;
@@ -669,8 +775,6 @@ function BattleInner() {
           animation: glowPulse 2.2s ease-in-out infinite;
           mix-blend-mode: screen;
         }
-
-        /* ВЕСЬ КОНТЕНТ ПОВЕРХ ФОНА */
         .arena > * { position: relative; z-index: 1; }
 
         .arena.fx-p1,
@@ -681,6 +785,53 @@ function BattleInner() {
         .arena.fx-p2 .row-top { box-shadow: 0 0 0 1px rgba(184,92,255,0.18), 0 0 24px rgba(184,92,255,0.12); }
         .arena.fx-draw .row-top,
         .arena.fx-draw .row-bottom { box-shadow: 0 0 0 1px rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.10); }
+
+        /* Round banner overlay */
+        .round-banner {
+          position: absolute;
+          left: 50%;
+          top: 52%;
+          transform: translate(-50%, -50%);
+          padding: 12px 14px;
+          border-radius: 18px;
+          border: 1px solid rgba(255,255,255,0.20);
+          background: rgba(0,0,0,0.42);
+          backdrop-filter: blur(10px);
+          min-width: min(520px, calc(100% - 28px));
+          text-align: center;
+          box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+          animation: bannerIn 320ms var(--ease-out) both;
+          pointer-events: none;
+          z-index: 5;
+        }
+        .round-banner::before {
+          content: "";
+          position: absolute;
+          inset: -18px;
+          border-radius: 22px;
+          background: radial-gradient(closest-side, rgba(255,255,255,0.22), transparent 70%);
+          opacity: 0;
+          animation: bannerGlow 520ms ease-out both;
+        }
+        .round-banner .title {
+          font-weight: 1000;
+          letter-spacing: 0.24em;
+          text-transform: uppercase;
+          font-size: 13px;
+          opacity: 0.9;
+        }
+        .round-banner .sub {
+          margin-top: 6px;
+          font-weight: 900;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          font-size: 18px;
+        }
+        .round-banner.tone-p1 { border-color: rgba(88,240,255,0.28); }
+        .round-banner.tone-p1 .sub { text-shadow: 0 0 18px rgba(88,240,255,0.18); }
+        .round-banner.tone-p2 { border-color: rgba(184,92,255,0.28); }
+        .round-banner.tone-p2 .sub { text-shadow: 0 0 18px rgba(184,92,255,0.18); }
+        .round-banner.tone-draw { border-color: rgba(255,255,255,0.22); }
 
         .lane { display: grid; gap: 14px; }
 
@@ -696,12 +847,7 @@ function BattleInner() {
           backdrop-filter: blur(6px);
         }
 
-        .player-left {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          min-width: 0;
-        }
+        .player-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
         .avatar {
           width: 38px;
@@ -732,12 +878,7 @@ function BattleInner() {
           text-overflow: ellipsis;
         }
 
-        .player-right {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          flex: 0 0 auto;
-        }
+        .player-right { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 
         .hp {
           display: inline-flex;
@@ -779,7 +920,6 @@ function BattleInner() {
           max-width: 820px;
         }
 
-        /* ===== CARD ===== */
         .bb-card {
           width: 100%;
           aspect-ratio: 3 / 4;
@@ -788,7 +928,6 @@ function BattleInner() {
           border-radius: 18px;
           margin: 0 auto;
         }
-
         .bb-card-inner {
           width: 100%;
           height: 100%;
@@ -797,7 +936,6 @@ function BattleInner() {
           transition: transform 420ms var(--ease-out);
           transform: rotateY(0deg);
         }
-
         .bb-card.is-revealed .bb-card-inner { transform: rotateY(180deg); }
         .bb-card.is-revealed { animation: flipIn 520ms var(--ease-out) both; }
 
@@ -907,6 +1045,8 @@ function BattleInner() {
           .bb-card { max-width: 110px; border-radius: 16px; }
           .bb-face { border-radius: 16px; }
           .bb-card-inner { border-radius: 16px; }
+          .round-banner { top: 54%; }
+          .round-banner .sub { font-size: 16px; }
         }
       `}</style>
 
@@ -918,8 +1058,55 @@ function BattleInner() {
               <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">
                 Поле боя • {fmtTime(t)} / {fmtTime(durationSec)}
               </div>
-              <div className="mt-2 battle-progress">
+
+              <div
+                className="mt-2 battle-progress"
+                role="slider"
+                aria-label="Seek"
+                onClick={(e) => {
+                  const el = e.currentTarget as HTMLDivElement;
+                  const rect = el.getBoundingClientRect();
+                  const x = e.clientX - rect.left;
+                  const pct = rect.width > 0 ? x / rect.width : 0;
+                  seek(pct * durationSec);
+                }}
+              >
                 <div style={{ width: `${progressPct}%` }} />
+              </div>
+
+              <div className="scrub-row">
+                <input
+                  type="range"
+                  min={0}
+                  max={durationSec}
+                  step={0.05}
+                  value={t}
+                  onChange={(e) => seek(Number(e.target.value))}
+                />
+
+                <button
+                  className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(
+                    " "
+                  )}
+                  onClick={() => setRate(0.5)}
+                  type="button"
+                >
+                  0.5x
+                </button>
+                <button
+                  className={["rate-pill", rate === 1 ? "is-on" : ""].join(" ")}
+                  onClick={() => setRate(1)}
+                  type="button"
+                >
+                  1x
+                </button>
+                <button
+                  className={["rate-pill", rate === 2 ? "is-on" : ""].join(" ")}
+                  onClick={() => setRate(2)}
+                  type="button"
+                >
+                  2x
+                </button>
               </div>
 
               <div className="hud-sub">
@@ -934,11 +1121,17 @@ function BattleInner() {
                 </span>
 
                 <span className="hud-pill">
-                  Раунд <b className="tabular-nums">{roundN}/{roundCount}</b>
+                  Раунд{" "}
+                  <b className="tabular-nums">
+                    {roundN}/{roundCount}
+                  </b>
                 </span>
 
                 <span className="hud-pill">
-                  Match <b className="tabular-nums">{String(match.id).slice(0, 8)}…</b>
+                  Match{" "}
+                  <b className="tabular-nums">
+                    {String(match.id).slice(0, 8)}…
+                  </b>
                 </span>
 
                 <span className="hud-pill">
@@ -951,6 +1144,15 @@ function BattleInner() {
               <button onClick={togglePlay} className="ui-btn ui-btn-ghost">
                 {playing ? "Пауза" : "▶"}
               </button>
+              <button
+                onClick={() => {
+                  setPlaying(true);
+                  seek(0);
+                }}
+                className="ui-btn ui-btn-ghost"
+              >
+                ↺
+              </button>
               <button onClick={backToPvp} className="ui-btn ui-btn-ghost">
                 Назад
               </button>
@@ -959,6 +1161,24 @@ function BattleInner() {
         </header>
 
         <section className={["board", "arena", boardFxClass].join(" ")}>
+          {/* ROUND END BANNER */}
+          {roundBanner.visible && (
+            <div
+              key={roundBanner.tick}
+              className={[
+                "round-banner",
+                roundBanner.tone === "p1"
+                  ? "tone-p1"
+                  : roundBanner.tone === "p2"
+                  ? "tone-p2"
+                  : "tone-draw",
+              ].join(" ")}
+            >
+              <div className="title">ROUND END</div>
+              <div className="sub">{roundBanner.text}</div>
+            </div>
+          )}
+
           <div className="lane">
             {/* ENEMY */}
             <div className="playerbar">
@@ -966,7 +1186,9 @@ function BattleInner() {
                 <div className="avatar">
                   <img
                     alt="enemy"
-                    src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${match.p2_user_id || "enemy"}`}
+                    src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${
+                      match.p2_user_id || "enemy"
+                    }`}
                   />
                 </div>
                 <div className="nameblock">
@@ -976,7 +1198,9 @@ function BattleInner() {
               </div>
 
               <div className="player-right">
-                <div className="hp">HP <b className="tabular-nums">30</b></div>
+                <div className="hp">
+                  HP <b className="tabular-nums">30</b>
+                </div>
                 <div className={["score", p2Hit ? "is-hit" : ""].join(" ")}>
                   {scored ? (p2Score == null ? "…" : p2Score) : "…"}
                 </div>
@@ -991,7 +1215,9 @@ function BattleInner() {
                     key={`p2-${revealTick}-${i}`}
                     card={s.card}
                     fallbackId={s.fallbackId}
-                    revealed={revealed && (p2CardsFull.length > 0 || p2Cards.length > 0)}
+                    revealed={
+                      revealed && (p2CardsFull.length > 0 || p2Cards.length > 0)
+                    }
                     delayMs={i * 70}
                   />
                 ))}
@@ -999,7 +1225,13 @@ function BattleInner() {
             </div>
 
             {/* CENTER INFO */}
-            <div className="ui-card p-4" style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
+            <div
+              className="ui-card p-4"
+              style={{
+                background: "rgba(0,0,0,0.22)",
+                backdropFilter: "blur(6px)",
+              }}
+            >
               <div className="ui-subtitle">Раунд {roundN}</div>
               <div className="mt-2 text-sm ui-subtle">
                 Победитель раунда:{" "}
@@ -1017,7 +1249,9 @@ function BattleInner() {
                     key={`p1-${revealTick}-${i}`}
                     card={s.card}
                     fallbackId={s.fallbackId}
-                    revealed={revealed && (p1CardsFull.length > 0 || p1Cards.length > 0)}
+                    revealed={
+                      revealed && (p1CardsFull.length > 0 || p1Cards.length > 0)
+                    }
                     delayMs={i * 70}
                   />
                 ))}
@@ -1030,7 +1264,9 @@ function BattleInner() {
                 <div className="avatar">
                   <img
                     alt="you"
-                    src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${match.p1_user_id || "you"}`}
+                    src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${
+                      match.p1_user_id || "you"
+                    }`}
                   />
                 </div>
                 <div className="nameblock">
@@ -1040,7 +1276,9 @@ function BattleInner() {
               </div>
 
               <div className="player-right">
-                <div className="hp">HP <b className="tabular-nums">30</b></div>
+                <div className="hp">
+                  HP <b className="tabular-nums">30</b>
+                </div>
                 <div className={["score", p1Hit ? "is-hit" : ""].join(" ")}>
                   {scored ? (p1Score == null ? "…" : p1Score) : "…"}
                 </div>
@@ -1048,7 +1286,13 @@ function BattleInner() {
             </div>
 
             {!playing && t >= durationSec && (
-              <div className="ui-card p-5" style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
+              <div
+                className="ui-card p-5"
+                style={{
+                  background: "rgba(0,0,0,0.22)",
+                  backdropFilter: "blur(6px)",
+                }}
+              >
                 <div className="ui-subtitle">Результат матча</div>
                 <div className="mt-2 text-sm ui-subtle">{finalWinnerLabel}</div>
 
@@ -1061,13 +1305,18 @@ function BattleInner() {
                       </div>
                       <div className="mt-2 text-[11px] ui-subtle">
                         Победитель:{" "}
-                        <span className="font-semibold">{r?.winner ?? "—"}</span>
+                        <span className="font-semibold">
+                          {r?.winner ?? "—"}
+                        </span>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <button onClick={backToPvp} className="mt-5 ui-btn ui-btn-primary w-full">
+                <button
+                  onClick={backToPvp}
+                  className="mt-5 ui-btn ui-btn-primary w-full"
+                >
                   Ок
                 </button>
               </div>

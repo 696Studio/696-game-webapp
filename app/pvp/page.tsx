@@ -35,12 +35,16 @@ function rarityFxClass(r: string) {
   return "ui-rarity-common";
 }
 
+function countTotalCopies(map: Record<string, number>) {
+  return Object.values(map).reduce((a, b) => a + (Number(b) || 0), 0);
+}
+
 export default function PvpPage() {
   const router = useRouter();
   const { telegramId, isTelegramEnv, loading, timedOut, error, refreshSession } =
     useGameSessionContext() as any;
 
-  const MODE = "unranked"; // позже сделаем переключатель
+  const MODE = "unranked";
   const POLL_MS = 1200;
 
   const [cards, setCards] = useState<Card[]>([]);
@@ -58,10 +62,11 @@ export default function PvpPage() {
   // ✅ защита от двойного редиректа
   const pushedRef = useRef<string | null>(null);
 
-  const totalCopies = useMemo(
-    () => Object.values(deckMap).reduce((a, b) => a + (b || 0), 0),
-    [deckMap]
-  );
+  // ✅ если юзер начал редактировать колоду — не перезатирай deckMap загрузкой
+  const editedRef = useRef(false);
+  const loadedDeckForTelegramIdRef = useRef<string | null>(null);
+
+  const totalCopies = useMemo(() => countTotalCopies(deckMap), [deckMap]);
 
   const deckRows: DeckCardRow[] = useMemo(() => {
     return Object.entries(deckMap)
@@ -89,19 +94,30 @@ export default function PvpPage() {
 
   async function loadDeck() {
     if (!telegramId) return;
-    const res = await fetch(
-      `/api/pvp/deck/get?telegramId=${encodeURIComponent(telegramId)}`
-    );
-    const data = await res.json();
-    const deck = data?.deck;
 
-    if (deck?.cards) {
-      const next: Record<string, number> = {};
-      for (const row of deck.cards as DeckCardRow[]) {
-        next[row.card_id] = Number(row.copies || 0);
+    // ✅ грузим колоду только 1 раз на telegramId,
+    // и только пока юзер не начал руками менять deckMap
+    if (editedRef.current) return;
+    if (loadedDeckForTelegramIdRef.current === telegramId) return;
+    loadedDeckForTelegramIdRef.current = telegramId;
+
+    try {
+      const res = await fetch(
+        `/api/pvp/deck/get?telegramId=${encodeURIComponent(telegramId)}`
+      );
+      const data = await res.json();
+      const deck = data?.deck;
+
+      if (deck?.cards) {
+        const next: Record<string, number> = {};
+        for (const row of deck.cards as DeckCardRow[]) {
+          next[String(row.card_id)] = Number(row.copies || 0);
+        }
+        setDeckMap(next);
+        if (deck?.name) setDeckName(deck.name);
       }
-      setDeckMap(next);
-      if (deck?.name) setDeckName(deck.name);
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -255,17 +271,24 @@ export default function PvpPage() {
   }, [matchId, router]);
 
   function addCopy(cardId: string) {
+    editedRef.current = true;
+
     setDeckMap((prev) => {
-      const curr = prev[cardId] || 0;
-      if (totalCopies >= 20) return prev;
+      const prevTotal = countTotalCopies(prev);
+      const curr = Number(prev[cardId] || 0);
+
+      if (prevTotal >= 20) return prev;
+
       const next = clamp(curr + 1, 0, 9);
       return { ...prev, [cardId]: next };
     });
   }
 
   function removeCopy(cardId: string) {
+    editedRef.current = true;
+
     setDeckMap((prev) => {
-      const curr = prev[cardId] || 0;
+      const curr = Number(prev[cardId] || 0);
       const next = clamp(curr - 1, 0, 9);
       const out = { ...prev, [cardId]: next };
       if (next === 0) delete out[cardId];
@@ -311,6 +334,7 @@ export default function PvpPage() {
             Нажми Re-sync и попробуй снова.
           </div>
           <button
+            type="button"
             onClick={() => refreshSession?.()}
             className="mt-5 ui-btn ui-btn-primary w-full"
           >
@@ -412,7 +436,11 @@ export default function PvpPage() {
                 Собери 20 копий → сохрани → нажми “В бой”
               </div>
             </div>
-            <button onClick={() => refreshSession?.()} className="ui-btn ui-btn-ghost">
+            <button
+              type="button"
+              onClick={() => refreshSession?.()}
+              className="ui-btn ui-btn-ghost"
+            >
               Re-sync
             </button>
           </div>
@@ -430,7 +458,10 @@ export default function PvpPage() {
               <div className="mt-2 flex gap-2 items-center flex-wrap">
                 <input
                   value={deckName}
-                  onChange={(e) => setDeckName(e.target.value)}
+                  onChange={(e) => {
+                    editedRef.current = true;
+                    setDeckName(e.target.value);
+                  }}
                   className="px-4 py-2 rounded-full border border-[color:var(--border)] bg-[rgba(255,255,255,0.04)] text-sm outline-none"
                   style={{ minWidth: 220 }}
                 />
@@ -445,6 +476,7 @@ export default function PvpPage() {
 
             <div className="flex gap-2 flex-wrap">
               <button
+                type="button"
                 onClick={saveDeck}
                 disabled={saving || !canFight || searching}
                 className={[
@@ -457,6 +489,7 @@ export default function PvpPage() {
 
               {!searching ? (
                 <button
+                  type="button"
                   onClick={findMatch}
                   disabled={queueing || !canFight}
                   className={[
@@ -468,6 +501,7 @@ export default function PvpPage() {
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={cancelSearch}
                   disabled={queueing}
                   className="ui-btn ui-btn-ghost"
@@ -529,7 +563,12 @@ export default function PvpPage() {
 
                       <div className="mt-3 flex gap-2">
                         <button
-                          onClick={() => removeCopy(c.id)}
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            removeCopy(c.id);
+                          }}
                           disabled={copies <= 0 || searching}
                           className="ui-btn ui-btn-ghost"
                         >
@@ -537,7 +576,12 @@ export default function PvpPage() {
                         </button>
 
                         <button
-                          onClick={() => addCopy(c.id)}
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            addCopy(c.id);
+                          }}
                           disabled={searching || totalCopies >= 20 || copies >= 9}
                           className="ui-btn ui-btn-primary"
                         >
