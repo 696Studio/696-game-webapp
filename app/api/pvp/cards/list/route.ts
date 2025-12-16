@@ -23,59 +23,59 @@ export async function GET(req: Request) {
     );
   }
 
-  // 2) owned cards:
-  // user_cards: user_id, item_id(uuid), copies
-  // cards: item_id(uuid), ... (cards.id = text, его НЕ используем для join с user_cards)
-  const { data: owned, error: ownedErr } = await supabaseAdmin
-    .from("user_cards")
-    .select("item_id, copies")
-    .eq("user_id", userRow.id)
-    .order("item_id", { ascending: true });
+  // 2) берём ВСЕ item_id из user_items (это у тебя точно работает)
+  // если будет очень много — потом оптимизируем, сейчас задача: чтобы завелось
+  const { data: userItems, error: itemsErr } = await supabaseAdmin
+    .from("user_items")
+    .select("item_id")
+    .eq("user_id", userRow.id);
 
-  if (ownedErr) {
-    return NextResponse.json({ error: ownedErr.message }, { status: 500 });
+  if (itemsErr) {
+    return NextResponse.json({ error: itemsErr.message }, { status: 500 });
   }
 
-  const rows = (owned ?? []).filter(
-    (r: any) => r?.item_id && Number(r?.copies || 0) > 0
-  );
+  const ids = (userItems ?? [])
+    .map((r: any) => r?.item_id)
+    .filter(Boolean);
 
-  if (rows.length === 0) {
+  if (ids.length === 0) {
     return NextResponse.json({ ok: true, cards: [] });
   }
 
-  const itemIds = rows.map((r: any) => r.item_id);
+  // 3) считаем copies по item_id на стороне сервера (JS)
+  const copiesByItemId = new Map<string, number>();
+  for (const itemId of ids) {
+    const key = String(itemId);
+    copiesByItemId.set(key, (copiesByItemId.get(key) || 0) + 1);
+  }
 
-  // 3) fetch cards by item_id
+  const uniqueItemIds = Array.from(copiesByItemId.keys());
+
+  // 4) забираем карточные метаданные из cards по item_id
   const { data: cardsData, error: cardsErr } = await supabaseAdmin
     .from("cards")
     .select("id, name_ru, name_en, rarity, base_power, image_url, item_id")
-    .in("item_id", itemIds);
+    .in("item_id", uniqueItemIds);
 
   if (cardsErr) {
     return NextResponse.json({ error: cardsErr.message }, { status: 500 });
   }
 
-  const cardByItemId = new Map(
-    (cardsData ?? []).map((c: any) => [c.item_id, c])
-  );
-
-  // 4) merge owned copies + card meta
-  const cards = rows
-    .map((r: any) => {
-      const c: any = cardByItemId.get(r.item_id);
-      if (!c) return null;
+  // 5) мержим: card meta + owned_copies
+  const cards = (cardsData ?? [])
+    .map((c: any) => {
+      const itemId = String(c.item_id);
+      const owned = copiesByItemId.get(itemId) || 0;
+      if (owned <= 0) return null;
 
       return {
-        id: c.id, // text — используем как ID карты в UI / колоде
+        id: c.id, // text — это твоё card_id для колоды (pvp_deck_cards.card_id)
         name: c.name_ru ?? c.name_en ?? "Card",
         rarity: c.rarity,
         base_power: Number(c.base_power || 0),
         image_url: c.image_url ?? null,
-        owned_copies: Number(r.copies || 0),
-
-        // полезно для дебага
-        item_id: c.item_id,
+        owned_copies: owned,
+        item_id: c.item_id, // для дебага
       };
     })
     .filter(Boolean);

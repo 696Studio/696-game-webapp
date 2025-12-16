@@ -9,8 +9,6 @@ type Card = {
   rarity: "common" | "rare" | "epic" | "legendary";
   base_power: number;
   image_url: string | null;
-
-  // optional (если API вернёт кол-во у игрока)
   owned_copies?: number;
 };
 
@@ -40,17 +38,20 @@ export default function PvpPage() {
   const { telegramId, isTelegramEnv, loading, timedOut, error, refreshSession } =
     useGameSessionContext() as any;
 
+  const MODE = "unranked"; // позже сделаем переключатель
+  const POLL_MS = 1200;
+
   const [cards, setCards] = useState<Card[]>([]);
   const [loadingCards, setLoadingCards] = useState(false);
 
   const [deckName, setDeckName] = useState("Моя колода");
   const [deckMap, setDeckMap] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
+  const [statusText, setStatusText] = useState<string | null>(null);
 
   const [queueing, setQueueing] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [matchId, setMatchId] = useState<string | null>(null);
-  const [match, setMatch] = useState<any | null>(null);
 
   const totalCopies = useMemo(
     () => Object.values(deckMap).reduce((a, b) => a + (b || 0), 0),
@@ -68,7 +69,6 @@ export default function PvpPage() {
 
     setLoadingCards(true);
     try {
-      // ✅ change: pass telegramId
       const res = await fetch(
         `/api/pvp/cards/list?telegramId=${encodeURIComponent(telegramId)}`
       );
@@ -100,7 +100,6 @@ export default function PvpPage() {
     }
   }
 
-  // ✅ change: load cards when telegramId ready
   useEffect(() => {
     if (!isTelegramEnv) return;
     if (!telegramId) return;
@@ -115,12 +114,12 @@ export default function PvpPage() {
   async function saveDeck() {
     if (!telegramId) return;
     if (totalCopies !== 20) {
-      setStatus("Колода должна быть ровно на 20 копий (v1).");
+      setStatusText("Колода должна быть ровно на 20 копий (v1).");
       return;
     }
 
     setSaving(true);
-    setStatus(null);
+    setStatusText(null);
     try {
       const res = await fetch("/api/pvp/deck/save", {
         method: "POST",
@@ -129,9 +128,9 @@ export default function PvpPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Save failed");
-      setStatus("Колода сохранена ✅");
+      setStatusText("Колода сохранена ✅");
     } catch (e: any) {
-      setStatus(`Ошибка: ${e?.message || "Save failed"}`);
+      setStatusText(`Ошибка: ${e?.message || "Save failed"}`);
     } finally {
       setSaving(false);
     }
@@ -141,65 +140,107 @@ export default function PvpPage() {
     if (!telegramId) return;
 
     if (totalCopies !== 20) {
-      setStatus("Сначала собери колоду на 20 копий и сохрани.");
+      setStatusText("Сначала собери колоду на 20 копий и сохрани.");
       return;
     }
 
     setQueueing(true);
-    setStatus(null);
-    setMatch(null);
+    setStatusText(null);
     setMatchId(null);
+    setSearching(false);
 
     try {
       const res = await fetch("/api/pvp/enqueue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telegramId, mode: "unranked" }),
+        body: JSON.stringify({ telegramId, mode: MODE }),
       });
       const data = await res.json();
-
       if (!res.ok) throw new Error(data?.error || "Enqueue failed");
 
-      if (data.status === "queued") {
-        setStatus("В очереди… ждем соперника.");
-      } else if (data.status === "matched") {
+      if (data.status === "matched") {
         setMatchId(data.matchId);
-        setStatus("Матч найден ✅");
+        setStatusText("Матч найден ✅");
+        setSearching(false);
+      } else {
+        setStatusText("В очереди… ищем соперника.");
+        setSearching(true);
       }
     } catch (e: any) {
-      setStatus(`Ошибка: ${e?.message || "Enqueue failed"}`);
+      setStatusText(`Ошибка: ${e?.message || "Enqueue failed"}`);
+      setSearching(false);
     } finally {
       setQueueing(false);
     }
   }
 
-  // Poll match if we have matchId
+  async function cancelSearch() {
+    if (!telegramId) return;
+    setQueueing(true);
+    try {
+      const res = await fetch("/api/pvp/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telegramId, mode: MODE }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Cancel failed");
+
+      setSearching(false);
+      setMatchId(null);
+      setStatusText("Поиск отменён.");
+    } catch (e: any) {
+      setStatusText(`Ошибка: ${e?.message || "Cancel failed"}`);
+    } finally {
+      setQueueing(false);
+    }
+  }
+
+  // ✅ Poll queue status while "searching"
   useEffect(() => {
-    if (!matchId) return;
+    if (!telegramId) return;
+    if (!searching) return;
+    if (matchId) return;
 
     let alive = true;
 
     const tick = async () => {
-      const res = await fetch(`/api/pvp/match?id=${encodeURIComponent(matchId)}`);
-      const data = await res.json();
-      if (!alive) return;
-      if (data?.match) setMatch(data.match);
+      try {
+        const res = await fetch(
+          `/api/pvp/queue/status?telegramId=${encodeURIComponent(
+            telegramId
+          )}&mode=${encodeURIComponent(MODE)}`
+        );
+        const data = await res.json();
+        if (!alive) return;
+
+        if (data?.status === "matched" && data?.matchId) {
+          setMatchId(data.matchId);
+          setSearching(false);
+          setStatusText("Матч найден ✅");
+          return;
+        }
+
+        // still searching
+        setStatusText("В очереди… ищем соперника.");
+      } catch {
+        // не спамим ошибками, просто продолжаем
+      }
     };
 
     tick();
-    const id = window.setInterval(tick, 1200);
+    const id = window.setInterval(tick, POLL_MS);
 
     return () => {
       alive = false;
       window.clearInterval(id);
     };
-  }, [matchId]);
+  }, [telegramId, searching, matchId]);
 
   function addCopy(cardId: string) {
     setDeckMap((prev) => {
       const curr = prev[cardId] || 0;
       if (totalCopies >= 20) return prev;
-      // max 9 copies per card (v1)
       const next = clamp(curr + 1, 0, 9);
       return { ...prev, [cardId]: next };
     });
@@ -262,6 +303,8 @@ export default function PvpPage() {
       </main>
     );
   }
+
+  const canFight = totalCopies === 20;
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
@@ -335,7 +378,6 @@ export default function PvpPage() {
           mix-blend-mode: screen;
         }
 
-        /* если очередь/поиск будет позже — можно включать .is-searching на секции */
         .pvp-altar.is-searching::after {
           opacity: 1;
         }
@@ -362,7 +404,12 @@ export default function PvpPage() {
           </div>
         </header>
 
-        <section className="ui-card-strong p-5 rounded-[var(--r-xl)] pvp-altar">
+        <section
+          className={[
+            "ui-card-strong p-5 rounded-[var(--r-xl)] pvp-altar",
+            searching ? "is-searching" : "",
+          ].join(" ")}
+        >
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="min-w-0">
               <div className="ui-subtitle">Колода</div>
@@ -379,35 +426,63 @@ export default function PvpPage() {
                     {totalCopies}/20
                   </span>
                 </span>
+
+                {matchId && (
+                  <span className="ui-pill">
+                    Match:{" "}
+                    <span className="ml-2 font-extrabold tabular-nums">
+                      {matchId.slice(0, 8)}…
+                    </span>
+                  </span>
+                )}
               </div>
             </div>
 
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={saveDeck}
-                disabled={saving || totalCopies !== 20}
+                disabled={saving || !canFight || searching}
                 className={[
                   "ui-btn",
-                  totalCopies === 20 ? "ui-btn-primary" : "ui-btn-ghost",
+                  canFight && !searching ? "ui-btn-primary" : "ui-btn-ghost",
                 ].join(" ")}
               >
                 {saving ? "Сохранение…" : "Сохранить колоду"}
               </button>
 
-              <button
-                onClick={findMatch}
-                disabled={queueing || totalCopies !== 20}
-                className={[
-                  "ui-btn",
-                  totalCopies === 20 ? "ui-btn-primary" : "ui-btn-ghost",
-                ].join(" ")}
-              >
-                {queueing ? "Поиск…" : "В бой"}
-              </button>
+              {!searching ? (
+                <button
+                  onClick={findMatch}
+                  disabled={queueing || !canFight}
+                  className={[
+                    "ui-btn",
+                    canFight ? "ui-btn-primary" : "ui-btn-ghost",
+                  ].join(" ")}
+                >
+                  {queueing ? "Старт…" : "В бой"}
+                </button>
+              ) : (
+                <button
+                  onClick={cancelSearch}
+                  disabled={queueing}
+                  className="ui-btn ui-btn-ghost"
+                >
+                  {queueing ? "…" : "Отмена"}
+                </button>
+              )}
             </div>
           </div>
 
-          {status && <div className="mt-4 ui-pill w-fit">{status}</div>}
+          {statusText && <div className="mt-4 ui-pill w-fit">{statusText}</div>}
+
+          {matchId && (
+            <div className="mt-4 ui-card p-4">
+              <div className="ui-subtitle">Матч создан</div>
+              <div className="mt-2 text-sm ui-subtle">
+                Следующий шаг (PHASE 2/3): экран матча + серверный резолв.
+              </div>
+            </div>
+          )}
 
           {/* Cards list */}
           <div className="mt-6">
@@ -463,7 +538,7 @@ export default function PvpPage() {
                       <div className="mt-3 flex gap-2">
                         <button
                           onClick={() => removeCopy(c.id)}
-                          disabled={copies <= 0}
+                          disabled={copies <= 0 || searching}
                           className="ui-btn ui-btn-ghost"
                         >
                           −
@@ -471,7 +546,7 @@ export default function PvpPage() {
 
                         <button
                           onClick={() => addCopy(c.id)}
-                          disabled={totalCopies >= 20 || copies >= 9}
+                          disabled={searching || totalCopies >= 20 || copies >= 9}
                           className="ui-btn ui-btn-primary"
                         >
                           +
@@ -484,34 +559,6 @@ export default function PvpPage() {
             )}
           </div>
         </section>
-
-        {/* Match log */}
-        {match && (
-          <section className="mt-4 ui-card p-5 rounded-[var(--r-xl)]">
-            <div className="ui-subtitle">Результат матча</div>
-            <div className="mt-2 text-sm ui-subtle">
-              Победитель:{" "}
-              <span className="font-extrabold text-[color:var(--text)]">
-                {match?.winner_user_id ? "есть" : "ничья"}
-              </span>
-            </div>
-
-            <div className="mt-4 ui-grid sm:grid-cols-3">
-              {(match?.log?.rounds ?? []).map((r: any, idx: number) => (
-                <div key={idx} className="ui-card p-4">
-                  <div className="ui-subtitle">Раунд {idx + 1}</div>
-                  <div className="mt-2 text-[12px] ui-subtle">
-                    P1: {r.p1.total} • P2: {r.p2.total}
-                  </div>
-                  <div className="mt-2 text-[11px] ui-subtle">
-                    Победитель раунда:{" "}
-                    <span className="font-semibold">{r.winner}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
       </div>
     </main>
   );
