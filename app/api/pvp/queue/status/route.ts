@@ -17,10 +17,14 @@ export async function GET(req: Request) {
       .eq("telegram_id", telegramId)
       .maybeSingle();
 
-    if (userErr) return NextResponse.json({ error: userErr.message }, { status: 500 });
-    if (!userRow) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (userErr) {
+      return NextResponse.json({ error: userErr.message }, { status: 500 });
+    }
+    if (!userRow) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
 
-    // mode stored as region bucket (see enqueue route)
+    // mode stored as region bucket (see enqueue route / RPC)
     const { data: row, error: qErr } = await supabaseAdmin
       .from("pvp_queue")
       .select("status, match_id, updated_at, joined_at, region")
@@ -30,7 +34,9 @@ export async function GET(req: Request) {
       .limit(1)
       .maybeSingle();
 
-    if (qErr) return NextResponse.json({ error: qErr.message }, { status: 500 });
+    if (qErr) {
+      return NextResponse.json({ error: qErr.message }, { status: 500 });
+    }
 
     if (!row) {
       return NextResponse.json({ status: "idle" });
@@ -40,12 +46,20 @@ export async function GET(req: Request) {
       return NextResponse.json({ status: "matched", matchId: row.match_id });
     }
 
-    if (row.status === "searching") {
+    // ✅ our DB uses queued
+    if (row.status === "queued") {
       return NextResponse.json({ status: "queued" });
+    }
+
+    if (row.status === "cancelled") {
+      return NextResponse.json({ status: "cancelled" });
     }
 
     return NextResponse.json({ status: row.status || "idle" });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Unknown error" }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || "Unknown error" },
+      { status: 500 }
+    );
   }
 }
