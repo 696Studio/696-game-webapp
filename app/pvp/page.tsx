@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGameSessionContext } from "../context/GameSessionContext";
 
@@ -55,6 +55,9 @@ export default function PvpPage() {
   const [searching, setSearching] = useState(false);
   const [matchId, setMatchId] = useState<string | null>(null);
 
+  // ✅ защита от двойного редиректа
+  const pushedRef = useRef<string | null>(null);
+
   const totalCopies = useMemo(
     () => Object.values(deckMap).reduce((a, b) => a + (b || 0), 0),
     [deckMap]
@@ -106,11 +109,13 @@ export default function PvpPage() {
     if (!isTelegramEnv) return;
     if (!telegramId) return;
     loadCards();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTelegramEnv, telegramId]);
 
   useEffect(() => {
     if (!telegramId) return;
     loadDeck();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [telegramId]);
 
   async function saveDeck() {
@@ -150,6 +155,7 @@ export default function PvpPage() {
     setStatusText(null);
     setMatchId(null);
     setSearching(false);
+    pushedRef.current = null;
 
     try {
       const res = await fetch("/api/pvp/enqueue", {
@@ -161,14 +167,14 @@ export default function PvpPage() {
       if (!res.ok) throw new Error(data?.error || "Enqueue failed");
 
       if (data.status === "matched" && data.matchId) {
-        setMatchId(data.matchId);
         setStatusText("Матч найден ✅");
         setSearching(false);
+        setMatchId(data.matchId);
         return;
-      } else {
-        setStatusText("В очереди… ищем соперника.");
-        setSearching(true);
       }
+
+      setStatusText("В очереди… ищем соперника.");
+      setSearching(true);
     } catch (e: any) {
       setStatusText(`Ошибка: ${e?.message || "Enqueue failed"}`);
       setSearching(false);
@@ -191,6 +197,7 @@ export default function PvpPage() {
 
       setSearching(false);
       setMatchId(null);
+      pushedRef.current = null;
       setStatusText("Поиск отменён.");
     } catch (e: any) {
       setStatusText(`Ошибка: ${e?.message || "Cancel failed"}`);
@@ -218,9 +225,9 @@ export default function PvpPage() {
         if (!alive) return;
 
         if (data?.status === "matched" && data?.matchId) {
-          setMatchId(data.matchId);
-          setSearching(false);
           setStatusText("Матч найден ✅");
+          setSearching(false);
+          setMatchId(data.matchId);
           return;
         }
 
@@ -239,9 +246,11 @@ export default function PvpPage() {
     };
   }, [telegramId, searching, matchId]);
 
-  // ✅ When matchId appears -> go to battle screen
+  // ✅ When matchId appears -> go to battle screen (1 раз)
   useEffect(() => {
     if (!matchId) return;
+    if (pushedRef.current === matchId) return;
+    pushedRef.current = matchId;
     router.push(`/pvp/battle?matchId=${encodeURIComponent(matchId)}`);
   }, [matchId, router]);
 
@@ -403,10 +412,7 @@ export default function PvpPage() {
                 Собери 20 копий → сохрани → нажми “В бой”
               </div>
             </div>
-            <button
-              onClick={() => refreshSession?.()}
-              className="ui-btn ui-btn-ghost"
-            >
+            <button onClick={() => refreshSession?.()} className="ui-btn ui-btn-ghost">
               Re-sync
             </button>
           </div>
@@ -474,7 +480,6 @@ export default function PvpPage() {
 
           {statusText && <div className="mt-4 ui-pill w-fit">{statusText}</div>}
 
-          {/* Cards list */}
           <div className="mt-6">
             <div className="ui-subtitle mb-3">Карты</div>
 
@@ -496,9 +501,7 @@ export default function PvpPage() {
                   return (
                     <div
                       key={c.id}
-                      className={["ui-card p-4", rarityFxClass(c.rarity)].join(
-                        " "
-                      )}
+                      className={["ui-card p-4", rarityFxClass(c.rarity)].join(" ")}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
