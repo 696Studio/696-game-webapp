@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useGameSessionContext } from "../context/GameSessionContext";
 
 type Card = {
@@ -35,6 +36,7 @@ function rarityFxClass(r: string) {
 }
 
 export default function PvpPage() {
+  const router = useRouter();
   const { telegramId, isTelegramEnv, loading, timedOut, error, refreshSession } =
     useGameSessionContext() as any;
 
@@ -158,10 +160,11 @@ export default function PvpPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Enqueue failed");
 
-      if (data.status === "matched") {
+      if (data.status === "matched" && data.matchId) {
         setMatchId(data.matchId);
         setStatusText("Матч найден ✅");
         setSearching(false);
+        return;
       } else {
         setStatusText("В очереди… ищем соперника.");
         setSearching(true);
@@ -221,10 +224,9 @@ export default function PvpPage() {
           return;
         }
 
-        // still searching
         setStatusText("В очереди… ищем соперника.");
       } catch {
-        // не спамим ошибками, просто продолжаем
+        // ignore
       }
     };
 
@@ -236,6 +238,12 @@ export default function PvpPage() {
       window.clearInterval(id);
     };
   }, [telegramId, searching, matchId]);
+
+  // ✅ When matchId appears -> go to battle screen
+  useEffect(() => {
+    if (!matchId) return;
+    router.push(`/pvp/battle?matchId=${encodeURIComponent(matchId)}`);
+  }, [matchId, router]);
 
   function addCopy(cardId: string) {
     setDeckMap((prev) => {
@@ -426,15 +434,6 @@ export default function PvpPage() {
                     {totalCopies}/20
                   </span>
                 </span>
-
-                {matchId && (
-                  <span className="ui-pill">
-                    Match:{" "}
-                    <span className="ml-2 font-extrabold tabular-nums">
-                      {matchId.slice(0, 8)}…
-                    </span>
-                  </span>
-                )}
               </div>
             </div>
 
@@ -475,15 +474,6 @@ export default function PvpPage() {
 
           {statusText && <div className="mt-4 ui-pill w-fit">{statusText}</div>}
 
-          {matchId && (
-            <div className="mt-4 ui-card p-4">
-              <div className="ui-subtitle">Матч создан</div>
-              <div className="mt-2 text-sm ui-subtle">
-                Следующий шаг (PHASE 2/3): экран матча + серверный резолв.
-              </div>
-            </div>
-          )}
-
           {/* Cards list */}
           <div className="mt-6">
             <div className="ui-subtitle mb-3">Карты</div>
@@ -506,10 +496,9 @@ export default function PvpPage() {
                   return (
                     <div
                       key={c.id}
-                      className={[
-                        "ui-card p-4",
-                        rarityFxClass(c.rarity),
-                      ].join(" ")}
+                      className={["ui-card p-4", rarityFxClass(c.rarity)].join(
+                        " "
+                      )}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
