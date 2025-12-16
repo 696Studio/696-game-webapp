@@ -3,11 +3,12 @@
 import { useMemo } from "react";
 import { usePathname } from "next/navigation";
 
-type Tab = "home" | "chest" | "inventory" | "profile";
+type Tab = "home" | "chest" | "inventory" | "pvp" | "profile";
 
 function getActiveTab(pathname: string): Tab {
   if (pathname.startsWith("/chest")) return "chest";
   if (pathname.startsWith("/inventory")) return "inventory";
+  if (pathname.startsWith("/pvp")) return "pvp";
   if (pathname.startsWith("/profile")) return "profile";
   return "home";
 }
@@ -51,9 +52,7 @@ export default function BottomNav() {
           <div className="flex gap-2 justify-center">
             <a
               href="/"
-              className={`${tabBase} ${
-                active === "home" ? tabActive : tabIdle
-              }`}
+              className={`${tabBase} ${active === "home" ? tabActive : tabIdle}`}
               aria-current={active === "home" ? "page" : undefined}
             >
               Home
@@ -61,9 +60,7 @@ export default function BottomNav() {
 
             <a
               href="/chest"
-              className={`${tabBase} ${
-                active === "chest" ? tabActive : tabIdle
-              }`}
+              className={`${tabBase} ${active === "chest" ? tabActive : tabIdle}`}
               aria-current={active === "chest" ? "page" : undefined}
             >
               Chest
@@ -77,6 +74,14 @@ export default function BottomNav() {
               aria-current={active === "inventory" ? "page" : undefined}
             >
               Inventory
+            </a>
+
+            <a
+              href="/pvp"
+              className={`${tabBase} ${active === "pvp" ? tabActive : tabIdle}`}
+              aria-current={active === "pvp" ? "page" : undefined}
+            >
+              PVP
             </a>
 
             <a
