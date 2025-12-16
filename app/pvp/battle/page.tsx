@@ -31,7 +31,6 @@ type TimelineEvent =
       round: number;
       p1_cards: string[];
       p2_cards: string[];
-      // ✅ новое (из sim.ts)
       p1_cards_full?: CardMeta[];
       p2_cards_full?: CardMeta[];
     }
@@ -71,7 +70,6 @@ function rarityFxClass(r: string) {
   return "rar-common";
 }
 
-/** ✅ если supabase/route отдаст jsonb как string — парсим */
 function parseMaybeJson(v: any) {
   if (v == null) return v;
   if (typeof v === "string") {
@@ -126,7 +124,6 @@ function BattleInner() {
   const [match, setMatch] = useState<MatchRow | null>(null);
   const [errText, setErrText] = useState<string | null>(null);
 
-  // ✅ нормализуем log (object | string)
   const logObj = useMemo(() => {
     const l = match?.log;
     return (parseMaybeJson(l) ?? {}) as any;
@@ -135,7 +132,6 @@ function BattleInner() {
   const durationSec = useMemo(() => {
     const d = Number(logObj?.duration_sec ?? 30);
     if (!Number.isFinite(d) || d <= 0) return 30;
-    // важный фикс: не делаем min 45, иначе кажется что "ничего не происходит"
     return Math.min(120, Math.max(10, Math.floor(d)));
   }, [logObj]);
 
@@ -180,7 +176,7 @@ function BattleInner() {
   const [p1Cards, setP1Cards] = useState<string[]>([]);
   const [p2Cards, setP2Cards] = useState<string[]>([]);
 
-  // ✅ meta cards for rendering
+  // meta cards for rendering
   const [p1CardsFull, setP1CardsFull] = useState<CardMeta[]>([]);
   const [p2CardsFull, setP2CardsFull] = useState<CardMeta[]>([]);
 
@@ -199,7 +195,6 @@ function BattleInner() {
     p2: null,
   });
 
-  // load match
   useEffect(() => {
     if (!matchId) {
       setErrText("matchId required");
@@ -209,7 +204,9 @@ function BattleInner() {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`/api/pvp/match?id=${encodeURIComponent(matchId)}`);
+        const res = await fetch(
+          `/api/pvp/match?id=${encodeURIComponent(matchId)}`
+        );
         const data = await res.json();
         if (!alive) return;
 
@@ -226,17 +223,15 @@ function BattleInner() {
     };
   }, [matchId]);
 
-  // timeline apply at time t
+  // timeline → game state at time t
   useEffect(() => {
     if (!timeline.length) return;
 
     let rr = 1;
-
     let c1: string[] = [];
     let c2: string[] = [];
     let cf1: CardMeta[] = [];
     let cf2: CardMeta[] = [];
-
     let s1: number | null = null;
     let s2: number | null = null;
     let rw: string | null = null;
@@ -246,23 +241,18 @@ function BattleInner() {
 
       if (e.type === "round_start") {
         rr = (e as any).round ?? rr;
-
         c1 = [];
         c2 = [];
         cf1 = [];
         cf2 = [];
-
         s1 = null;
         s2 = null;
         rw = null;
       } else if (e.type === "reveal") {
         rr = (e as any).round ?? rr;
-
-        // ✅ normalize ids arrays (can be jsonb/string)
         c1 = toStringArray((e as any).p1_cards ?? c1);
         c2 = toStringArray((e as any).p2_cards ?? c2);
 
-        // ✅ normalize meta arrays (can be json/string)
         const a1 = toCardMetaArray((e as any).p1_cards_full);
         const a2 = toCardMetaArray((e as any).p2_cards_full);
         if (a1.length) cf1 = a1;
@@ -277,7 +267,7 @@ function BattleInner() {
       }
     }
 
-    // reveal animation trigger (by signature)
+    // trigger reveal anim
     const sigLeft = (cf1?.map((x) => x?.id).join("|") || c1.join("|")) ?? "";
     const sigRight = (cf2?.map((x) => x?.id).join("|") || c2.join("|")) ?? "";
     const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
@@ -306,13 +296,10 @@ function BattleInner() {
     prevScoreRef.current = { p1: s1, p2: s2 };
 
     setRoundN(rr);
-
     setP1Cards(c1);
     setP2Cards(c2);
-
     setP1CardsFull(cf1);
     setP2CardsFull(cf2);
-
     setP1Score(s1);
     setP2Score(s2);
     setRoundWinner(rw);
@@ -392,6 +379,35 @@ function BattleInner() {
     return "Есть победитель";
   }, [match]);
 
+  const revealed = phase === "reveal" || phase === "score" || phase === "end";
+  const scored = phase === "score" || phase === "end";
+
+  const p1Slots = useMemo(
+    () =>
+      Array.from({ length: 5 }).map((_, i) => ({
+        card: p1CardsFull?.[i] ?? null,
+        fallbackId: p1Cards?.[i] ?? null,
+      })),
+    [p1CardsFull, p1Cards]
+  );
+
+  const p2Slots = useMemo(
+    () =>
+      Array.from({ length: 5 }).map((_, i) => ({
+        card: p2CardsFull?.[i] ?? null,
+        fallbackId: p2Cards?.[i] ?? null,
+      })),
+    [p2CardsFull, p2Cards]
+  );
+
+  const boardFxClass = useMemo(() => {
+    if (!scored) return "";
+    if (roundWinner === "p1") return "fx-p1";
+    if (roundWinner === "p2") return "fx-p2";
+    if (roundWinner === "draw") return "fx-draw";
+    return "";
+  }, [scored, roundWinner]);
+
   function CardSlot({
     card,
     fallbackId,
@@ -405,38 +421,35 @@ function BattleInner() {
   }) {
     const id = card?.id || fallbackId || "";
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
-
     const r = (card?.rarity || "common") as string;
     const power = typeof card?.base_power === "number" ? card.base_power : null;
     const img = card?.image_url || null;
 
     return (
       <div
-        className={["battle-card", revealed ? "is-revealed" : "", `rt-${revealTick}`].join(" ")}
+        className={["bb-card", revealed ? "is-revealed" : "", `rt-${revealTick}`].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
-        <div className="battle-card-inner">
-          {/* BACK */}
-          <div className="battle-card-face battle-card-back">
-            <div className="battle-card-mark">696</div>
+        <div className="bb-card-inner">
+          <div className="bb-face bb-back">
+            <div className="bb-mark">696</div>
           </div>
 
-          {/* FRONT */}
-          <div className={["battle-card-face", "battle-card-front", rarityFxClass(r)].join(" ")}>
+          <div className={["bb-face bb-front", rarityFxClass(r)].join(" ")}>
             {img ? (
-              <div className="battle-card-art" style={{ backgroundImage: `url(${img})` }} />
+              <div className="bb-art" style={{ backgroundImage: `url(${img})` }} />
             ) : (
-              <div className="battle-card-art placeholder">
-                <div className="battle-card-mark-sm">CARD</div>
+              <div className="bb-art bb-art--ph">
+                <div className="bb-mark-sm">CARD</div>
               </div>
             )}
 
-            <div className="battle-card-overlay">
-              <div className="battle-card-title">{title}</div>
-              <div className="battle-card-subrow">
-                <span className="battle-chip">{rarityRu(r)}</span>
+            <div className="bb-overlay">
+              <div className="bb-title">{title}</div>
+              <div className="bb-subrow">
+                <span className="bb-chip">{rarityRu(r)}</span>
                 {power != null && (
-                  <span className="battle-chip">
+                  <span className="bb-chip">
                     POW <b className="tabular-nums">{power}</b>
                   </span>
                 )}
@@ -453,7 +466,9 @@ function BattleInner() {
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
-          <div className="text-sm ui-subtle">Эта страница работает только внутри Telegram WebApp.</div>
+          <div className="text-sm ui-subtle">
+            Эта страница работает только внутри Telegram WebApp.
+          </div>
         </div>
       </main>
     );
@@ -477,9 +492,16 @@ function BattleInner() {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5">
-          <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
-          <div className="mt-2 text-sm ui-subtle">Нажми Re-sync и попробуй снова.</div>
-          <button onClick={() => refreshSession?.()} className="mt-5 ui-btn ui-btn-primary w-full">
+          <div className="text-lg font-semibold">
+            {timedOut ? "Таймаут" : "Ошибка сессии"}
+          </div>
+          <div className="mt-2 text-sm ui-subtle">
+            Нажми Re-sync и попробуй снова.
+          </div>
+          <button
+            onClick={() => refreshSession?.()}
+            className="mt-5 ui-btn ui-btn-primary w-full"
+          >
             Re-sync
           </button>
         </div>
@@ -517,12 +539,6 @@ function BattleInner() {
     );
   }
 
-  const revealed = phase === "reveal" || phase === "score" || phase === "end";
-  const scored = phase === "score" || phase === "end";
-
-  const p1Render = p1CardsFull?.length ? p1CardsFull : [];
-  const p2Render = p2CardsFull?.length ? p2CardsFull : [];
-
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
       <style jsx global>{`
@@ -537,9 +553,17 @@ function BattleInner() {
           100% { transform: scale(1); }
         }
         @keyframes glowPulse {
-          0% { opacity: 0.18; }
+          0% { opacity: 0.14; }
           50% { opacity: 0.32; }
-          100% { opacity: 0.18; }
+          100% { opacity: 0.14; }
+        }
+        @keyframes microShake {
+          0% { transform: translate3d(0,0,0); }
+          20% { transform: translate3d(-1px,0,0); }
+          40% { transform: translate3d(1px,0,0); }
+          60% { transform: translate3d(-1px,0,0); }
+          80% { transform: translate3d(1px,0,0); }
+          100% { transform: translate3d(0,0,0); }
         }
 
         .battle-progress {
@@ -555,36 +579,217 @@ function BattleInner() {
           box-shadow: 0 0 16px rgba(255, 255, 255, 0.18);
         }
 
-        .battle-arena { position: relative; overflow: hidden; }
-        .battle-arena::before {
-          content: "";
-          position: absolute;
-          inset: -30px;
-          pointer-events: none;
-          background: radial-gradient(900px 420px at 50% -10%, rgba(88, 240, 255, 0.18) 0%, transparent 60%),
-                      radial-gradient(720px 520px at 70% 40%, rgba(184, 92, 255, 0.14) 0%, transparent 65%),
-                      radial-gradient(720px 520px at 30% 55%, rgba(255, 204, 87, 0.08) 0%, transparent 70%);
+        /* ===== BOARD WRAPPER ===== */
+        .board {
+          border: 1px solid rgba(255,255,255,0.18);
+          border-radius: var(--r-xl);
+          overflow: hidden;
+          background: rgba(255,255,255,0.04);
+        }
+
+        .board-topbar {
+          padding: 14px 14px 10px;
+          border-bottom: 1px solid rgba(255,255,255,0.12);
+          background: linear-gradient(to bottom, rgba(255,255,255,0.07), rgba(0,0,0,0.06));
+        }
+
+        .board-hud {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .hud-left { min-width: 0; }
+        .hud-title {
+          font-weight: 900;
+          letter-spacing: 0.22em;
+          text-transform: uppercase;
+          font-size: 13px;
+        }
+
+        .hud-sub {
+          margin-top: 6px;
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+
+        .hud-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(0,0,0,0.18);
+          font-size: 11px;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
           opacity: 0.9;
         }
-        .battle-arena::after {
+
+        .hud-actions { display: flex; gap: 8px; align-items: center; }
+
+        /* ===== ARENA WITH PNG BACKGROUND ===== */
+        .arena {
+          position: relative;
+          padding: 14px;
+          overflow: hidden;
+          background: rgba(0,0,0,0.22);
+        }
+
+        /* Слой доски (PNG) */
+        .arena::before {
           content: "";
           position: absolute;
-          inset: -20%;
+          inset: 0;
+          background-image: url("/arena/board.png");
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+          filter: saturate(1.02) contrast(1.04);
+          transform: scale(1.02);
+          opacity: 1;
+        }
+
+        /* Чуть глубины/блюма поверх, чтобы UI читался */
+        .arena::after {
+          content: "";
+          position: absolute;
+          inset: -25%;
           pointer-events: none;
-          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.14), transparent);
+          background:
+            radial-gradient(980px 420px at 50% 0%, rgba(88,240,255,0.10) 0%, transparent 60%),
+            radial-gradient(780px 560px at 70% 55%, rgba(184,92,255,0.08) 0%, transparent 65%),
+            radial-gradient(780px 560px at 30% 55%, rgba(255,204,87,0.06) 0%, transparent 70%),
+            linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
           opacity: 0.18;
           animation: glowPulse 2.2s ease-in-out infinite;
           mix-blend-mode: screen;
         }
 
-        .battle-card {
+        /* ВЕСЬ КОНТЕНТ ПОВЕРХ ФОНА */
+        .arena > * { position: relative; z-index: 1; }
+
+        .arena.fx-p1,
+        .arena.fx-p2,
+        .arena.fx-draw { animation: microShake 240ms ease-out 1; }
+
+        .arena.fx-p1 .row-bottom { box-shadow: 0 0 0 1px rgba(88,240,255,0.18), 0 0 24px rgba(88,240,255,0.12); }
+        .arena.fx-p2 .row-top { box-shadow: 0 0 0 1px rgba(184,92,255,0.18), 0 0 24px rgba(184,92,255,0.12); }
+        .arena.fx-draw .row-top,
+        .arena.fx-draw .row-bottom { box-shadow: 0 0 0 1px rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.10); }
+
+        .lane { display: grid; gap: 14px; }
+
+        .playerbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 12px 12px;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 16px;
+          background: rgba(0,0,0,0.22);
+          backdrop-filter: blur(6px);
+        }
+
+        .player-left {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+        }
+
+        .avatar {
+          width: 38px;
+          height: 38px;
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(255,255,255,0.06);
+          overflow: hidden;
+          flex: 0 0 auto;
+        }
+        .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+        .nameblock { min-width: 0; }
+        .nameblock .label {
+          font-size: 10px;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          opacity: 0.75;
+        }
+        .nameblock .name {
+          margin-top: 2px;
+          font-weight: 900;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          font-size: 12px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .player-right {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex: 0 0 auto;
+        }
+
+        .hp {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(255,255,255,0.06);
+          font-weight: 900;
+          letter-spacing: 0.08em;
+          font-variant-numeric: tabular-nums;
+          font-size: 11px;
+        }
+
+        .score {
+          font-weight: 900;
+          letter-spacing: 0.06em;
+          font-variant-numeric: tabular-nums;
+          font-size: 18px;
+        }
+        .score.is-hit { animation: popHit 220ms var(--ease-out) both; }
+
+        .row {
+          border-radius: 18px;
+          border: 1px solid rgba(255,255,255,0.12);
+          background: rgba(0,0,0,0.22);
+          backdrop-filter: blur(6px);
+          padding: 10px;
+          display: flex;
+          justify-content: center;
+        }
+
+        .slots {
           width: 100%;
-          max-width: 150px;
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 10px;
+          max-width: 820px;
+        }
+
+        /* ===== CARD ===== */
+        .bb-card {
+          width: 100%;
           aspect-ratio: 3 / 4;
+          max-width: 150px;
           perspective: 900px;
           border-radius: 18px;
+          margin: 0 auto;
         }
-        .battle-card-inner {
+
+        .bb-card-inner {
           width: 100%;
           height: 100%;
           border-radius: 18px;
@@ -592,10 +797,11 @@ function BattleInner() {
           transition: transform 420ms var(--ease-out);
           transform: rotateY(0deg);
         }
-        .battle-card.is-revealed .battle-card-inner { transform: rotateY(180deg); }
-        .battle-card.is-revealed { animation: flipIn 520ms var(--ease-out) both; }
 
-        .battle-card-face {
+        .bb-card.is-revealed .bb-card-inner { transform: rotateY(180deg); }
+        .bb-card.is-revealed { animation: flipIn 520ms var(--ease-out) both; }
+
+        .bb-face {
           position: absolute;
           inset: 0;
           border-radius: 18px;
@@ -607,24 +813,28 @@ function BattleInner() {
           align-items: center;
           justify-content: center;
         }
-        .battle-card-back {
-          background: radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
-                      linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.34));
-        }
-        .battle-card-front {
-          transform: rotateY(180deg);
-          background: radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.16) 0%, transparent 58%),
-                      linear-gradient(to bottom, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.26));
+
+        .bb-back {
+          background:
+            radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.34));
         }
 
-        .battle-card-mark {
+        .bb-front {
+          transform: rotateY(180deg);
+          background:
+            radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.16) 0%, transparent 58%),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.26));
+        }
+
+        .bb-mark {
           font-weight: 900;
           letter-spacing: 0.24em;
           font-size: 14px;
           opacity: 0.75;
           text-transform: uppercase;
         }
-        .battle-card-mark-sm {
+        .bb-mark-sm {
           font-weight: 900;
           letter-spacing: 0.18em;
           font-size: 11px;
@@ -632,7 +842,7 @@ function BattleInner() {
           text-transform: uppercase;
         }
 
-        .battle-card-art {
+        .bb-art {
           position: absolute;
           inset: 0;
           background-size: cover;
@@ -640,15 +850,16 @@ function BattleInner() {
           filter: saturate(1.05) contrast(1.05);
           transform: scale(1.02);
         }
-        .battle-card-art.placeholder {
-          background: radial-gradient(420px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
-                      linear-gradient(to bottom, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.36));
+        .bb-art--ph {
+          background:
+            radial-gradient(420px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.36));
           display: flex;
           align-items: center;
           justify-content: center;
         }
 
-        .battle-card-overlay {
+        .bb-overlay {
           position: absolute;
           inset: 0;
           display: flex;
@@ -658,7 +869,7 @@ function BattleInner() {
           background: linear-gradient(to top, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0.12), transparent);
         }
 
-        .battle-card-title {
+        .bb-title {
           font-weight: 900;
           letter-spacing: 0.06em;
           font-size: 12px;
@@ -666,14 +877,14 @@ function BattleInner() {
           line-height: 1.15;
         }
 
-        .battle-card-subrow {
+        .bb-subrow {
           margin-top: 8px;
           display: flex;
           gap: 8px;
           flex-wrap: wrap;
         }
 
-        .battle-chip {
+        .bb-chip {
           display: inline-flex;
           align-items: center;
           gap: 6px;
@@ -691,90 +902,52 @@ function BattleInner() {
         .rar-epic { box-shadow: inset 0 0 0 9999px rgba(184, 92, 255, 0.07); }
         .rar-legendary { box-shadow: inset 0 0 0 9999px rgba(255, 204, 87, 0.07); }
 
-        .battle-score {
-          font-weight: 900;
-          letter-spacing: 0.06em;
-          font-variant-numeric: tabular-nums;
-        }
-        .battle-score.is-hit { animation: popHit 220ms var(--ease-out) both; }
-
-        .battle-phase {
-          font-size: 11px;
-          opacity: 0.75;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-        }
-        .battle-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px 14px;
-          border-radius: 999px;
-          border: 1px solid var(--border);
-          background: rgba(255, 255, 255, 0.06);
-        }
-        .battle-winner {
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
-          padding: 12px 16px;
-          border-radius: 16px;
-          border: 1px solid rgba(255, 255, 255, 0.22);
-          background: rgba(0, 0, 0, 0.22);
+        @media (max-width: 640px) {
+          .slots { gap: 8px; }
+          .bb-card { max-width: 110px; border-radius: 16px; }
+          .bb-face { border-radius: 16px; }
+          .bb-card-inner { border-radius: 16px; }
         }
       `}</style>
 
       <div className="w-full max-w-5xl">
-        <header className="ui-card px-4 py-3 rounded-[var(--r-xl)] mb-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="ui-subtitle">BATTLE</div>
+        <header className="board-topbar ui-card rounded-[var(--r-xl)] mb-4">
+          <div className="board-hud">
+            <div className="hud-left">
+              <div className="hud-title">BATTLE</div>
               <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">
                 Поле боя • {fmtTime(t)} / {fmtTime(durationSec)}
               </div>
-
               <div className="mt-2 battle-progress">
                 <div style={{ width: `${progressPct}%` }} />
               </div>
 
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="battle-badge">
-                  <span className="battle-phase">
-                    {phase === "start"
-                      ? "ROUND START"
-                      : phase === "reveal"
-                      ? "REVEAL"
-                      : phase === "score"
-                      ? "SCORE"
-                      : "ROUND END"}
-                  </span>
+              <div className="hud-sub">
+                <span className="hud-pill">
+                  {phase === "start"
+                    ? "ROUND START"
+                    : phase === "reveal"
+                    ? "REVEAL"
+                    : phase === "score"
+                    ? "SCORE"
+                    : "ROUND END"}
                 </span>
 
-                <span className="ui-pill">
-                  Раунд{" "}
-                  <span className="ml-2 font-extrabold tabular-nums">
-                    {roundN}/{roundCount}
-                  </span>
+                <span className="hud-pill">
+                  Раунд <b className="tabular-nums">{roundN}/{roundCount}</b>
                 </span>
 
-                <span className="ui-pill">
-                  Match{" "}
-                  <span className="ml-2 font-extrabold tabular-nums">
-                    {String(match.id).slice(0, 8)}…
-                  </span>
+                <span className="hud-pill">
+                  Match <b className="tabular-nums">{String(match.id).slice(0, 8)}…</b>
                 </span>
 
-                {/* ✅ debug: чтобы сразу видеть что timeline реально не пустой */}
-                <span className="ui-pill">
-                  tl{" "}
-                  <span className="ml-2 font-extrabold tabular-nums">
-                    {timeline.length}
-                  </span>
+                <span className="hud-pill">
+                  tl <b className="tabular-nums">{timeline.length}</b>
                 </span>
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="hud-actions">
               <button onClick={togglePlay} className="ui-btn ui-btn-ghost">
                 {playing ? "Пауза" : "▶"}
               </button>
@@ -785,119 +958,122 @@ function BattleInner() {
           </div>
         </header>
 
-        <section className="ui-card-strong p-5 rounded-[var(--r-xl)] battle-arena">
-          <div className="ui-subtitle">Раунд {roundN}</div>
-
-          <div className="mt-4 ui-grid sm:grid-cols-2 gap-4 relative">
-            {/* P1 */}
-            <div className="ui-card p-4">
-              <div className="flex items-center justify-between">
-                <div className="ui-subtitle">P1</div>
-                <div className="text-[12px] ui-subtle">Карты: 5</div>
+        <section className={["board", "arena", boardFxClass].join(" ")}>
+          <div className="lane">
+            {/* ENEMY */}
+            <div className="playerbar">
+              <div className="player-left">
+                <div className="avatar">
+                  <img
+                    alt="enemy"
+                    src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${match.p2_user_id || "enemy"}`}
+                  />
+                </div>
+                <div className="nameblock">
+                  <div className="label">ENEMY</div>
+                  <div className="name">{safeSliceId(match.p2_user_id)}</div>
+                </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-3">
-                {Array.from({ length: 5 }).map((_, i) => (
+              <div className="player-right">
+                <div className="hp">HP <b className="tabular-nums">30</b></div>
+                <div className={["score", p2Hit ? "is-hit" : ""].join(" ")}>
+                  {scored ? (p2Score == null ? "…" : p2Score) : "…"}
+                </div>
+              </div>
+            </div>
+
+            {/* TOP ROW */}
+            <div className="row row-top">
+              <div className="slots">
+                {p2Slots.map((s, i) => (
                   <CardSlot
-                    key={`p1-${revealTick}-${i}`}
-                    card={p1Render?.[i] ?? null}
-                    fallbackId={p1Cards?.[i] ?? null}
-                    revealed={
-                      revealed &&
-                      ((p1Render?.length || 0) > 0 || (p1Cards?.length || 0) > 0)
-                    }
-                    delayMs={i * 60}
+                    key={`p2-${revealTick}-${i}`}
+                    card={s.card}
+                    fallbackId={s.fallbackId}
+                    revealed={revealed && (p2CardsFull.length > 0 || p2Cards.length > 0)}
+                    delayMs={i * 70}
                   />
                 ))}
               </div>
+            </div>
 
-              <div className="mt-4 flex items-center justify-between">
-                <div className="text-sm ui-subtle">Счёт</div>
-                <div className={["battle-score text-lg", p1Hit ? "is-hit" : ""].join(" ")}>
+            {/* CENTER INFO */}
+            <div className="ui-card p-4" style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
+              <div className="ui-subtitle">Раунд {roundN}</div>
+              <div className="mt-2 text-sm ui-subtle">
+                Победитель раунда:{" "}
+                <span className="font-extrabold">
+                  {roundWinner ? String(roundWinner).toUpperCase() : "…"}
+                </span>
+              </div>
+            </div>
+
+            {/* BOTTOM ROW */}
+            <div className="row row-bottom">
+              <div className="slots">
+                {p1Slots.map((s, i) => (
+                  <CardSlot
+                    key={`p1-${revealTick}-${i}`}
+                    card={s.card}
+                    fallbackId={s.fallbackId}
+                    revealed={revealed && (p1CardsFull.length > 0 || p1Cards.length > 0)}
+                    delayMs={i * 70}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* YOU */}
+            <div className="playerbar">
+              <div className="player-left">
+                <div className="avatar">
+                  <img
+                    alt="you"
+                    src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${match.p1_user_id || "you"}`}
+                  />
+                </div>
+                <div className="nameblock">
+                  <div className="label">YOU</div>
+                  <div className="name">{safeSliceId(match.p1_user_id)}</div>
+                </div>
+              </div>
+
+              <div className="player-right">
+                <div className="hp">HP <b className="tabular-nums">30</b></div>
+                <div className={["score", p1Hit ? "is-hit" : ""].join(" ")}>
                   {scored ? (p1Score == null ? "…" : p1Score) : "…"}
                 </div>
               </div>
             </div>
 
-            {/* P2 */}
-            <div className="ui-card p-4">
-              <div className="flex items-center justify-between">
-                <div className="ui-subtitle">P2</div>
-                <div className="text-[12px] ui-subtle">Карты: 5</div>
-              </div>
+            {!playing && t >= durationSec && (
+              <div className="ui-card p-5" style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
+                <div className="ui-subtitle">Результат матча</div>
+                <div className="mt-2 text-sm ui-subtle">{finalWinnerLabel}</div>
 
-              <div className="mt-3 flex flex-wrap gap-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <CardSlot
-                    key={`p2-${revealTick}-${i}`}
-                    card={p2Render?.[i] ?? null}
-                    fallbackId={p2Cards?.[i] ?? null}
-                    revealed={
-                      revealed &&
-                      ((p2Render?.length || 0) > 0 || (p2Cards?.length || 0) > 0)
-                    }
-                    delayMs={i * 60}
-                  />
-                ))}
-              </div>
-
-              <div className="mt-4 flex items-center justify-between">
-                <div className="text-sm ui-subtle">Счёт</div>
-                <div className={["battle-score text-lg", p2Hit ? "is-hit" : ""].join(" ")}>
-                  {scored ? (p2Score == null ? "…" : p2Score) : "…"}
+                <div className="mt-4 ui-grid sm:grid-cols-3">
+                  {(rounds ?? []).slice(0, 10).map((r: any, idx: number) => (
+                    <div key={idx} className="ui-card p-4">
+                      <div className="ui-subtitle">Раунд {idx + 1}</div>
+                      <div className="mt-2 text-[12px] ui-subtle">
+                        P1: {r?.p1?.total ?? "—"} • P2: {r?.p2?.total ?? "—"}
+                      </div>
+                      <div className="mt-2 text-[11px] ui-subtle">
+                        Победитель:{" "}
+                        <span className="font-semibold">{r?.winner ?? "—"}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            </div>
-          </div>
 
-          <div className="mt-4 ui-card p-4">
-            <div className="ui-subtitle">Итог раунда</div>
-            <div className="mt-2 text-sm ui-subtle">
-              Победитель:{" "}
-              <span className="font-extrabold">
-                {roundWinner ? String(roundWinner).toUpperCase() : "…"}
-              </span>
-            </div>
-
-            {roundWinner && (
-              <div className="mt-3 battle-winner">
-                <div className="ui-subtitle">RESULT</div>
-                <div className="text-sm ui-subtle">
-                  {roundWinner === "draw"
-                    ? "Ничья"
-                    : roundWinner === "p1"
-                    ? "P1 забрал раунд"
-                    : "P2 забрал раунд"}
-                </div>
+                <button onClick={backToPvp} className="mt-5 ui-btn ui-btn-primary w-full">
+                  Ок
+                </button>
               </div>
             )}
           </div>
         </section>
-
-        {!playing && t >= durationSec && (
-          <section className="mt-4 ui-card p-5 rounded-[var(--r-xl)]">
-            <div className="ui-subtitle">Результат матча</div>
-            <div className="mt-2 text-sm ui-subtle">{finalWinnerLabel}</div>
-
-            <div className="mt-4 ui-grid sm:grid-cols-3">
-              {(rounds ?? []).slice(0, 10).map((r: any, idx: number) => (
-                <div key={idx} className="ui-card p-4">
-                  <div className="ui-subtitle">Раунд {idx + 1}</div>
-                  <div className="mt-2 text-[12px] ui-subtle">
-                    P1: {r?.p1?.total ?? "—"} • P2: {r?.p2?.total ?? "—"}
-                  </div>
-                  <div className="mt-2 text-[11px] ui-subtle">
-                    Победитель: <span className="font-semibold">{r?.winner ?? "—"}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <button onClick={backToPvp} className="mt-5 ui-btn ui-btn-primary w-full">
-              Ок
-            </button>
-          </section>
-        )}
       </div>
     </main>
   );
