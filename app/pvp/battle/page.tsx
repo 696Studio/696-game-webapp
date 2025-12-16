@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
 
@@ -28,7 +28,7 @@ function fmtTime(sec: number) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-export default function BattlePage() {
+function BattleInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const matchId = sp.get("matchId") || "";
@@ -105,7 +105,6 @@ export default function BattlePage() {
   useEffect(() => {
     if (!timeline.length) return;
 
-    // apply all events up to t (idempotent rebuild)
     let rr = 1;
     let c1: string[] = [];
     let c2: string[] = [];
@@ -177,7 +176,6 @@ export default function BattlePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [match, playing, durationSec]);
 
-  // reset startAt when toggling play
   useEffect(() => {
     startAtRef.current = null;
   }, [playing]);
@@ -193,7 +191,6 @@ export default function BattlePage() {
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
     if (!match.winner_user_id) return "Ничья";
-    // Без профилей пока: просто есть победитель
     return "Есть победитель";
   }, [match]);
 
@@ -309,11 +306,13 @@ export default function BattlePage() {
               <div className="ui-subtitle">P1</div>
               <div className="mt-2 text-[12px] ui-subtle">Карты (5)</div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {(p1Cards.length ? p1Cards : Array.from({ length: 5 })).map((x: any, i: number) => (
-                  <span key={`${x ?? "x"}-${i}`} className="ui-pill">
-                    {x ? String(x).slice(0, 8) : "—"}
-                  </span>
-                ))}
+                {(p1Cards.length ? p1Cards : Array.from({ length: 5 })).map(
+                  (x: any, i: number) => (
+                    <span key={`${x ?? "x"}-${i}`} className="ui-pill">
+                      {x ? String(x).slice(0, 8) : "—"}
+                    </span>
+                  )
+                )}
               </div>
               <div className="mt-3 text-sm ui-subtle">
                 Счёт:{" "}
@@ -327,11 +326,13 @@ export default function BattlePage() {
               <div className="ui-subtitle">P2</div>
               <div className="mt-2 text-[12px] ui-subtle">Карты (5)</div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {(p2Cards.length ? p2Cards : Array.from({ length: 5 })).map((x: any, i: number) => (
-                  <span key={`${x ?? "x"}-${i}`} className="ui-pill">
-                    {x ? String(x).slice(0, 8) : "—"}
-                  </span>
-                ))}
+                {(p2Cards.length ? p2Cards : Array.from({ length: 5 })).map(
+                  (x: any, i: number) => (
+                    <span key={`${x ?? "x"}-${i}`} className="ui-pill">
+                      {x ? String(x).slice(0, 8) : "—"}
+                    </span>
+                  )
+                )}
               </div>
               <div className="mt-3 text-sm ui-subtle">
                 Счёт:{" "}
@@ -356,9 +357,7 @@ export default function BattlePage() {
         {!playing && t >= durationSec && (
           <section className="mt-4 ui-card p-5 rounded-[var(--r-xl)]">
             <div className="ui-subtitle">Результат матча</div>
-            <div className="mt-2 text-sm ui-subtle">
-              {finalWinnerLabel}
-            </div>
+            <div className="mt-2 text-sm ui-subtle">{finalWinnerLabel}</div>
 
             <div className="mt-4 ui-grid sm:grid-cols-3">
               {(rounds ?? []).slice(0, 10).map((r: any, idx: number) => (
@@ -382,5 +381,25 @@ export default function BattlePage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function BattlePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+          <div className="w-full max-w-md ui-card p-5 text-center">
+            <div className="text-sm font-semibold">Загрузка…</div>
+            <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
+            <div className="mt-4 ui-progress">
+              <div className="w-1/3 opacity-70 animate-pulse" />
+            </div>
+          </div>
+        </main>
+      }
+    >
+      <BattleInner />
+    </Suspense>
   );
 }
