@@ -1,13 +1,10 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
 import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import { GameSessionProvider } from "./context/GameSessionContext";
 import BottomNav from "./components/BottomNav";
-// если у тебя уже есть i18n-провайдер и будем переводить всё на русский — подключим позже:
-// import { I18nProvider } from "./i18n/I18nProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,7 +21,11 @@ export const metadata: Metadata = {
   description: "Telegram Mini App",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html lang="ru">
       <body

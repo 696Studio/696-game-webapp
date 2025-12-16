@@ -1,24 +1,40 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getUserByTelegramId, getActiveDeck, getDeckCards } from "@/lib/pvp/pvpRepo";
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-function bad(msg: string, code = "BAD_REQUEST", status = 400) {
-  return NextResponse.json({ error: msg, code }, { status });
-}
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const telegramId = url.searchParams.get("telegramId");
+  if (!telegramId) {
+    return NextResponse.json({ error: "telegramId required" }, { status: 400 });
+  }
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const telegramId = searchParams.get("telegramId");
-  if (!telegramId) return bad("telegramId required");
+  const { data: userRow, error: userErr } = await supabaseAdmin
+    .from("users")
+    .select("id")
+    .eq("telegram_id", telegramId)
+    .maybeSingle();
 
-  const user = await getUserByTelegramId(telegramId);
-  if (!user) return bad("User not found", "USER_NOT_FOUND", 404);
+  if (userErr || !userRow) {
+    return NextResponse.json(
+      { error: userErr?.message || "User not found" },
+      { status: 404 }
+    );
+  }
 
-  const deck = await getActiveDeck(user.id);
-  if (!deck) return NextResponse.json({ ok: true, deck: null });
+  const { data: deck, error: deckErr } = await supabaseAdmin
+    .from("pvp_decks")
+    .select("id,name, pvp_deck_cards(card_id,copies)")
+    .eq("user_id", userRow.id)
+    .maybeSingle();
 
-  const cards = await getDeckCards(deck.id);
+  if (deckErr) {
+    return NextResponse.json({ error: deckErr.message }, { status: 500 });
+  }
+
   return NextResponse.json({
     ok: true,
-    deck: { id: deck.id, name: deck.name, is_active: deck.is_active, cards },
+    deck: deck
+      ? { id: deck.id, name: deck.name, cards: (deck as any).pvp_deck_cards ?? [] }
+      : null,
   });
 }

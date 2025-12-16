@@ -258,20 +258,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // ✅ PVP FIX: если выпавший item является картой (есть в public.cards),
-    // то начисляем её в user_cards (user_id + card_id + copies)
-    // (у тебя user_cards.card_id = text, так что кладём строковый id)
+    // ✅ PVP FIX (правильный): ищем карту по cards.item_id == selectedItem.id
+    // Требование: в public.cards есть колонка item_id uuid (см. SQL в чате)
     try {
       const { data: maybeCard } = await supabaseAdmin
         .from("cards")
         .select("id")
-        .eq("id", selectedItem.id)
+        .eq("item_id", selectedItem.id)
         .maybeSingle();
 
       if (maybeCard?.id) {
         const cardId = String(maybeCard.id);
 
-        // если уже есть строка — увеличиваем copies
         const { data: existing } = await supabaseAdmin
           .from("user_cards")
           .select("id,copies")
@@ -294,7 +292,6 @@ export async function POST(request: Request) {
         }
       }
     } catch (e) {
-      // не ломаем сундук из-за pvp-учёта
       console.error("PVP FIX user_cards error:", e);
     }
 
@@ -370,7 +367,7 @@ export async function POST(request: Request) {
       const code = (chestOpenEventError as any)?.code;
 
       const isDuplicate =
-        code === "23505" || // postgres unique_violation
+        code === "23505" ||
         String(msg).toLowerCase().includes("duplicate") ||
         String(msg).toLowerCase().includes("unique");
 
@@ -383,7 +380,6 @@ export async function POST(request: Request) {
           { status: 500 }
         );
       }
-      // duplicate -> ignore
     }
 
     return NextResponse.json({

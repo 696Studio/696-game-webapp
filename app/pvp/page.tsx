@@ -9,6 +9,9 @@ type Card = {
   rarity: "common" | "rare" | "epic" | "legendary";
   base_power: number;
   image_url: string | null;
+
+  // optional (если API вернёт кол-во у игрока)
+  owned_copies?: number;
 };
 
 type DeckCardRow = { card_id: string; copies: number };
@@ -61,11 +64,19 @@ export default function PvpPage() {
   }, [deckMap]);
 
   async function loadCards() {
+    if (!telegramId) return;
+
     setLoadingCards(true);
     try {
-      const res = await fetch("/api/pvp/cards/list");
+      // ✅ change: pass telegramId
+      const res = await fetch(
+        `/api/pvp/cards/list?telegramId=${encodeURIComponent(telegramId)}`
+      );
       const data = await res.json();
       setCards((data?.cards ?? []) as Card[]);
+    } catch (e) {
+      console.error(e);
+      setCards([]);
     } finally {
       setLoadingCards(false);
     }
@@ -73,22 +84,28 @@ export default function PvpPage() {
 
   async function loadDeck() {
     if (!telegramId) return;
-    const res = await fetch(`/api/pvp/deck/get?telegramId=${encodeURIComponent(telegramId)}`);
+    const res = await fetch(
+      `/api/pvp/deck/get?telegramId=${encodeURIComponent(telegramId)}`
+    );
     const data = await res.json();
     const deck = data?.deck;
 
     if (deck?.cards) {
       const next: Record<string, number> = {};
-      for (const row of deck.cards as DeckCardRow[]) next[row.card_id] = Number(row.copies || 0);
+      for (const row of deck.cards as DeckCardRow[]) {
+        next[row.card_id] = Number(row.copies || 0);
+      }
       setDeckMap(next);
       if (deck?.name) setDeckName(deck.name);
     }
   }
 
+  // ✅ change: load cards when telegramId ready
   useEffect(() => {
     if (!isTelegramEnv) return;
+    if (!telegramId) return;
     loadCards();
-  }, [isTelegramEnv]);
+  }, [isTelegramEnv, telegramId]);
 
   useEffect(() => {
     if (!telegramId) return;
@@ -161,6 +178,7 @@ export default function PvpPage() {
     if (!matchId) return;
 
     let alive = true;
+
     const tick = async () => {
       const res = await fetch(`/api/pvp/match?id=${encodeURIComponent(matchId)}`);
       const data = await res.json();
@@ -170,6 +188,7 @@ export default function PvpPage() {
 
     tick();
     const id = window.setInterval(tick, 1200);
+
     return () => {
       alive = false;
       window.clearInterval(id);
@@ -180,7 +199,9 @@ export default function PvpPage() {
     setDeckMap((prev) => {
       const curr = prev[cardId] || 0;
       if (totalCopies >= 20) return prev;
-      return { ...prev, [cardId]: clamp(curr + 1, 0, 9) };
+      // max 9 copies per card (v1)
+      const next = clamp(curr + 1, 0, 9);
+      return { ...prev, [cardId]: next };
     });
   }
 
@@ -199,7 +220,9 @@ export default function PvpPage() {
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
-          <div className="text-sm ui-subtle">Эта страница работает только внутри Telegram WebApp.</div>
+          <div className="text-sm ui-subtle">
+            Эта страница работает только внутри Telegram WebApp.
+          </div>
         </div>
       </main>
     );
@@ -229,7 +252,10 @@ export default function PvpPage() {
           <div className="mt-2 text-sm ui-subtle">
             Нажми Re-sync и попробуй снова.
           </div>
-          <button onClick={() => refreshSession?.()} className="mt-5 ui-btn ui-btn-primary w-full">
+          <button
+            onClick={() => refreshSession?.()}
+            className="mt-5 ui-btn ui-btn-primary w-full"
+          >
             Re-sync
           </button>
         </div>
@@ -239,6 +265,82 @@ export default function PvpPage() {
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
+      <style jsx global>{`
+        @keyframes scanSweep {
+          0% {
+            transform: translateX(-120%) rotate(10deg);
+            opacity: 0;
+          }
+          18% {
+            opacity: 0.22;
+          }
+          60% {
+            opacity: 0.12;
+          }
+          100% {
+            transform: translateX(120%) rotate(10deg);
+            opacity: 0;
+          }
+        }
+
+        .pvp-altar {
+          position: relative;
+          overflow: hidden;
+          border-radius: var(--r-xl);
+        }
+
+        .pvp-altar::before {
+          content: "";
+          position: absolute;
+          inset: -22px;
+          pointer-events: none;
+          background: radial-gradient(
+              900px 420px at 50% -8%,
+              rgba(88, 240, 255, 0.18) 0%,
+              transparent 62%
+            ),
+            radial-gradient(
+              720px 520px at 70% 34%,
+              rgba(184, 92, 255, 0.14) 0%,
+              transparent 65%
+            ),
+            radial-gradient(
+              720px 520px at 30% 44%,
+              rgba(255, 204, 87, 0.08) 0%,
+              transparent 70%
+            ),
+            linear-gradient(
+              to bottom,
+              rgba(255, 255, 255, 0.04),
+              transparent 40%,
+              rgba(0, 0, 0, 0.22)
+            );
+          opacity: 0.95;
+        }
+
+        .pvp-altar::after {
+          content: "";
+          position: absolute;
+          inset: -35%;
+          pointer-events: none;
+          opacity: 0;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.22),
+            transparent
+          );
+          transform: translateX(-120%) rotate(10deg);
+          animation: scanSweep 1.9s var(--ease-out) infinite;
+          mix-blend-mode: screen;
+        }
+
+        /* если очередь/поиск будет позже — можно включать .is-searching на секции */
+        .pvp-altar.is-searching::after {
+          opacity: 1;
+        }
+      `}</style>
+
       <div className="w-full max-w-5xl">
         <header className="ui-card px-4 py-3 rounded-[var(--r-xl)] mb-4">
           <div className="flex items-center justify-between gap-3">
@@ -251,13 +353,16 @@ export default function PvpPage() {
                 Собери 20 копий → сохрани → нажми “В бой”
               </div>
             </div>
-            <button onClick={() => refreshSession?.()} className="ui-btn ui-btn-ghost">
+            <button
+              onClick={() => refreshSession?.()}
+              className="ui-btn ui-btn-ghost"
+            >
               Re-sync
             </button>
           </div>
         </header>
 
-        <section className="ui-card-strong p-5 rounded-[var(--r-xl)]">
+        <section className="ui-card-strong p-5 rounded-[var(--r-xl)] pvp-altar">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="min-w-0">
               <div className="ui-subtitle">Колода</div>
@@ -269,7 +374,10 @@ export default function PvpPage() {
                   style={{ minWidth: 220 }}
                 />
                 <span className="ui-pill">
-                  Копии: <span className="ml-2 font-extrabold tabular-nums">{totalCopies}/20</span>
+                  Копии:{" "}
+                  <span className="ml-2 font-extrabold tabular-nums">
+                    {totalCopies}/20
+                  </span>
                 </span>
               </div>
             </div>
@@ -278,7 +386,10 @@ export default function PvpPage() {
               <button
                 onClick={saveDeck}
                 disabled={saving || totalCopies !== 20}
-                className={["ui-btn", totalCopies === 20 ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
+                className={[
+                  "ui-btn",
+                  totalCopies === 20 ? "ui-btn-primary" : "ui-btn-ghost",
+                ].join(" ")}
               >
                 {saving ? "Сохранение…" : "Сохранить колоду"}
               </button>
@@ -286,18 +397,17 @@ export default function PvpPage() {
               <button
                 onClick={findMatch}
                 disabled={queueing || totalCopies !== 20}
-                className={["ui-btn", totalCopies === 20 ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
+                className={[
+                  "ui-btn",
+                  totalCopies === 20 ? "ui-btn-primary" : "ui-btn-ghost",
+                ].join(" ")}
               >
                 {queueing ? "Поиск…" : "В бой"}
               </button>
             </div>
           </div>
 
-          {status && (
-            <div className="mt-4 ui-pill w-fit">
-              {status}
-            </div>
-          )}
+          {status && <div className="mt-4 ui-pill w-fit">{status}</div>}
 
           {/* Cards list */}
           <div className="mt-6">
@@ -307,14 +417,24 @@ export default function PvpPage() {
               <div className="ui-card p-4">
                 <div className="text-sm ui-subtle">Загружаю карты…</div>
               </div>
+            ) : cards.length === 0 ? (
+              <div className="ui-card p-4">
+                <div className="text-sm ui-subtle">
+                  Карты не найдены. Проверь /api/pvp/cards/list и таблицу cards.
+                </div>
+              </div>
             ) : (
               <div className="ui-grid sm:grid-cols-2 lg:grid-cols-3">
                 {cards.map((c) => {
                   const copies = deckMap[c.id] || 0;
+
                   return (
                     <div
                       key={c.id}
-                      className={["ui-card p-4", rarityFxClass(c.rarity)].join(" ")}
+                      className={[
+                        "ui-card p-4",
+                        rarityFxClass(c.rarity),
+                      ].join(" ")}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
@@ -322,9 +442,21 @@ export default function PvpPage() {
                           <div className="text-[11px] ui-subtle mt-1">
                             {rarityRu(c.rarity)} • Сила {c.base_power}
                           </div>
+                          {typeof c.owned_copies === "number" && (
+                            <div className="text-[11px] ui-subtle mt-1">
+                              У тебя:{" "}
+                              <span className="font-semibold tabular-nums">
+                                {c.owned_copies}
+                              </span>
+                            </div>
+                          )}
                         </div>
+
                         <span className="ui-pill">
-                          x <span className="ml-2 font-extrabold tabular-nums">{copies}</span>
+                          x{" "}
+                          <span className="ml-2 font-extrabold tabular-nums">
+                            {copies}
+                          </span>
                         </span>
                       </div>
 
@@ -336,9 +468,10 @@ export default function PvpPage() {
                         >
                           −
                         </button>
+
                         <button
                           onClick={() => addCopy(c.id)}
-                          disabled={totalCopies >= 20}
+                          disabled={totalCopies >= 20 || copies >= 9}
                           className="ui-btn ui-btn-primary"
                         >
                           +
@@ -371,7 +504,8 @@ export default function PvpPage() {
                     P1: {r.p1.total} • P2: {r.p2.total}
                   </div>
                   <div className="mt-2 text-[11px] ui-subtle">
-                    Победитель раунда: <span className="font-semibold">{r.winner}</span>
+                    Победитель раунда:{" "}
+                    <span className="font-semibold">{r.winner}</span>
                   </div>
                 </div>
               ))}

@@ -5,8 +5,10 @@ export async function POST(req: Request) {
   const body = await req.json();
   const telegramId = body?.telegramId;
   const mode = body?.mode || "unranked";
-  if (!telegramId)
+
+  if (!telegramId) {
     return NextResponse.json({ error: "telegramId required" }, { status: 400 });
+  }
 
   const { data: userRow } = await supabaseAdmin
     .from("users")
@@ -14,10 +16,37 @@ export async function POST(req: Request) {
     .eq("telegram_id", telegramId)
     .maybeSingle();
 
-  if (!userRow)
+  if (!userRow) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
 
-  // try find opponent
+  // 0) мягкая очистка мусора (не критично, но уменьшает "залипания")
+  // удаляем свои старые queued, если они очень старые
+  // (можно убрать позже, но сейчас помогает)
+  const cutoff = new Date(Date.now() - 1000 * 60 * 10).toISOString(); // 10 минут
+  await supabaseAdmin
+    .from("pvp_queue")
+    .delete()
+    .eq("user_id", userRow.id)
+    .eq("status", "queued")
+    .lt("created_at", cutoff);
+
+  // 1) если уже в очереди — не создаём дубль
+  const { data: existingQueued } = await supabaseAdmin
+    .from("pvp_queue")
+    .select("id, created_at")
+    .eq("user_id", userRow.id)
+    .eq("mode", mode)
+    .eq("status", "queued")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingQueued) {
+    return NextResponse.json({ status: "queued" });
+  }
+
+  // 2) try find opponent
   const { data: opp } = await supabaseAdmin
     .from("pvp_queue")
     .select("id,user_id")
@@ -36,13 +65,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: "queued" });
   }
 
-  // create match (resolved v1)
+  // 3) create match (resolved v1)
   const match = await createResolvedMatch(userRow.id, opp.user_id, mode);
 
-  // ✅ apply rewards ONCE (idempotent)
+  // 4) ✅ apply rewards ONCE (idempotent)
   await applyRewardsOnce(match.id, match.winner_user_id, match.p1_user_id, match.p2_user_id);
 
-  // mark opponent queue matched
+  // 5) mark opponent queue matched
   await supabaseAdmin
     .from("pvp_queue")
     .update({
@@ -52,7 +81,7 @@ export async function POST(req: Request) {
     })
     .in("id", [opp.id]);
 
-  // create current user queue row as matched (keep your behavior)
+  // 6) create current user queue row as matched (keep your behavior)
   await supabaseAdmin.from("pvp_queue").insert({
     user_id: userRow.id,
     mode,
@@ -72,8 +101,7 @@ async function createResolvedMatch(p1: string, p2: string, mode: string) {
   const p1Wins = rounds.filter((r) => r.winner === "p1").length;
   const p2Wins = rounds.filter((r) => r.winner === "p2").length;
 
-  const winner_user_id =
-    p1Wins === p2Wins ? null : p1Wins > p2Wins ? p1 : p2;
+  const winner_user_id = p1Wins === p2Wins ? null : p1Wins > p2Wins ? p1 : p2;
 
   const log = { p1: { totalPower: d1.total }, p2: { totalPower: d2.total }, rounds };
 
@@ -111,7 +139,6 @@ async function applyRewardsOnce(
   p1: string,
   p2: string
 ) {
-  // 1) atomic-ish guard: update only if rewards_applied=false
   const { data: locked, error: lockErr } = await supabaseAdmin
     .from("pvp_matches")
     .update({ rewards_applied: true })
@@ -121,22 +148,18 @@ async function applyRewardsOnce(
     .maybeSingle();
 
   if (lockErr) {
-    // не валим матч из-за награды
     console.error("applyRewardsOnce lock error:", lockErr.message);
     return;
   }
 
-  // if update didn't happen => already paid
   if (!locked) return;
 
-  // 2) decide amounts (v1)
   const WIN = 5;
   const LOSE = 1;
   const DRAW = 2;
 
   try {
     if (!winnerUserId) {
-      // draw
       await Promise.all([
         supabaseAdmin.rpc("inc_hard_balance", { p_user_id: p1, p_amount: DRAW }),
         supabaseAdmin.rpc("inc_hard_balance", { p_user_id: p2, p_amount: DRAW }),
@@ -151,7 +174,6 @@ async function applyRewardsOnce(
       supabaseAdmin.rpc("inc_hard_balance", { p_user_id: loser, p_amount: LOSE }),
     ]);
   } catch (e: any) {
-    // если rpc упал — логируем. rewards_applied уже true, чтобы не дюпать.
     console.error("applyRewardsOnce payout error:", e?.message || e);
   }
 }
@@ -165,11 +187,14 @@ async function loadDeckPower(userId: string) {
 
   const cardsRows: { card_id: string; copies: number }[] =
     (deck as any)?.pvp_deck_cards ?? [];
-  if (!deck || cardsRows.length === 0) return { total: 0, cards: [] as number[] };
+
+  if (!deck || cardsRows.length === 0) {
+    return { total: 0, cards: [] as number[] };
+  }
 
   const ids = cardsRows.map((r) => r.card_id);
 
-  // ✅ ВОТ ТУТ ГЛАВНАЯ ПРАВКА: читаем из "cards", а не "pvp_cards"
+  // ✅ читаем из "cards" (единый источник)
   const { data: cards } = await supabaseAdmin
     .from("cards")
     .select("id,base_power,rarity")
@@ -177,9 +202,9 @@ async function loadDeckPower(userId: string) {
 
   const byId = new Map((cards ?? []).map((c: any) => [c.id, c]));
 
-  // expand to “power list” учитывая copies
   const powerList: number[] = [];
   let total = 0;
+
   for (const r of cardsRows) {
     const c: any = byId.get(r.card_id);
     const p = Number(c?.base_power || 0);
@@ -203,7 +228,6 @@ function simulateAutoFight(p1: number[], p2: number[], roundsCount: number) {
 }
 
 function rollRound(list: number[]) {
-  // v1: берём случайные 5 “карт” из powerList (без удаления), сумма + лёгкий рандом
   if (!list.length) return 0;
   let sum = 0;
   for (let i = 0; i < 5; i++) sum += list[Math.floor(Math.random() * list.length)] || 0;

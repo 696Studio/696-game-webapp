@@ -1,21 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-function bad(msg: string, code = "BAD_REQUEST", status = 400) {
-  return NextResponse.json({ error: msg, code }, { status });
-}
-
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
-  if (!id) return bad("id required");
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const { data, error } = await supabaseAdmin
-    .from("matches")
-    .select("*")
+    .from("pvp_matches")
+    .select(
+      "id,mode,p1_user_id,p2_user_id,winner_user_id,log,status,created_at,rewards_applied"
+    )
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
-  if (error) return bad(error.message, "DB_ERROR", 500);
-  return NextResponse.json({ ok: true, match: data });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ match: data ?? null });
 }
