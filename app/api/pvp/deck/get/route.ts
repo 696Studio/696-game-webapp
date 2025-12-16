@@ -34,7 +34,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true,
     deck: deck
-      ? { id: deck.id, name: deck.name, cards: (deck as any).pvp_deck_cards ?? [] }
+      ? { id: (deck as any).id, name: (deck as any).name, cards: (deck as any).pvp_deck_cards ?? [] }
       : null,
   });
 }

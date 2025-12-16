@@ -20,15 +20,16 @@ export async function POST(req: Request) {
 
   // 1) нормализуем вход
   const raw = Array.isArray(body.cards) ? body.cards : [];
-
-  // склеиваем дубликаты card_id, режем copies 1..9, выкидываем мусор
   const map = new Map<string, number>();
+
   for (const r of raw) {
-    const id = String(r?.card_id || "").trim();
+    const id = String(r?.card_id || "").trim(); // это cards.id (TEXT)
     if (!id) continue;
+
     const c = clamp(Number(r?.copies || 0), 0, 9);
     if (c <= 0) continue;
-    map.set(id, clamp((map.get(id) || 0) + c, 1, 9)); // v1: максимум 9 копий на карту
+
+    map.set(id, clamp((map.get(id) || 0) + c, 1, 9));
   }
 
   const cards = Array.from(map.entries()).map(([card_id, copies]) => ({
@@ -62,20 +63,19 @@ export async function POST(req: Request) {
     );
   }
 
-  // 3) проверим что card_id реально существуют
-  // ВАЖНО: тут таблица "cards" (как у тебя в /api/pvp/cards/list)
+  // 3) load cards metadata by cards.id (TEXT) -> get item_id(uuid)
   const ids = cards.map((c) => c.card_id);
-  const { data: existing, error: cardsErr } = await supabaseAdmin
+  const { data: cardMeta, error: metaErr } = await supabaseAdmin
     .from("cards")
-    .select("id")
+    .select("id,item_id")
     .in("id", ids);
 
-  if (cardsErr) {
-    return NextResponse.json({ error: cardsErr.message }, { status: 500 });
+  if (metaErr) {
+    return NextResponse.json({ error: metaErr.message }, { status: 500 });
   }
 
-  const existingSet = new Set((existing ?? []).map((x: any) => x.id));
-  const missing = ids.filter((id) => !existingSet.has(id));
+  const byCardId = new Map((cardMeta ?? []).map((c: any) => [String(c.id), c]));
+  const missing = ids.filter((id) => !byCardId.has(id));
   if (missing.length > 0) {
     return NextResponse.json(
       { error: `Unknown card_id: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? "..." : ""}` },
@@ -83,7 +83,39 @@ export async function POST(req: Request) {
     );
   }
 
-  // 4) upsert deck (требует UNIQUE(user_id) в pvp_decks)
+  // 4) ✅ verify ownership using user_cards.item_id(uuid)
+  const itemIds = (cardMeta ?? [])
+    .map((c: any) => c.item_id)
+    .filter(Boolean);
+
+  const { data: ownedRows, error: ownedErr } = await supabaseAdmin
+    .from("user_cards")
+    .select("item_id,copies")
+    .eq("user_id", userRow.id)
+    .in("item_id", itemIds);
+
+  if (ownedErr) {
+    return NextResponse.json({ error: ownedErr.message }, { status: 500 });
+  }
+
+  const ownedByItemId = new Map(
+    (ownedRows ?? []).map((r: any) => [r.item_id, Number(r.copies || 0)])
+  );
+
+  for (const r of cards) {
+    const meta: any = byCardId.get(r.card_id);
+    const itemId = meta?.item_id;
+    const owned = Number(ownedByItemId.get(itemId) || 0);
+
+    if (owned < Number(r.copies || 0)) {
+      return NextResponse.json(
+        { error: `Not enough copies for card_id=${r.card_id}. Owned=${owned}, requested=${r.copies}` },
+        { status: 400 }
+      );
+    }
+  }
+
+  // 5) upsert deck (требует UNIQUE(user_id) в pvp_decks)
   const { data: deck, error: deckErr } = await supabaseAdmin
     .from("pvp_decks")
     .upsert(
@@ -100,19 +132,19 @@ export async function POST(req: Request) {
     );
   }
 
-  // 5) replace cards (v1) — сначала delete, потом insert
+  // 6) replace cards (v1)
   const { error: delErr } = await supabaseAdmin
     .from("pvp_deck_cards")
     .delete()
-    .eq("deck_id", deck.id);
+    .eq("deck_id", (deck as any).id);
 
   if (delErr) {
     return NextResponse.json({ error: delErr.message }, { status: 500 });
   }
 
   const rows = cards.map((r) => ({
-    deck_id: deck.id,
-    card_id: r.card_id,
+    deck_id: (deck as any).id,
+    card_id: r.card_id, // TEXT, как в cards.id
     copies: clamp(Number(r.copies || 1), 1, 9),
   }));
 
@@ -124,5 +156,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: insErr.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, deckId: deck.id });
+  return NextResponse.json({ ok: true, deckId: (deck as any).id });
 }
