@@ -258,53 +258,40 @@ export async function POST(request: Request) {
       );
     }
 
-    // ✅ PVP FIX (ПРАВИЛЬНЫЙ ПОД ТВОЮ СХЕМУ):
-    // - cards: item_id uuid
-    // - user_cards: item_id uuid, copies
-    // если выпал item, который является картой → пишем/инкрементим user_cards по (user_id,item_id)
+    // ✅ PVP FIX: если item является картой (cards.item_id == selectedItem.id),
+    // то пишем владение в user_cards через item_id (uuid) + copies
     try {
-      const { data: maybeCard, error: cardLookupErr } = await supabaseAdmin
+      const { data: maybeCard } = await supabaseAdmin
         .from("cards")
-        .select("id,item_id")
+        .select("id")
         .eq("item_id", selectedItem.id)
         .maybeSingle();
 
-      if (cardLookupErr) {
-        console.error("PVP FIX cards lookup error:", cardLookupErr);
-      }
-
-      if (maybeCard?.item_id) {
-        const itemId = maybeCard.item_id; // uuid
-
-        const { data: existing, error: existingErr } = await supabaseAdmin
+      if (maybeCard?.id) {
+        // upsert copies по (user_id, item_id)
+        const { data: existing } = await supabaseAdmin
           .from("user_cards")
           .select("id,copies")
           .eq("user_id", user.id)
-          .eq("item_id", itemId)
+          .eq("item_id", selectedItem.id)
           .maybeSingle();
 
-        if (existingErr) {
-          console.error("PVP FIX user_cards select error:", existingErr);
-        } else if (existing?.id) {
+        if (existing?.id) {
           const curr = Number(existing.copies || 0);
-          const { error: updErr } = await supabaseAdmin
+          await supabaseAdmin
             .from("user_cards")
             .update({ copies: curr + 1 })
             .eq("id", existing.id);
-
-          if (updErr) console.error("PVP FIX user_cards update error:", updErr);
         } else {
-          const { error: insErr } = await supabaseAdmin.from("user_cards").insert({
+          await supabaseAdmin.from("user_cards").insert({
             user_id: user.id,
-            item_id: itemId,
+            item_id: selectedItem.id,
             copies: 1,
           });
-
-          if (insErr) console.error("PVP FIX user_cards insert error:", insErr);
         }
       }
     } catch (e) {
-      console.error("PVP FIX user_cards unexpected error:", e);
+      console.error("PVP FIX user_cards error:", e);
     }
 
     // total_minted best effort (admin)
@@ -351,7 +338,6 @@ export async function POST(request: Request) {
         0
       ) ?? 0;
 
-    // ✅ delta power (для логов сундука)
     const powerDelta = Number(selectedItem.power_value ?? 0) || 0;
 
     // ✅ chest_open_events log (admin, idempotent)

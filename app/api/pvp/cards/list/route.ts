@@ -9,6 +9,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "telegramId required" }, { status: 400 });
   }
 
+  // 1) user id
   const { data: userRow, error: userErr } = await supabaseAdmin
     .from("users")
     .select("id")
@@ -22,11 +23,14 @@ export async function GET(req: Request) {
     );
   }
 
+  // 2) owned cards:
   // user_cards: user_id, item_id(uuid), copies
+  // cards: item_id(uuid), ... (cards.id = text, его НЕ используем для join с user_cards)
   const { data: owned, error: ownedErr } = await supabaseAdmin
     .from("user_cards")
     .select("item_id, copies")
-    .eq("user_id", userRow.id);
+    .eq("user_id", userRow.id)
+    .order("item_id", { ascending: true });
 
   if (ownedErr) {
     return NextResponse.json({ error: ownedErr.message }, { status: 500 });
@@ -42,7 +46,7 @@ export async function GET(req: Request) {
 
   const itemIds = rows.map((r: any) => r.item_id);
 
-  // cards: id(text), ... , item_id(uuid)
+  // 3) fetch cards by item_id
   const { data: cardsData, error: cardsErr } = await supabaseAdmin
     .from("cards")
     .select("id, name_ru, name_en, rarity, base_power, image_url, item_id")
@@ -52,24 +56,26 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: cardsErr.message }, { status: 500 });
   }
 
-  const cardByItemId = new Map<string, any>();
-  for (const c of cardsData ?? []) {
-    if (c?.item_id) cardByItemId.set(String(c.item_id), c);
-  }
+  const cardByItemId = new Map(
+    (cardsData ?? []).map((c: any) => [c.item_id, c])
+  );
 
+  // 4) merge owned copies + card meta
   const cards = rows
     .map((r: any) => {
-      const c: any = cardByItemId.get(String(r.item_id));
+      const c: any = cardByItemId.get(r.item_id);
       if (!c) return null;
 
       return {
-        id: c.id, // text — это то, что PVP использует как card_id
+        id: c.id, // text — используем как ID карты в UI / колоде
         name: c.name_ru ?? c.name_en ?? "Card",
         rarity: c.rarity,
         base_power: Number(c.base_power || 0),
         image_url: c.image_url ?? null,
         owned_copies: Number(r.copies || 0),
-        item_id: c.item_id, // debug
+
+        // полезно для дебага
+        item_id: c.item_id,
       };
     })
     .filter(Boolean);
