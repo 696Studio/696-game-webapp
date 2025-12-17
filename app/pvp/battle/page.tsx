@@ -113,6 +113,19 @@ function toCardMetaArray(v: any): CardMeta[] {
     .filter(Boolean) as CardMeta[];
 }
 
+function isIosUA(ua: string) {
+  return /iPad|iPhone|iPod/i.test(ua);
+}
+
+function isTelegramWebView() {
+  try {
+    const w = window as any;
+    return Boolean(w?.Telegram?.WebApp);
+  } catch {
+    return false;
+  }
+}
+
 function BattleInner() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -123,6 +136,18 @@ function BattleInner() {
 
   const [match, setMatch] = useState<MatchRow | null>(null);
   const [errText, setErrText] = useState<string | null>(null);
+
+  // iOS TG WebView "Lite FX" mode
+  const [liteFx, setLiteFx] = useState(false);
+  useEffect(() => {
+    try {
+      const ua = navigator.userAgent || "";
+      const isLite = isIosUA(ua) && isTelegramWebView();
+      setLiteFx(isLite);
+    } catch {
+      setLiteFx(false);
+    }
+  }, []);
 
   const logObj = useMemo(() => {
     const l = match?.log;
@@ -285,31 +310,35 @@ function BattleInner() {
       }
     }
 
-    // reveal anim trigger
-    const sigLeft = (cf1?.map((x) => x?.id).join("|") || c1.join("|")) ?? "";
-    const sigRight = (cf2?.map((x) => x?.id).join("|") || c2.join("|")) ?? "";
-    const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
+    // reveal anim trigger (disable in liteFx to reduce GPU spikes)
+    if (!liteFx) {
+      const sigLeft = (cf1?.map((x) => x?.id).join("|") || c1.join("|")) ?? "";
+      const sigRight = (cf2?.map((x) => x?.id).join("|") || c2.join("|")) ?? "";
+      const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
 
-    if (revealSig !== prevRevealSigRef.current) {
-      const hasSomething =
-        (cf1?.length || 0) > 0 ||
-        (cf2?.length || 0) > 0 ||
-        (c1?.length || 0) > 0 ||
-        (c2?.length || 0) > 0;
-      if (hasSomething) setRevealTick((x) => x + 1);
-      prevRevealSigRef.current = revealSig;
+      if (revealSig !== prevRevealSigRef.current) {
+        const hasSomething =
+          (cf1?.length || 0) > 0 ||
+          (cf2?.length || 0) > 0 ||
+          (c1?.length || 0) > 0 ||
+          (c2?.length || 0) > 0;
+        if (hasSomething) setRevealTick((x) => x + 1);
+        prevRevealSigRef.current = revealSig;
+      }
     }
 
     // score hit
     const prevS1 = prevScoreRef.current.p1;
     const prevS2 = prevScoreRef.current.p2;
-    if (s1 != null && prevS1 != null && s1 !== prevS1) {
-      setP1Hit(true);
-      window.setTimeout(() => setP1Hit(false), 220);
-    }
-    if (s2 != null && prevS2 != null && s2 !== prevS2) {
-      setP2Hit(true);
-      window.setTimeout(() => setP2Hit(false), 220);
+    if (!liteFx) {
+      if (s1 != null && prevS1 != null && s1 !== prevS1) {
+        setP1Hit(true);
+        window.setTimeout(() => setP1Hit(false), 220);
+      }
+      if (s2 != null && prevS2 != null && s2 !== prevS2) {
+        setP2Hit(true);
+        window.setTimeout(() => setP2Hit(false), 220);
+      }
     }
     prevScoreRef.current = { p1: s1, p2: s2 };
 
@@ -321,7 +350,7 @@ function BattleInner() {
     setP1Score(s1);
     setP2Score(s2);
     setRoundWinner(rw);
-  }, [t, timeline]);
+  }, [t, timeline, liteFx]);
 
   // playback loop with rate
   useEffect(() => {
@@ -399,6 +428,7 @@ function BattleInner() {
   useEffect(() => {
     if (phase !== "end") return;
     if (!roundWinner) return;
+    if (liteFx) return; // banner glow is GPU-ish, skip in lite
 
     const sig = `${roundN}:${roundWinner}`;
     if (sig === prevEndSigRef.current) return;
@@ -433,7 +463,7 @@ function BattleInner() {
     }, 900);
 
     return () => window.clearTimeout(to);
-  }, [phase, roundWinner, roundN]);
+  }, [phase, roundWinner, roundN, liteFx]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -464,11 +494,12 @@ function BattleInner() {
 
   const boardFxClass = useMemo(() => {
     if (!scored) return "";
+    if (liteFx) return ""; // no shake/extra shadows in lite
     if (roundWinner === "p1") return "fx-p1";
     if (roundWinner === "p2") return "fx-p2";
     if (roundWinner === "draw") return "fx-draw";
     return "";
-  }, [scored, roundWinner]);
+  }, [scored, roundWinner, liteFx]);
 
   function CardSlot({
     card,
@@ -492,9 +523,10 @@ function BattleInner() {
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
-          `rt-${revealTick}`,
+          !liteFx ? `rt-${revealTick}` : "",
+          liteFx ? "is-lite" : "",
         ].join(" ")}
-        style={{ animationDelay: `${delayMs}ms` }}
+        style={!liteFx ? { animationDelay: `${delayMs}ms` } : undefined}
       >
         <div className="bb-card-inner">
           <div className="bb-face bb-back">
@@ -749,6 +781,8 @@ function BattleInner() {
           overflow: hidden;
           background: rgba(0,0,0,0.22);
         }
+
+        /* Normal (non-lite) background */
         .arena::before {
           content: "";
           position: absolute;
@@ -775,6 +809,18 @@ function BattleInner() {
           animation: glowPulse 2.2s ease-in-out infinite;
           mix-blend-mode: screen;
         }
+
+        /* Lite FX for iOS TG WebView: remove heavy layers */
+        .arena.is-lite {
+          background: linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0.35),
+            rgba(0, 0, 0, 0.22)
+          );
+        }
+        .arena.is-lite::before { background-image: none; }
+        .arena.is-lite::after { content: none; }
+
         .arena > * { position: relative; z-index: 1; }
 
         .arena.fx-p1,
@@ -785,53 +831,6 @@ function BattleInner() {
         .arena.fx-p2 .row-top { box-shadow: 0 0 0 1px rgba(184,92,255,0.18), 0 0 24px rgba(184,92,255,0.12); }
         .arena.fx-draw .row-top,
         .arena.fx-draw .row-bottom { box-shadow: 0 0 0 1px rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.10); }
-
-        /* Round banner overlay */
-        .round-banner {
-          position: absolute;
-          left: 50%;
-          top: 52%;
-          transform: translate(-50%, -50%);
-          padding: 12px 14px;
-          border-radius: 18px;
-          border: 1px solid rgba(255,255,255,0.20);
-          background: rgba(0,0,0,0.42);
-          backdrop-filter: blur(10px);
-          min-width: min(520px, calc(100% - 28px));
-          text-align: center;
-          box-shadow: 0 12px 40px rgba(0,0,0,0.35);
-          animation: bannerIn 320ms var(--ease-out) both;
-          pointer-events: none;
-          z-index: 5;
-        }
-        .round-banner::before {
-          content: "";
-          position: absolute;
-          inset: -18px;
-          border-radius: 22px;
-          background: radial-gradient(closest-side, rgba(255,255,255,0.22), transparent 70%);
-          opacity: 0;
-          animation: bannerGlow 520ms ease-out both;
-        }
-        .round-banner .title {
-          font-weight: 1000;
-          letter-spacing: 0.24em;
-          text-transform: uppercase;
-          font-size: 13px;
-          opacity: 0.9;
-        }
-        .round-banner .sub {
-          margin-top: 6px;
-          font-weight: 900;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-          font-size: 18px;
-        }
-        .round-banner.tone-p1 { border-color: rgba(88,240,255,0.28); }
-        .round-banner.tone-p1 .sub { text-shadow: 0 0 18px rgba(88,240,255,0.18); }
-        .round-banner.tone-p2 { border-color: rgba(184,92,255,0.28); }
-        .round-banner.tone-p2 .sub { text-shadow: 0 0 18px rgba(184,92,255,0.18); }
-        .round-banner.tone-draw { border-color: rgba(255,255,255,0.22); }
 
         .lane { display: grid; gap: 14px; }
 
@@ -844,8 +843,9 @@ function BattleInner() {
           border: 1px solid rgba(255,255,255,0.14);
           border-radius: 16px;
           background: rgba(0,0,0,0.22);
-          backdrop-filter: blur(6px);
         }
+
+        /* IMPORTANT: avoid backdrop-filter on iOS TG (handled inline too) */
 
         .player-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
@@ -906,7 +906,6 @@ function BattleInner() {
           border-radius: 18px;
           border: 1px solid rgba(255,255,255,0.12);
           background: rgba(0,0,0,0.22);
-          backdrop-filter: blur(6px);
           padding: 10px;
           display: flex;
           justify-content: center;
@@ -938,6 +937,8 @@ function BattleInner() {
         }
         .bb-card.is-revealed .bb-card-inner { transform: rotateY(180deg); }
         .bb-card.is-revealed { animation: flipIn 520ms var(--ease-out) both; }
+
+        .bb-card.is-lite.is-revealed { animation: none; } /* lite: skip flip anim */
 
         .bb-face {
           position: absolute;
@@ -1040,6 +1041,52 @@ function BattleInner() {
         .rar-epic { box-shadow: inset 0 0 0 9999px rgba(184, 92, 255, 0.07); }
         .rar-legendary { box-shadow: inset 0 0 0 9999px rgba(255, 204, 87, 0.07); }
 
+        /* Round banner overlay */
+        .round-banner {
+          position: absolute;
+          left: 50%;
+          top: 52%;
+          transform: translate(-50%, -50%);
+          padding: 12px 14px;
+          border-radius: 18px;
+          border: 1px solid rgba(255,255,255,0.20);
+          background: rgba(0,0,0,0.42);
+          min-width: min(520px, calc(100% - 28px));
+          text-align: center;
+          box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+          animation: bannerIn 320ms var(--ease-out) both;
+          pointer-events: none;
+          z-index: 5;
+        }
+        .round-banner::before {
+          content: "";
+          position: absolute;
+          inset: -18px;
+          border-radius: 22px;
+          background: radial-gradient(closest-side, rgba(255,255,255,0.22), transparent 70%);
+          opacity: 0;
+          animation: bannerGlow 520ms ease-out both;
+        }
+        .round-banner .title {
+          font-weight: 1000;
+          letter-spacing: 0.24em;
+          text-transform: uppercase;
+          font-size: 13px;
+          opacity: 0.9;
+        }
+        .round-banner .sub {
+          margin-top: 6px;
+          font-weight: 900;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          font-size: 18px;
+        }
+        .round-banner.tone-p1 { border-color: rgba(88,240,255,0.28); }
+        .round-banner.tone-p1 .sub { text-shadow: 0 0 18px rgba(88,240,255,0.18); }
+        .round-banner.tone-p2 { border-color: rgba(184,92,255,0.28); }
+        .round-banner.tone-p2 .sub { text-shadow: 0 0 18px rgba(184,92,255,0.18); }
+        .round-banner.tone-draw { border-color: rgba(255,255,255,0.22); }
+
         @media (max-width: 640px) {
           .slots { gap: 8px; }
           .bb-card { max-width: 110px; border-radius: 16px; }
@@ -1057,6 +1104,11 @@ function BattleInner() {
               <div className="hud-title">BATTLE</div>
               <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">
                 Поле боя • {fmtTime(t)} / {fmtTime(durationSec)}
+                {liteFx ? (
+                  <span className="ml-3 text-[11px] opacity-70 tracking-[0.18em] uppercase">
+                    iOS Lite FX
+                  </span>
+                ) : null}
               </div>
 
               <div
@@ -1160,7 +1212,14 @@ function BattleInner() {
           </div>
         </header>
 
-        <section className={["board", "arena", boardFxClass].join(" ")}>
+        <section
+          className={[
+            "board",
+            "arena",
+            boardFxClass,
+            liteFx ? "is-lite" : "",
+          ].join(" ")}
+        >
           {/* ROUND END BANNER */}
           {roundBanner.visible && (
             <div
@@ -1181,7 +1240,20 @@ function BattleInner() {
 
           <div className="lane">
             {/* ENEMY */}
-            <div className="playerbar">
+            <div
+              className="playerbar"
+              style={
+                liteFx
+                  ? {
+                      backdropFilter: "none",
+                      WebkitBackdropFilter: "none",
+                    }
+                  : {
+                      backdropFilter: "blur(6px)",
+                      WebkitBackdropFilter: "blur(6px)",
+                    }
+              }
+            >
               <div className="player-left">
                 <div className="avatar">
                   <img
@@ -1208,7 +1280,20 @@ function BattleInner() {
             </div>
 
             {/* TOP ROW */}
-            <div className="row row-top">
+            <div
+              className="row row-top"
+              style={
+                liteFx
+                  ? {
+                      backdropFilter: "none",
+                      WebkitBackdropFilter: "none",
+                    }
+                  : {
+                      backdropFilter: "blur(6px)",
+                      WebkitBackdropFilter: "blur(6px)",
+                    }
+              }
+            >
               <div className="slots">
                 {p2Slots.map((s, i) => (
                   <CardSlot
@@ -1229,7 +1314,8 @@ function BattleInner() {
               className="ui-card p-4"
               style={{
                 background: "rgba(0,0,0,0.22)",
-                backdropFilter: "blur(6px)",
+                backdropFilter: liteFx ? "none" : "blur(6px)",
+                WebkitBackdropFilter: liteFx ? "none" : "blur(6px)",
               }}
             >
               <div className="ui-subtitle">Раунд {roundN}</div>
@@ -1242,7 +1328,20 @@ function BattleInner() {
             </div>
 
             {/* BOTTOM ROW */}
-            <div className="row row-bottom">
+            <div
+              className="row row-bottom"
+              style={
+                liteFx
+                  ? {
+                      backdropFilter: "none",
+                      WebkitBackdropFilter: "none",
+                    }
+                  : {
+                      backdropFilter: "blur(6px)",
+                      WebkitBackdropFilter: "blur(6px)",
+                    }
+              }
+            >
               <div className="slots">
                 {p1Slots.map((s, i) => (
                   <CardSlot
@@ -1259,7 +1358,20 @@ function BattleInner() {
             </div>
 
             {/* YOU */}
-            <div className="playerbar">
+            <div
+              className="playerbar"
+              style={
+                liteFx
+                  ? {
+                      backdropFilter: "none",
+                      WebkitBackdropFilter: "none",
+                    }
+                  : {
+                      backdropFilter: "blur(6px)",
+                      WebkitBackdropFilter: "blur(6px)",
+                    }
+              }
+            >
               <div className="player-left">
                 <div className="avatar">
                   <img
@@ -1290,7 +1402,8 @@ function BattleInner() {
                 className="ui-card p-5"
                 style={{
                   background: "rgba(0,0,0,0.22)",
-                  backdropFilter: "blur(6px)",
+                  backdropFilter: liteFx ? "none" : "blur(6px)",
+                  WebkitBackdropFilter: liteFx ? "none" : "blur(6px)",
                 }}
               >
                 <div className="ui-subtitle">Результат матча</div>

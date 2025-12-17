@@ -103,10 +103,158 @@ function buildCardsFull(idsAny: any, meta: Map<string, CardMeta>): CardMeta[] {
   });
 }
 
+/** deterministic hash -> uint32 */
+function hash32(str: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/** mulberry32 rng */
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return function rand() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function pickNDeterministic(ids: string[], n: number, rand: () => number): string[] {
+  const pool = ids.slice();
+  // Fisher-Yates shuffle partial
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    const tmp = pool[i];
+    pool[i] = pool[j];
+    pool[j] = tmp;
+  }
+  return pool.slice(0, Math.max(0, Math.min(n, pool.length)));
+}
+
+function sumPower(cards: CardMeta[]): number {
+  let s = 0;
+  for (const c of cards) s += Number(c?.base_power ?? 0);
+  return Math.max(0, Math.round(s));
+}
+
+/**
+ * Debug simulation: produces a timeline compatible with your Battle UI:
+ * round_start -> reveal -> score -> round_end (x3)
+ *
+ * Source of decks:
+ * - tries log.p1_cards / log.p2_cards (arrays or json strings)
+ * If not found -> can't simulate.
+ */
+async function simulateTimelineV0(params: {
+  matchId: string;
+  logObj: any;
+  p1_user_id: string;
+  p2_user_id: string;
+}) {
+  const { matchId, logObj } = params;
+
+  const p1All = toStringArray(logObj?.p1_cards ?? logObj?.p1_deck ?? logObj?.p1 ?? []);
+  const p2All = toStringArray(logObj?.p2_cards ?? logObj?.p2_deck ?? logObj?.p2 ?? []);
+
+  if (!p1All.length || !p2All.length) {
+    return {
+      timeline: null as any,
+      rounds: null as any,
+      duration_sec: 30,
+      warning:
+        "simulate=1 requested, but log.p1_cards/log.p2_cards not found. Provide decks in match.log or implement /api/pvp/enqueue to write expanded timeline.",
+    };
+  }
+
+  const seed = hash32(String(matchId));
+  const rand = mulberry32(seed);
+
+  // pick meta once
+  const needIds = [...p1All, ...p2All];
+  const meta = await loadCardsMeta(needIds);
+
+  const timeline: any[] = [];
+  const rounds: any[] = [];
+
+  // 3 rounds, 10 seconds each (fits your default)
+  const roundCount = 3;
+  const secPerRound = 10;
+
+  let p1Wins = 0;
+  let p2Wins = 0;
+
+  for (let r = 1; r <= roundCount; r++) {
+    const t0 = (r - 1) * secPerRound;
+
+    timeline.push({ t: t0 + 0.0, type: "round_start", round: r });
+
+    // reveal 5 cards each (deterministic but “random enough”)
+    const p1Pick = pickNDeterministic(p1All, 5, rand);
+    const p2Pick = pickNDeterministic(p2All, 5, rand);
+
+    const p1Full = buildCardsFull(p1Pick, meta);
+    const p2Full = buildCardsFull(p2Pick, meta);
+
+    timeline.push({
+      t: t0 + 2.0,
+      type: "reveal",
+      round: r,
+      p1_cards: p1Pick,
+      p2_cards: p2Pick,
+      p1_cards_full: p1Full,
+      p2_cards_full: p2Full,
+    });
+
+    const p1Score = sumPower(p1Full);
+    const p2Score = sumPower(p2Full);
+
+    timeline.push({ t: t0 + 5.5, type: "score", round: r, p1: p1Score, p2: p2Score });
+
+    let winner: "p1" | "p2" | "draw" = "draw";
+    if (p1Score > p2Score) {
+      winner = "p1";
+      p1Wins++;
+    } else if (p2Score > p1Score) {
+      winner = "p2";
+      p2Wins++;
+    }
+
+    timeline.push({ t: t0 + 8.5, type: "round_end", round: r, winner });
+
+    rounds.push({
+      p1: { total: p1Score },
+      p2: { total: p2Score },
+      winner,
+    });
+  }
+
+  // optional: final result summary for debugging
+  let matchWinner: "p1" | "p2" | "draw" = "draw";
+  if (p1Wins > p2Wins) matchWinner = "p1";
+  else if (p2Wins > p1Wins) matchWinner = "p2";
+
+  return {
+    timeline,
+    rounds,
+    duration_sec: roundCount * secPerRound,
+    match_winner: matchWinner,
+    warning: null as any,
+  };
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const id = url.searchParams.get("id");
+    const simulateFlag = url.searchParams.get("simulate");
+    const simulate = simulateFlag === "1" || simulateFlag === "true";
+
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
     const { data: match, error } = await supabaseAdmin
@@ -119,17 +267,48 @@ export async function GET(req: Request) {
     if (!match) return NextResponse.json({ match: null });
 
     const logObj = (parseMaybeJson((match as any).log) ?? {}) as any;
-    const timeline = Array.isArray(logObj?.timeline) ? logObj.timeline : null;
+    const timelineExisting = Array.isArray(logObj?.timeline) ? logObj.timeline : null;
 
-    // If no timeline — don't simulate here (read-only). Return warning for debug.
-    if (!timeline) {
+    // If no timeline — keep read-only by default, BUT allow debug simulation.
+    if (!timelineExisting) {
+      if (!simulate) {
+        return NextResponse.json({
+          match: { ...(match as any), log: logObj },
+          warning: "match.log.timeline is missing. Add ?simulate=1 for debug timeline OR ensure /api/pvp/enqueue writes expanded timeline.",
+        });
+      }
+
+      const sim = await simulateTimelineV0({
+        matchId: String((match as any).id),
+        logObj,
+        p1_user_id: String((match as any).p1_user_id),
+        p2_user_id: String((match as any).p2_user_id),
+      });
+
+      if (!sim.timeline) {
+        return NextResponse.json({
+          match: { ...(match as any), log: logObj },
+          warning: sim.warning || "simulate=1 failed",
+        });
+      }
+
+      const newLog = {
+        ...logObj,
+        duration_sec: sim.duration_sec,
+        timeline: sim.timeline,
+        rounds: sim.rounds,
+        match_winner: sim.match_winner,
+        simulated: true,
+      };
+
       return NextResponse.json({
-        match: { ...(match as any), log: logObj },
-        warning: "match.log.timeline is missing. Ensure /api/pvp/enqueue writes expanded timeline.",
+        match: { ...(match as any), log: newLog },
+        warning: "DEBUG: simulated timeline (not persisted). Implement enqueue to persist real battle timeline.",
       });
     }
 
     // Ensure reveal contains cards_full for UI
+    const timeline = timelineExisting;
     const needMetaIds: string[] = [];
     for (const e of timeline) {
       if (!e || e.type !== "reveal") continue;
@@ -141,9 +320,8 @@ export async function GET(req: Request) {
       if (!hasP2Full) for (const cid of toStringArray(e.p2_cards)) needMetaIds.push(cid);
     }
 
-    let meta: Map<string, CardMeta> | null = null;
     if (needMetaIds.length) {
-      meta = await loadCardsMeta(needMetaIds);
+      const meta = await loadCardsMeta(needMetaIds);
       for (const e of timeline) {
         if (!e || e.type !== "reveal") continue;
 
