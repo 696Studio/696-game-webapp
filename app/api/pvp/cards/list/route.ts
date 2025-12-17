@@ -6,11 +6,48 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const telegramId = url.searchParams.get("telegramId");
 
-    if (!telegramId) {
-      return NextResponse.json({ error: "telegramId required" }, { status: 400 });
+    // 1) Load ALL cards (meta)
+    // ✅ include combat fields too (they already exist in your cards table)
+    const { data: cardsData, error: cardsErr } = await supabaseAdmin
+      .from("cards")
+      .select(
+        "id, name_ru, name_en, rarity, base_power, image_url, item_id, hp, initiative, ability_id, ability_params, tags"
+      )
+      .order("created_at", { ascending: true });
+
+    if (cardsErr) {
+      return NextResponse.json({ error: cardsErr.message }, { status: 500 });
     }
 
-    // 1) Resolve user
+    const cardsList = (cardsData ?? []).map((c: any) => ({
+      id: String(c.id), // TEXT card id (pvp_deck_cards.card_id)
+      name: c.name_ru ?? c.name_en ?? "Card",
+      name_ru: c.name_ru ?? null,
+      name_en: c.name_en ?? null,
+      rarity: c.rarity ?? "common",
+      base_power: Number(c.base_power || 0),
+      image_url: c.image_url ?? null,
+
+      // combat stats (optional but present in your schema)
+      hp: c.hp != null ? Number(c.hp) : null,
+      initiative: c.initiative != null ? Number(c.initiative) : null,
+      ability_id: c.ability_id != null ? String(c.ability_id) : null,
+      ability_params: c.ability_params ?? null,
+      tags: c.tags ?? null,
+
+      // keep for debug / ownership merge
+      item_id: c.item_id ?? null,
+
+      // default
+      owned_copies: 0,
+    }));
+
+    // ✅ If no telegramId — return meta anyway (don’t error)
+    if (!telegramId) {
+      return NextResponse.json({ ok: true, cards: cardsList, note: "telegramId not provided, ownership skipped" });
+    }
+
+    // 2) Resolve user by telegramId
     const { data: userRow, error: userErr } = await supabaseAdmin
       .from("users")
       .select("id")
@@ -21,20 +58,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: userErr.message }, { status: 500 });
     }
     if (!userRow) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      // still return meta (so UI doesn’t die), but tell the truth
+      return NextResponse.json({ ok: true, cards: cardsList, note: "User not found, ownership set to 0" });
     }
 
-    // 2) Load ALL cards (so UI can show "100 cards" even if user owns 0)
-    const { data: cardsData, error: cardsErr } = await supabaseAdmin
-      .from("cards")
-      .select("id, name_ru, name_en, rarity, base_power, image_url, item_id")
-      .order("created_at", { ascending: true });
-
-    if (cardsErr) {
-      return NextResponse.json({ error: cardsErr.message }, { status: 500 });
-    }
-
-    // 3) Load ownership from user_cards (fast + correct, has copies)
+    // 3) Load ownership from user_cards (has item_id + copies)
     const { data: ownedRows, error: ownedErr } = await supabaseAdmin
       .from("user_cards")
       .select("item_id, copies")
@@ -51,27 +79,15 @@ export async function GET(req: Request) {
       ownedByItemId.set(k, c);
     }
 
-    // 4) Merge: card meta + owned_copies
-    const cards = (cardsData ?? []).map((c: any) => {
-      const itemId = String(c.item_id);
-      const owned = ownedByItemId.get(itemId) || 0;
-
-      return {
-        id: c.id, // TEXT card id (your pvp_deck_cards.card_id)
-        name: c.name_ru ?? c.name_en ?? "Card",
-        rarity: c.rarity,
-        base_power: Number(c.base_power || 0),
-        image_url: c.image_url ?? null,
-        owned_copies: owned, // 0 if not owned (this is what we need)
-        item_id: c.item_id, // keep for debug
-      };
+    // 4) Merge owned_copies
+    const merged = cardsList.map((c: any) => {
+      const itemId = c.item_id ? String(c.item_id) : "";
+      const owned = itemId ? ownedByItemId.get(itemId) || 0 : 0;
+      return { ...c, owned_copies: owned };
     });
 
-    return NextResponse.json({ ok: true, cards });
+    return NextResponse.json({ ok: true, cards: merged });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Unknown error" }, { status: 500 });
   }
 }
