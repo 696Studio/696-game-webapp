@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -21,14 +21,6 @@ export const metadata: Metadata = {
   description: "Telegram Mini App",
 };
 
-// iOS WebView: reduce weird zoom/gesture side-effects
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-};
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -46,10 +38,25 @@ export default function RootLayout({
         ].join(" ")}
         style={{ isolation: "isolate" }}
       >
+        {/* TG WebApp */}
         <Script
           src="https://telegram.org/js/telegram-web-app.js"
           strategy="beforeInteractive"
         />
+
+        {/* Detect iOS Telegram WebView -> add class */}
+        <Script id="tg-ios-detect" strategy="beforeInteractive">
+          {`
+(function () {
+  try {
+    var ua = navigator.userAgent || "";
+    var isIOS = /iPad|iPhone|iPod/.test(ua);
+    // Telegram iOS webview also has "Telegram" in UA most of the time
+    if (isIOS) document.documentElement.classList.add("tg-ios");
+  } catch (e) {}
+})();
+          `}
+        </Script>
 
         <GameSessionProvider>
           {children}
