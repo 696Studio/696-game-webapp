@@ -49,7 +49,7 @@ function dbgPush(msg: string) {
     const raw = localStorage.getItem(DBG_KEY);
     const arr = raw ? (JSON.parse(raw) as string[]) : [];
     arr.push(line);
-    const trimmed = arr.slice(-120);
+    const trimmed = arr.slice(-160);
     localStorage.setItem(DBG_KEY, JSON.stringify(trimmed));
   } catch {
     // ignore
@@ -128,11 +128,6 @@ export default function PvpPage() {
       }`
     );
 
-    // close Debug by default on narrow screens (so it won't cover taps)
-    try {
-      if (window.innerWidth < 430) setDbgOpen(false);
-    } catch {}
-
     // detect reload count
     try {
       const k = "__pvp_reload_count__";
@@ -140,6 +135,60 @@ export default function PvpPage() {
       sessionStorage.setItem(k, String(n));
       dbgPush(`RELOAD_COUNT=${n}`);
     } catch {}
+
+    // ---- TAP TRACER (capture phase) ----
+    const describeTarget = (t: any) => {
+      try {
+        const tag = t?.tagName ? String(t.tagName).toLowerCase() : "unknown";
+        const id = t?.id ? `#${t.id}` : "";
+        const cls =
+          t?.className && typeof t.className === "string"
+            ? "." + t.className.trim().split(/\s+/).slice(0, 3).join(".")
+            : "";
+        const href =
+          t?.getAttribute?.("href") || t?.href
+            ? ` href=${t.getAttribute?.("href") || t.href}`
+            : "";
+        const type = t?.getAttribute?.("type")
+          ? ` type=${t.getAttribute("type")}`
+          : "";
+        return `${tag}${id}${cls}${href}${type}`;
+      } catch {
+        return "unknown";
+      }
+    };
+
+    const capPointerDown = (ev: any) => {
+      dbgPush(
+        `CAP_POINTERDOWN target=${describeTarget(ev?.target)} x=${ev?.clientX} y=${ev?.clientY}`
+      );
+      setDbg(dbgRead());
+    };
+
+    const capClick = (ev: any) => {
+      dbgPush(`CAP_CLICK target=${describeTarget(ev?.target)}`);
+      setDbg(dbgRead());
+    };
+
+    const capTouchStart = (ev: any) => {
+      const t0 = ev?.touches?.[0];
+      dbgPush(
+        `CAP_TOUCHSTART target=${describeTarget(ev?.target)} x=${
+          t0?.clientX ?? "?"
+        } y=${t0?.clientY ?? "?"}`
+      );
+      setDbg(dbgRead());
+    };
+
+    const onPageShow = (ev: PageTransitionEvent) => {
+      dbgPush(`PAGESHOW persisted=${String((ev as any)?.persisted)}`);
+      setDbg(dbgRead());
+    };
+
+    document.addEventListener("pointerdown", capPointerDown, true);
+    document.addEventListener("click", capClick, true);
+    document.addEventListener("touchstart", capTouchStart, true);
+    window.addEventListener("pageshow", onPageShow);
 
     const onErr = (ev: ErrorEvent) => {
       dbgPush(
@@ -176,6 +225,11 @@ export default function PvpPage() {
     setDbg(dbgRead());
 
     return () => {
+      document.removeEventListener("pointerdown", capPointerDown, true);
+      document.removeEventListener("click", capClick, true);
+      document.removeEventListener("touchstart", capTouchStart, true);
+      window.removeEventListener("pageshow", onPageShow);
+
       window.removeEventListener("error", onErr);
       window.removeEventListener("unhandledrejection", onRej);
       document.removeEventListener("visibilitychange", onVis);
@@ -855,7 +909,7 @@ export default function PvpPage() {
               </button>
             </div>
           </div>
-          <pre>{dbg.slice(-40).join("\n")}</pre>
+          <pre>{dbg.slice(-60).join("\n")}</pre>
         </div>
       )}
 

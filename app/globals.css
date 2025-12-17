@@ -74,7 +74,7 @@
 
   --fx-rare: rgba(74, 163, 255, 0.22);
   --fx-epic: rgba(178, 92, 255, 0.22);
-  --fx-legendary: rgba(255, 204, 87, 0.20);
+  --fx-legendary: rgba(255, 204, 87, 0.2);
 
   /* computed per element via classes */
   --fxGlow: rgba(255, 255, 255, 0.14);
@@ -120,19 +120,31 @@
 
     /* Phase B tweak for light */
     --noise-opacity: 0.035;
-    --shine-opacity: 0.10;
+    --shine-opacity: 0.1;
 
     --fx-rare: rgba(0, 109, 255, 0.14);
     --fx-epic: rgba(123, 45, 255, 0.14);
     --fx-legendary: rgba(176, 106, 0, 0.12);
 
-    --fxGlow: rgba(0, 0, 0, 0.10);
+    --fxGlow: rgba(0, 0, 0, 0.1);
   }
 }
 
 html,
 body {
   height: 100%;
+}
+
+/* ---------- iOS WebView safety / touch defaults ---------- */
+html,
+body {
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -158,10 +170,21 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(950px 520px at 55% -8%, rgba(88, 240, 255, 0.16) 0%, transparent 60%),
-    radial-gradient(840px 500px at 13% 9%, rgba(184, 92, 255, 0.13) 0%, transparent 60%),
-    radial-gradient(960px 560px at 88% 20%, rgba(255, 204, 87, 0.11) 0%, transparent 60%),
+  background: radial-gradient(
+      950px 520px at 55% -8%,
+      rgba(88, 240, 255, 0.16) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      840px 500px at 13% 9%,
+      rgba(184, 92, 255, 0.13) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      960px 560px at 88% 20%,
+      rgba(255, 204, 87, 0.11) 0%,
+      transparent 60%
+    ),
     linear-gradient(to bottom, rgba(52, 64, 81, 0.03) 0%, transparent 36%);
   opacity: 0.96;
   z-index: 0;
@@ -173,14 +196,18 @@ body::after {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(
+  background: radial-gradient(
       1200px 700px at 50% 20%,
       transparent 0%,
       rgba(0, 0, 0, 0.22) 68%,
       rgba(0, 0, 0, 0.48) 100%
     ),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.18), transparent 40%, rgba(0, 0, 0, 0.22));
+    linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.18),
+      transparent 40%,
+      rgba(0, 0, 0, 0.22)
+    );
   opacity: 0.9;
   mix-blend-mode: multiply;
   z-index: 0;
@@ -197,9 +224,14 @@ body > * {
    - Optional disable: add class "no-noise" to body
 -------------------------------------------------------- */
 body:not(.no-noise) {
-  background-image:
-    radial-gradient(rgba(255, 255, 255, var(--noise-opacity)) 1px, transparent 1px),
-    radial-gradient(rgba(0, 0, 0, calc(var(--noise-opacity) * 0.55)) 1px, transparent 1px);
+  background-image: radial-gradient(
+      rgba(255, 255, 255, var(--noise-opacity)) 1px,
+      transparent 1px
+    ),
+    radial-gradient(
+      rgba(0, 0, 0, calc(var(--noise-opacity) * 0.55)) 1px,
+      transparent 1px
+    );
   background-size: 28px 28px, 34px 34px;
   background-position: 0 0, 12px 18px;
   background-attachment: fixed, fixed;
@@ -257,9 +289,15 @@ body:not(.no-noise) {
   }
 
   @keyframes ui-ambient-float {
-    0% { transform: translateY(0); }
-    50% { transform: translateY(-4px); }
-    100% { transform: translateY(0); }
+    0% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-4px);
+    }
+    100% {
+      transform: translateY(0);
+    }
   }
 
   @keyframes ui-glow-pulse {
@@ -290,22 +328,27 @@ body:not(.no-noise) {
     color: var(--muted);
   }
 
-  .ui-muted { color: var(--muted); }
-  .ui-subtle { color: var(--muted-2); }
+  .ui-muted {
+    color: var(--muted);
+  }
+  .ui-subtle {
+    color: var(--muted-2);
+  }
 
   /* Card base */
   .ui-card {
     position: relative;
-    background: linear-gradient(112deg, var(--panel) 80%, rgba(88, 240, 255, 0.02) 100%);
+    background: linear-gradient(
+      112deg,
+      var(--panel) 80%,
+      rgba(88, 240, 255, 0.02) 100%
+    );
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
     backdrop-filter: blur(12px) saturate(1.1);
-    box-shadow:
-      var(--shadow-soft),
-      0 2px 10px rgba(88, 240, 255, 0.04),
+    box-shadow: var(--shadow-soft), 0 2px 10px rgba(88, 240, 255, 0.04),
       0 13px 48px rgba(0, 0, 0, 0.24);
-    transition:
-      box-shadow var(--dur-2) var(--ease),
+    transition: box-shadow var(--dur-2) var(--ease),
       transform var(--dur-2) var(--ease);
   }
 
@@ -315,13 +358,12 @@ body:not(.no-noise) {
     inset: 0;
     border-radius: inherit;
     pointer-events: none;
-    background:
-      linear-gradient(
-        145deg,
-        rgba(255, 255, 255, 0.18) 0%,
-        rgba(255, 255, 255, 0.06) 22%,
-        transparent 44%
-      );
+    background: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.06) 22%,
+      transparent 44%
+    );
     opacity: 0.55;
     mix-blend-mode: screen;
   }
@@ -332,28 +374,23 @@ body:not(.no-noise) {
     inset: 0;
     border-radius: inherit;
     pointer-events: none;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
     opacity: 0.9;
   }
 
   .ui-card:hover {
-    box-shadow:
-      0 6px 24px rgba(24, 32, 64, 0.22),
-      0 4px 22px rgba(88, 240, 255, 0.08),
-      var(--shadow-deep);
+    box-shadow: 0 6px 24px rgba(24, 32, 64, 0.22),
+      0 4px 22px rgba(88, 240, 255, 0.08), var(--shadow-deep);
     transform: translateY(-3px) scale(1.012);
   }
 
   .ui-card:focus-visible {
-    box-shadow:
-      0 6px 24px rgba(24, 32, 64, 0.22),
-      0 4px 22px rgba(88, 240, 255, 0.08),
-      var(--shadow-deep);
+    box-shadow: 0 6px 24px rgba(24, 32, 64, 0.22),
+      0 4px 22px rgba(88, 240, 255, 0.08), var(--shadow-deep);
   }
 
   .ui-card:active {
-    box-shadow:
-      0 2px 10px rgba(24, 32, 64, 0.12),
+    box-shadow: 0 2px 10px rgba(24, 32, 64, 0.12),
       0 2px 10px rgba(88, 240, 255, 0.03),
       0 13px 32px rgba(0, 0, 0, 0.18);
     transform: scale(0.98);
@@ -362,16 +399,18 @@ body:not(.no-noise) {
   /* Strong card */
   .ui-card-strong {
     position: relative;
-    background: linear-gradient(108deg, var(--panel-2) 70%, rgba(184, 92, 255, 0.025) 100%);
+    background: linear-gradient(
+      108deg,
+      var(--panel-2) 70%,
+      rgba(184, 92, 255, 0.025) 100%
+    );
     border: 2px solid var(--border);
     border-radius: var(--r-lg);
     backdrop-filter: blur(16px) saturate(1.14);
-    box-shadow:
-      0 5px 19px rgba(24, 32, 64, 0.19),
+    box-shadow: 0 5px 19px rgba(24, 32, 64, 0.19),
       0 4px 16px rgba(184, 92, 255, 0.07),
       0 20px 70px rgba(50, 30, 80, 0.19);
-    transition:
-      box-shadow var(--dur-2) var(--ease),
+    transition: box-shadow var(--dur-2) var(--ease),
       transform var(--dur-2) var(--ease);
   }
 
@@ -381,35 +420,31 @@ body:not(.no-noise) {
     inset: 0;
     border-radius: inherit;
     pointer-events: none;
-    background:
-      linear-gradient(
-        145deg,
-        rgba(255, 255, 255, 0.20) 0%,
-        rgba(255, 255, 255, 0.07) 22%,
-        transparent 48%
-      );
+    background: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      rgba(255, 255, 255, 0.07) 22%,
+      transparent 48%
+    );
     opacity: 0.6;
     mix-blend-mode: screen;
   }
 
   .ui-card-strong:hover {
-    box-shadow:
-      0 12px 36px rgba(88, 240, 255, 0.12),
+    box-shadow: 0 12px 36px rgba(88, 240, 255, 0.12),
       0 10px 38px rgba(184, 92, 255, 0.07),
       0 40px 100px rgba(50, 30, 80, 0.2);
     transform: translateY(-3px) scale(1.014);
   }
 
   .ui-card-strong:focus-visible {
-    box-shadow:
-      0 12px 36px rgba(88, 240, 255, 0.12),
+    box-shadow: 0 12px 36px rgba(88, 240, 255, 0.12),
       0 10px 38px rgba(184, 92, 255, 0.07),
       0 40px 100px rgba(50, 30, 80, 0.2);
   }
 
   .ui-card-strong:active {
-    box-shadow:
-      0 6px 15px rgba(88, 240, 255, 0.08),
+    box-shadow: 0 6px 15px rgba(88, 240, 255, 0.08),
       0 8px 18px rgba(184, 92, 255, 0.04),
       0 12px 40px rgba(50, 30, 80, 0.17);
     transform: scale(0.983);
@@ -430,7 +465,8 @@ body:not(.no-noise) {
     text-shadow: 0 1px 3px rgba(30, 40, 70, 0.1);
     letter-spacing: 0.08em;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.09);
-    transition: box-shadow var(--dur-1) var(--ease), filter var(--dur-2) var(--ease);
+    transition: box-shadow var(--dur-1) var(--ease),
+      filter var(--dur-2) var(--ease);
   }
 
   .ui-pill::after {
@@ -455,8 +491,7 @@ body:not(.no-noise) {
     color: var(--text);
     background: rgba(255, 255, 255, 0.06);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
-    transition:
-      transform var(--dur-2) var(--ease),
+    transition: transform var(--dur-2) var(--ease),
       background var(--dur-2) var(--ease),
       opacity var(--dur-2) var(--ease),
       box-shadow var(--dur-2) var(--ease),
@@ -496,8 +531,7 @@ body:not(.no-noise) {
 
   .ui-btn:hover {
     background: rgba(88, 240, 255, 0.1);
-    box-shadow:
-      0 5px 19px rgba(88, 240, 255, 0.13),
+    box-shadow: 0 5px 19px rgba(88, 240, 255, 0.13),
       0 18px 60px rgba(0, 0, 0, 0.18);
     filter: brightness(1.02);
   }
@@ -523,14 +557,12 @@ body:not(.no-noise) {
       rgba(138, 210, 255, 0.95) 64%,
       rgba(184, 92, 255, 0.92) 100%
     );
-    box-shadow:
-      0 7px 26px rgba(88, 240, 255, 0.15),
+    box-shadow: 0 7px 26px rgba(88, 240, 255, 0.15),
       0 2px 8px rgba(88, 240, 255, 0.13),
       0 0.5px 4px rgba(184, 92, 255, 0.075);
     text-shadow: 0 0.5px 3.5px rgba(88, 240, 255, 0.14);
     letter-spacing: 0.09em;
-    transition:
-      background var(--dur-1) var(--ease),
+    transition: background var(--dur-1) var(--ease),
       box-shadow var(--dur-2) var(--ease),
       color var(--dur-1) var(--ease),
       transform var(--dur-2) var(--ease),
@@ -544,29 +576,30 @@ body:not(.no-noise) {
       rgba(138, 210, 255, 1) 64%,
       rgba(184, 92, 255, 1) 100%
     );
-    box-shadow:
-      0 14px 44px rgba(88, 240, 255, 0.21),
+    box-shadow: 0 14px 44px rgba(88, 240, 255, 0.21),
       0 8px 24px rgba(184, 92, 255, 0.15),
       0 30px 90px rgba(0, 0, 0, 0.2);
     filter: brightness(1.04);
   }
 
   .ui-btn-primary:active {
-    box-shadow:
-      0 3px 10px rgba(88, 240, 255, 0.15),
+    box-shadow: 0 3px 10px rgba(88, 240, 255, 0.15),
       0 1.5px 6px rgba(184, 92, 255, 0.07);
   }
 
-  .ui-btn-ghost { background: transparent; }
+  .ui-btn-ghost {
+    background: transparent;
+  }
 
   .ui-btn-ghost:hover {
     background: rgba(255, 255, 255, 0.06);
-    box-shadow:
-      0 4px 14px rgba(0, 0, 0, 0.16),
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16),
       0 10px 44px rgba(0, 0, 0, 0.12);
   }
 
-  .ui-grid { @apply grid gap-4; }
+  .ui-grid {
+    @apply grid gap-4;
+  }
 
   /* Progress */
   .ui-progress {
@@ -580,33 +613,36 @@ body:not(.no-noise) {
 
   .ui-progress > div {
     height: 100%;
-    background: linear-gradient(90deg, rgba(88, 240, 255, 0.95), rgba(184, 92, 255, 0.9));
+    background: linear-gradient(
+      90deg,
+      rgba(88, 240, 255, 0.95),
+      rgba(184, 92, 255, 0.9)
+    );
     box-shadow: 0 0 18px rgba(88, 240, 255, 0.12);
   }
 
   /* ---------------------------------
      Rarity helpers (base)
   ---------------------------------- */
-  .ui-rarity-common { border-color: rgba(255, 255, 255, 0.2); }
+  .ui-rarity-common {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
 
   .ui-rarity-rare {
     border-color: rgba(74, 163, 255, 0.42);
-    box-shadow:
-      0 16px 60px rgba(74, 163, 255, 0.11),
+    box-shadow: 0 16px 60px rgba(74, 163, 255, 0.11),
       0 0 0 1px rgba(74, 163, 255, 0.08);
   }
 
   .ui-rarity-epic {
     border-color: rgba(178, 92, 255, 0.44);
-    box-shadow:
-      0 18px 70px rgba(178, 92, 255, 0.13),
+    box-shadow: 0 18px 70px rgba(178, 92, 255, 0.13),
       0 0 0 1px rgba(178, 92, 255, 0.09);
   }
 
   .ui-rarity-legendary {
     border-color: rgba(255, 204, 87, 0.48);
-    box-shadow:
-      0 20px 80px rgba(255, 204, 87, 0.13),
+    box-shadow: 0 20px 80px rgba(255, 204, 87, 0.13),
       0 0 0 1px rgba(255, 204, 87, 0.09);
   }
 
@@ -614,10 +650,12 @@ body:not(.no-noise) {
      FX-ready hooks
   ---------------------------------- */
   .ui-glow-cyan {
-    box-shadow: 0 0 0 1px rgba(88, 240, 255, 0.12), 0 18px 80px var(--glow-cyan);
+    box-shadow: 0 0 0 1px rgba(88, 240, 255, 0.12),
+      0 18px 80px var(--glow-cyan);
   }
   .ui-glow-violet {
-    box-shadow: 0 0 0 1px rgba(184, 92, 255, 0.12), 0 18px 80px var(--glow-violet);
+    box-shadow: 0 0 0 1px rgba(184, 92, 255, 0.12),
+      0 18px 80px var(--glow-violet);
   }
 
   /* -------------------------------------------------------
@@ -627,26 +665,32 @@ body:not(.no-noise) {
   -------------------------------------------------------- */
   .ui-fx {
     --fxGlow: rgba(255, 255, 255, 0.14);
-    filter: drop-shadow(0 0 0 rgba(0,0,0,0));
+    filter: drop-shadow(0 0 0 rgba(0, 0, 0, 0));
   }
 
-  .ui-fx-common { --fxGlow: rgba(255, 255, 255, 0.14); }
-  .ui-fx-rare { --fxGlow: var(--fx-rare); }
-  .ui-fx-epic { --fxGlow: var(--fx-epic); }
-  .ui-fx-legendary { --fxGlow: var(--fx-legendary); }
+  .ui-fx-common {
+    --fxGlow: rgba(255, 255, 255, 0.14);
+  }
+  .ui-fx-rare {
+    --fxGlow: var(--fx-rare);
+  }
+  .ui-fx-epic {
+    --fxGlow: var(--fx-epic);
+  }
+  .ui-fx-legendary {
+    --fxGlow: var(--fx-legendary);
+  }
 
   /* Outer aura for common elements */
   .ui-btn.ui-fx,
   .ui-pill.ui-fx {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--fxGlow) 44%, transparent),
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--fxGlow) 44%, transparent),
       0 18px 90px var(--fxGlow);
   }
 
   .ui-btn.ui-fx:hover,
   .ui-pill.ui-fx:hover {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--fxGlow) 64%, transparent),
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--fxGlow) 64%, transparent),
       0 22px 120px var(--fxGlow);
     filter: brightness(1.03) saturate(1.08);
   }
@@ -654,8 +698,7 @@ body:not(.no-noise) {
   /* Shine WITHOUT extra pseudo elements:
      - we inject animated streak into EXISTING ::before (btn) and ::after (pill) */
   .ui-btn.ui-fx::before {
-    background:
-      linear-gradient(
+    background: linear-gradient(
         to bottom,
         rgba(255, 255, 255, 0.22),
         rgba(255, 255, 255, 0.08),
@@ -664,7 +707,7 @@ body:not(.no-noise) {
       linear-gradient(
         90deg,
         transparent,
-        color-mix(in srgb, var(--fxGlow) 55%, rgba(255,255,255,0.16)),
+        color-mix(in srgb, var(--fxGlow) 55%, rgba(255, 255, 255, 0.16)),
         transparent
       );
     background-size: auto, 220% 100%;
@@ -678,15 +721,13 @@ body:not(.no-noise) {
 
   .ui-pill.ui-fx::after {
     /* keep rim light + add a subtle moving shine */
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.14);
-    background:
-      linear-gradient(
-        90deg,
-        transparent,
-        color-mix(in srgb, var(--fxGlow) 42%, rgba(255,255,255,0.14)),
-        transparent
-      );
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--fxGlow) 42%, rgba(255, 255, 255, 0.14)),
+      transparent
+    );
     background-size: 220% 100%;
     background-position: -140% 0%;
     opacity: 0.95;
@@ -707,24 +748,46 @@ body:not(.no-noise) {
    Small utilities
 -------------------------- */
 @layer utilities {
-  .text-696 { letter-spacing: 0.35em; }
+  .text-696 {
+    letter-spacing: 0.35em;
+  }
 
   @keyframes ui-shimmer {
-    0% { transform: translateX(-30%) rotate(8deg); opacity: 0; }
-    20% { opacity: 0.35; }
-    60% { opacity: 0.22; }
-    100% { transform: translateX(120%) rotate(8deg); opacity: 0; }
+    0% {
+      transform: translateX(-30%) rotate(8deg);
+      opacity: 0;
+    }
+    20% {
+      opacity: 0.35;
+    }
+    60% {
+      opacity: 0.22;
+    }
+    100% {
+      transform: translateX(120%) rotate(8deg);
+      opacity: 0;
+    }
   }
 
   @keyframes ui-float {
-    0% { transform: translateY(0); }
-    50% { transform: translateY(-4px); }
-    100% { transform: translateY(0); }
+    0% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-4px);
+    }
+    100% {
+      transform: translateY(0);
+    }
   }
 
-  .ui-float { animation: ui-float 3.6s var(--ease-out) infinite; }
+  .ui-float {
+    animation: ui-float 3.6s var(--ease-out) infinite;
+  }
 
-  .ui-ambient { animation: ui-ambient-float 4.2s var(--ease-out) infinite; }
+  .ui-ambient {
+    animation: ui-ambient-float 4.2s var(--ease-out) infinite;
+  }
 
   .ui-shimmer-once {
     position: relative;
@@ -736,9 +799,47 @@ body:not(.no-noise) {
     position: absolute;
     inset: -30%;
     pointer-events: none;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.18),
+      transparent
+    );
     transform: translateX(-140%) rotate(14deg);
     opacity: 0.12;
     animation: ui-shimmer-sweep 2.1s var(--ease-out) 1;
+  }
+}
+
+/* =========================================================
+   iOS Telegram WebView “anti-reload” mode (SAFE OVERRIDES)
+   - iOS Safari/WebView sometimes freaks out on:
+     - background-attachment: fixed
+     - heavy fixed pseudo layers + blur
+   ========================================================= */
+@supports (-webkit-touch-callout: none) {
+  /* kill fixed background attachments on iOS */
+  body:not(.no-noise) {
+    background-attachment: scroll, scroll;
+  }
+
+  /* reduce GPU pressure: keep look but lighter */
+  body::before,
+  body::after {
+    opacity: 0.7;
+    transform: translateZ(0);
+    will-change: transform;
+  }
+
+  /* iOS scroll feel */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* blur can be unstable in TG webview */
+  .ui-card,
+  .ui-card-strong,
+  .ui-pill {
+    backdrop-filter: none;
   }
 }
