@@ -97,7 +97,6 @@ export default function PvpPage() {
   const [matchId, setMatchId] = useState<string | null>(null);
 
   const pushedRef = useRef<string | null>(null);
-
   const editedRef = useRef(false);
   const loadedDeckForTelegramIdRef = useRef<string | null>(null);
 
@@ -117,10 +116,13 @@ export default function PvpPage() {
   useEffect(() => {
     dbgPush("PVP_MOUNT");
     dbgPush(
-      `ENV isTelegramEnv=${String(isTelegramEnv)} telegramId=${
-        telegramId ? "yes" : "no"
-      }`
+      `ENV isTelegramEnv=${String(isTelegramEnv)} telegramId=${telegramId ? "yes" : "no"}`
     );
+
+    // close Debug by default on narrow screens (so it won't cover taps)
+    try {
+      if (window.innerWidth < 430) setDbgOpen(false);
+    } catch {}
 
     // detect reload count
     try {
@@ -138,7 +140,7 @@ export default function PvpPage() {
     };
 
     const onRej = (ev: PromiseRejectionEvent) => {
-      dbgPush(`UNHANDLED_REJECTION: ${safeErr((ev as any).reason)}`);
+      dbgPush(`UNHANDLED_REJECTION: ${safeErr(ev.reason)}`);
       setDbg(dbgRead());
     };
 
@@ -156,42 +158,11 @@ export default function PvpPage() {
       dbgPush("BEFOREUNLOAD");
     };
 
-    // ---- click/touch capture logger (shows REAL target path on iOS) ----
-    const logPath = (label: string, e: any) => {
-      try {
-        const path = (e?.composedPath?.() || []) as any[];
-        const picked = path
-          .slice(0, 10)
-          .map((n) => {
-            const tag = n?.tagName ? String(n.tagName).toLowerCase() : "";
-            const href = n?.getAttribute?.("href");
-            const type = n?.getAttribute?.("type");
-            return tag
-              ? `${tag}${href ? `[href=${href}]` : ""}${type ? `[type=${type}]` : ""}`
-              : String(n?.constructor?.name || "node");
-          })
-          .join(" > ");
-
-        const t = e?.target as any;
-        const tTag = t?.tagName ? String(t.tagName).toLowerCase() : "unknown";
-        const tHref = t?.getAttribute?.("href");
-
-        dbgPush(`${label} target=${tTag}${tHref ? ` href=${tHref}` : ""} path=${picked}`);
-        setDbg(dbgRead());
-      } catch {}
-    };
-
-    const onClickCap = (e: any) => logPath("CLICK_CAP", e);
-    const onTouchCap = (e: any) => logPath("TOUCH_CAP", e);
-
     window.addEventListener("error", onErr);
     window.addEventListener("unhandledrejection", onRej);
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("beforeunload", onBeforeUnload);
-
-    document.addEventListener("click", onClickCap, true);
-    document.addEventListener("touchstart", onTouchCap, true);
 
     setDbg(dbgRead());
 
@@ -201,10 +172,6 @@ export default function PvpPage() {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("beforeunload", onBeforeUnload);
-
-      document.removeEventListener("click", onClickCap, true);
-      document.removeEventListener("touchstart", onTouchCap, true);
-
       dbgPush("PVP_UNMOUNT");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,9 +180,7 @@ export default function PvpPage() {
   // track session flags changes
   useEffect(() => {
     dbgPush(
-      `CTX loading=${String(loading)} timedOut=${String(
-        timedOut
-      )} error=${error ? "yes" : "no"}`
+      `CTX loading=${String(loading)} timedOut=${String(timedOut)} error=${error ? "yes" : "no"}`
     );
     setDbg(dbgRead());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -231,9 +196,7 @@ export default function PvpPage() {
         `/api/pvp/cards/list?telegramId=${encodeURIComponent(telegramId)}`
       );
       const data = await res.json();
-      dbgPush(
-        `LOAD_CARDS ok status=${res.status} count=${(data?.cards ?? []).length}`
-      );
+      dbgPush(`LOAD_CARDS ok status=${res.status} count=${(data?.cards ?? []).length}`);
       setCards((data?.cards ?? []) as Card[]);
     } catch (e) {
       dbgPush(`LOAD_CARDS fail ${safeErr(e)}`);
@@ -352,9 +315,7 @@ export default function PvpPage() {
       });
       const data = await res.json();
       dbgPush(
-        `ENQUEUE resp status=${res.status} ok=${String(res.ok)} payload=${
-          data?.status || "?"
-        }`
+        `ENQUEUE resp status=${res.status} ok=${String(res.ok)} payload=${data?.status || "?"}`
       );
       if (!res.ok) throw new Error(data?.error || "Enqueue failed");
 
@@ -415,9 +376,9 @@ export default function PvpPage() {
     const tick = async () => {
       try {
         const res = await fetch(
-          `/api/pvp/queue/status?telegramId=${encodeURIComponent(
-            telegramId
-          )}&mode=${encodeURIComponent(MODE)}`
+          `/api/pvp/queue/status?telegramId=${encodeURIComponent(telegramId)}&mode=${encodeURIComponent(
+            MODE
+          )}`
         );
         const data = await res.json();
         if (!alive) return;
@@ -455,16 +416,6 @@ export default function PvpPage() {
     router.push(`/pvp/battle?matchId=${encodeURIComponent(matchId)}`);
   }, [matchId, router]);
 
-  // iOS ghost-tap guard: kill default + bubbling for touch events
-  function killTap(e: any, label: string) {
-    try {
-      e.preventDefault?.();
-      e.stopPropagation?.();
-      dbgPush(label);
-      setDbg(dbgRead());
-    } catch {}
-  }
-
   function addCopy(cardId: string) {
     dbgPush(`ADD_CLICK card=${cardId}`);
     setDbg(dbgRead());
@@ -474,9 +425,7 @@ export default function PvpPage() {
     setDeckMap((prev) => {
       const prevTotal = countTotalCopies(prev);
       const curr = Number(prev[cardId] || 0);
-
       if (prevTotal >= 20) return prev;
-
       const next = clamp(curr + 1, 0, 9);
       return { ...prev, [cardId]: next };
     });
@@ -497,14 +446,20 @@ export default function PvpPage() {
     });
   }
 
+  // single helper: stop iOS weird gesture/defaults for our tiny +/- buttons
+  function hardStop(e: any) {
+    try {
+      e.preventDefault?.();
+      e.stopPropagation?.();
+    } catch {}
+  }
+
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
-          <div className="text-sm ui-subtle">
-            Эта страница работает только внутри Telegram WebApp.
-          </div>
+          <div className="text-sm ui-subtle">Эта страница работает только внутри Telegram WebApp.</div>
         </div>
       </main>
     );
@@ -532,12 +487,8 @@ export default function PvpPage() {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5">
-          <div className="text-lg font-semibold">
-            {timedOut ? "Таймаут" : "Ошибка сессии"}
-          </div>
-          <div className="mt-2 text-sm ui-subtle">
-            Нажми Re-sync и попробуй снова.
-          </div>
+          <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
+          <div className="mt-2 text-sm ui-subtle">Нажми Re-sync и попробуй снова.</div>
           <button
             type="button"
             onClick={() => {
@@ -551,7 +502,7 @@ export default function PvpPage() {
           </button>
 
           <div className="mt-4 text-[10px] ui-subtle whitespace-pre-wrap break-words">
-            {dbg.slice(-12).join("\n")}
+            {dbg.slice(-10).join("\n")}
           </div>
         </div>
       </main>
@@ -591,27 +542,10 @@ export default function PvpPage() {
           position: absolute;
           inset: -22px;
           pointer-events: none;
-          background: radial-gradient(
-              900px 420px at 50% -8%,
-              rgba(88, 240, 255, 0.18) 0%,
-              transparent 62%
-            ),
-            radial-gradient(
-              720px 520px at 70% 34%,
-              rgba(184, 92, 255, 0.14) 0%,
-              transparent 65%
-            ),
-            radial-gradient(
-              720px 520px at 30% 44%,
-              rgba(255, 204, 87, 0.08) 0%,
-              transparent 70%
-            ),
-            linear-gradient(
-              to bottom,
-              rgba(255, 255, 255, 0.04),
-              transparent 40%,
-              rgba(0, 0, 0, 0.22)
-            );
+          background: radial-gradient(900px 420px at 50% -8%, rgba(88, 240, 255, 0.18) 0%, transparent 62%),
+            radial-gradient(720px 520px at 70% 34%, rgba(184, 92, 255, 0.14) 0%, transparent 65%),
+            radial-gradient(720px 520px at 30% 44%, rgba(255, 204, 87, 0.08) 0%, transparent 70%),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.04), transparent 40%, rgba(0, 0, 0, 0.22));
           opacity: 0.95;
         }
 
@@ -621,12 +555,7 @@ export default function PvpPage() {
           inset: -35%;
           pointer-events: none;
           opacity: 0;
-          background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(255, 255, 255, 0.22),
-            transparent
-          );
+          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
           transform: translateX(-120%) rotate(10deg);
           animation: scanSweep 1.9s var(--ease-out) infinite;
           mix-blend-mode: screen;
@@ -636,7 +565,8 @@ export default function PvpPage() {
           opacity: 1;
         }
 
-        /* Debug HUD */
+        /* Debug HUD
+           IMPORTANT: do NOT steal taps from content (iPhone) */
         .dbg-hud {
           position: fixed;
           left: 10px;
@@ -648,9 +578,21 @@ export default function PvpPage() {
           background: rgba(0, 0, 0, 0.65);
           backdrop-filter: blur(8px);
           padding: 10px;
-          max-height: 38vh;
+          max-height: 34vh;
           overflow: auto;
+
+          pointer-events: none; /* 👈 KEY FIX */
+          user-select: none;
+          -webkit-user-select: none;
         }
+        .dbg-hud .dbg-row,
+        .dbg-hud pre {
+          pointer-events: none;
+        }
+        .dbg-hud .dbg-btn {
+          pointer-events: auto; /* 👈 allow buttons only */
+        }
+
         .dbg-hud pre {
           margin: 8px 0 0;
           font-size: 10px;
@@ -681,12 +623,8 @@ export default function PvpPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="ui-subtitle">PVP</div>
-              <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">
-                Авто-бой колод
-              </div>
-              <div className="text-[11px] ui-subtle mt-1">
-                Собери 20 копий → сохрани → нажми “В бой”
-              </div>
+              <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">Авто-бой колод</div>
+              <div className="text-[11px] ui-subtle mt-1">Собери 20 копий → сохрани → нажми “В бой”</div>
             </div>
             <button
               type="button"
@@ -696,7 +634,6 @@ export default function PvpPage() {
                 refreshSession?.();
               }}
               className="ui-btn ui-btn-ghost"
-              style={{ touchAction: "manipulation" }}
             >
               Re-sync
             </button>
@@ -722,13 +659,10 @@ export default function PvpPage() {
                     setDbg(dbgRead());
                   }}
                   className="px-4 py-2 rounded-full border border-[color:var(--border)] bg-[rgba(255,255,255,0.04)] text-sm outline-none"
-                  style={{ minWidth: 220, touchAction: "manipulation" as any }}
+                  style={{ minWidth: 220 }}
                 />
                 <span className="ui-pill">
-                  Копии:{" "}
-                  <span className="ml-2 font-extrabold tabular-nums">
-                    {totalCopies}/20
-                  </span>
+                  Копии: <span className="ml-2 font-extrabold tabular-nums">{totalCopies}/20</span>
                 </span>
               </div>
             </div>
@@ -738,11 +672,7 @@ export default function PvpPage() {
                 type="button"
                 onClick={saveDeck}
                 disabled={saving || !canFight || searching}
-                className={[
-                  "ui-btn",
-                  canFight && !searching ? "ui-btn-primary" : "ui-btn-ghost",
-                ].join(" ")}
-                style={{ touchAction: "manipulation" }}
+                className={["ui-btn", canFight && !searching ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
               >
                 {saving ? "Сохранение…" : "Сохранить колоду"}
               </button>
@@ -752,22 +682,12 @@ export default function PvpPage() {
                   type="button"
                   onClick={findMatch}
                   disabled={queueing || !canFight}
-                  className={[
-                    "ui-btn",
-                    canFight ? "ui-btn-primary" : "ui-btn-ghost",
-                  ].join(" ")}
-                  style={{ touchAction: "manipulation" }}
+                  className={["ui-btn", canFight ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
                 >
                   {queueing ? "Старт…" : "В бой"}
                 </button>
               ) : (
-                <button
-                  type="button"
-                  onClick={cancelSearch}
-                  disabled={queueing}
-                  className="ui-btn ui-btn-ghost"
-                  style={{ touchAction: "manipulation" }}
-                >
+                <button type="button" onClick={cancelSearch} disabled={queueing} className="ui-btn ui-btn-ghost">
                   {queueing ? "…" : "Отмена"}
                 </button>
               )}
@@ -795,10 +715,7 @@ export default function PvpPage() {
                   const copies = deckMap[c.id] || 0;
 
                   return (
-                    <div
-                      key={c.id}
-                      className={["ui-card p-4", rarityFxClass(c.rarity)].join(" ")}
-                    >
+                    <div key={c.id} className={["ui-card p-4", rarityFxClass(c.rarity)].join(" ")}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           <div className="font-extrabold truncate">{c.name}</div>
@@ -807,51 +724,41 @@ export default function PvpPage() {
                           </div>
                           {typeof c.owned_copies === "number" && (
                             <div className="text-[11px] ui-subtle mt-1">
-                              У тебя:{" "}
-                              <span className="font-semibold tabular-nums">
-                                {c.owned_copies}
-                              </span>
+                              У тебя: <span className="font-semibold tabular-nums">{c.owned_copies}</span>
                             </div>
                           )}
                         </div>
 
                         <span className="ui-pill">
-                          x{" "}
-                          <span className="ml-2 font-extrabold tabular-nums">
-                            {copies}
-                          </span>
+                          x <span className="ml-2 font-extrabold tabular-nums">{copies}</span>
                         </span>
                       </div>
 
                       <div className="mt-3 flex gap-2">
                         <button
                           type="button"
-                          onTouchStart={(e) => killTap(e, `MINUS_TOUCH_START card=${c.id}`)}
-                          onTouchEnd={(e) => killTap(e, `MINUS_TOUCH_END card=${c.id}`)}
+                          onPointerDown={hardStop}
+                          onTouchStart={hardStop}
                           onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
+                            hardStop(e);
                             removeCopy(c.id);
                           }}
                           disabled={copies <= 0 || searching}
                           className="ui-btn ui-btn-ghost"
-                          style={{ touchAction: "manipulation" }}
                         >
                           −
                         </button>
 
                         <button
                           type="button"
-                          onTouchStart={(e) => killTap(e, `PLUS_TOUCH_START card=${c.id}`)}
-                          onTouchEnd={(e) => killTap(e, `PLUS_TOUCH_END card=${c.id}`)}
+                          onPointerDown={hardStop}
+                          onTouchStart={hardStop}
                           onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
+                            hardStop(e);
                             addCopy(c.id);
                           }}
                           disabled={searching || totalCopies >= 20 || copies >= 9}
                           className="ui-btn ui-btn-primary"
-                          style={{ touchAction: "manipulation" }}
                         >
                           +
                         </button>
@@ -868,9 +775,7 @@ export default function PvpPage() {
       {dbgOpen && (
         <div className="dbg-hud">
           <div className="dbg-row">
-            <div className="text-[11px] font-extrabold uppercase tracking-[0.18em]">
-              DEBUG
-            </div>
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.18em]">DEBUG</div>
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 className="dbg-btn"
@@ -889,19 +794,12 @@ export default function PvpPage() {
               </button>
             </div>
           </div>
-          <pre>{dbg.slice(-60).join("\n")}</pre>
+          <pre>{dbg.slice(-40).join("\n")}</pre>
         </div>
       )}
 
       {!dbgOpen && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 10,
-            right: 10,
-            zIndex: 9999,
-          }}
-        >
+        <div style={{ position: "fixed", bottom: 10, right: 10, zIndex: 9999 }}>
           <button className="dbg-btn" onClick={() => setDbgOpen(true)}>
             Debug
           </button>
