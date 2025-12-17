@@ -32,6 +32,12 @@ type SimCard = {
   image_url?: string | null;
 };
 
+type UnitRef = {
+  side: "p1" | "p2";
+  slot: number;
+  instanceId: string;
+};
+
 type Unit = {
   instanceId: string;
   card: SimCard;
@@ -54,6 +60,10 @@ type Unit = {
   weakenTurns: number;
   weakenPct: number;
 };
+
+function uref(u: Pick<Unit, "side" | "slot" | "instanceId">): UnitRef {
+  return { side: u.side, slot: u.slot, instanceId: u.instanceId };
+}
 
 export async function POST(req: Request) {
   try {
@@ -126,7 +136,7 @@ export async function POST(req: Request) {
       const p2DeckAllIds = p2Deck.map((c) => c.id);
 
       const log = {
-        combat_version: "combat-spec-v1-lite",
+        combat_version: "combat-spec-v1",
         seed,
         duration_sec: sim.duration_sec,
 
@@ -350,12 +360,11 @@ function simulateBestOf3(seed: string, p1Deck: SimCard[], p2Deck: SimCard[]) {
         t: baseT + 3,
         type: "spawn",
         round,
-        side: u.side,
-        slot: u.slot,
-        instanceId: u.instanceId,
+        unit: uref(u),
         card_id: u.card.id,
         hp: u.hp,
         maxHp: u.maxHp,
+        shield: u.shield,
       });
     }
 
@@ -466,13 +475,13 @@ function simulateRoundTurns(seed: string, round: number, state: { units: Unit[] 
 
       if (actor.stunTurns > 0) {
         actor.stunTurns -= 1;
-        ev.push({ type: "turn_start", side: actor.side, slot: actor.slot, instanceId: actor.instanceId });
-        ev.push({ type: "stunned", side: actor.side, slot: actor.slot, instanceId: actor.instanceId });
+        ev.push({ type: "turn_start", unit: uref(actor) });
+        ev.push({ type: "stunned", unit: uref(actor) });
         turns++;
         continue;
       }
 
-      ev.push({ type: "turn_start", side: actor.side, slot: actor.slot, instanceId: actor.instanceId });
+      ev.push({ type: "turn_start", unit: uref(actor) });
 
       applyStartTurnAbilities(seed, round, ev, actor, state.units);
 
@@ -485,8 +494,8 @@ function simulateRoundTurns(seed: string, round: number, state: { units: Unit[] 
       const hits = getHits(actor);
       ev.push({
         type: "attack",
-        from: { side: actor.side, slot: actor.slot, instanceId: actor.instanceId },
-        to: { side: target.side, slot: target.slot, instanceId: target.instanceId },
+        from: uref(actor),
+        to: uref(target),
         hits,
       });
 
@@ -500,9 +509,7 @@ function simulateRoundTurns(seed: string, round: number, state: { units: Unit[] 
         if (!target.alive) {
           ev.push({
             type: "death",
-            side: target.side,
-            slot: target.slot,
-            instanceId: target.instanceId,
+            unit: uref(target),
             card_id: target.card.id,
           });
           break;
@@ -535,8 +542,14 @@ function pickTarget(seed: string, round: number, actor: Unit, units: Unit[]): Un
   if (sameSlot) return sameSlot;
 
   pool.sort((a, b) => {
-    const ka = crypto.createHash("md5").update(`${seed}:${round}:target:${actor.instanceId}:${a.instanceId}`).digest("hex");
-    const kb = crypto.createHash("md5").update(`${seed}:${round}:target:${actor.instanceId}:${b.instanceId}`).digest("hex");
+    const ka = crypto
+      .createHash("md5")
+      .update(`${seed}:${round}:target:${actor.instanceId}:${a.instanceId}`)
+      .digest("hex");
+    const kb = crypto
+      .createHash("md5")
+      .update(`${seed}:${round}:target:${actor.instanceId}:${b.instanceId}`)
+      .digest("hex");
     return ka < kb ? -1 : ka > kb ? 1 : 0;
   });
 
@@ -567,10 +580,22 @@ function computeDamage(seed: string, round: number, actor: Unit, target: Unit, h
   }
 
   const critChance =
-    actor.card.rarity === "legendary" ? 0.12 : actor.card.rarity === "epic" ? 0.09 : actor.card.rarity === "rare" ? 0.06 : 0.04;
+    actor.card.rarity === "legendary"
+      ? 0.12
+      : actor.card.rarity === "epic"
+      ? 0.09
+      : actor.card.rarity === "rare"
+      ? 0.06
+      : 0.04;
 
   const dodgeChance =
-    target.card.rarity === "legendary" ? 0.07 : target.card.rarity === "epic" ? 0.05 : target.card.rarity === "rare" ? 0.04 : 0.03;
+    target.card.rarity === "legendary"
+      ? 0.07
+      : target.card.rarity === "epic"
+      ? 0.05
+      : target.card.rarity === "rare"
+      ? 0.04
+      : 0.03;
 
   const rCrit = rand01(`${seed}:${round}:crit:${actor.instanceId}:${target.instanceId}:${hitIndex}`);
   const rDodge = rand01(`${seed}:${round}:dodge:${actor.instanceId}:${target.instanceId}:${hitIndex}`);
@@ -598,7 +623,7 @@ function applyDamage(ev: any[], target: Unit, amount: number) {
   if (raw <= 0) {
     ev.push({
       type: "damage",
-      target: { side: target.side, slot: target.slot, instanceId: target.instanceId },
+      target: uref(target),
       amount: 0,
       blocked: true,
       hp: target.hp,
@@ -616,7 +641,7 @@ function applyDamage(ev: any[], target: Unit, amount: number) {
     if (used > 0) {
       ev.push({
         type: "shield_hit",
-        target: { side: target.side, slot: target.slot, instanceId: target.instanceId },
+        target: uref(target),
         amount: used,
         shield: target.shield,
       });
@@ -627,7 +652,7 @@ function applyDamage(ev: any[], target: Unit, amount: number) {
     target.hp -= left;
     ev.push({
       type: "damage",
-      target: { side: target.side, slot: target.slot, instanceId: target.instanceId },
+      target: uref(target),
       amount: left,
       hp: Math.max(0, target.hp),
       shield: target.shield,
@@ -647,13 +672,23 @@ function tickDots(ev: any[], u: Unit) {
     const d = Math.max(1, Math.floor(u.poisonDmg || 1));
     u.poisonTicks -= 1;
     applyDamage(ev, u, d);
-    ev.push({ type: "debuff_tick", debuff: "poison", side: u.side, slot: u.slot, instanceId: u.instanceId, amount: d });
+    ev.push({
+      type: "debuff_tick",
+      debuff: "poison",
+      target: uref(u),
+      amount: d,
+    });
   }
   if (u.burnTicks > 0) {
     const d = Math.max(1, Math.floor(u.burnDmg || 1));
     u.burnTicks -= 1;
     applyDamage(ev, u, d);
-    ev.push({ type: "debuff_tick", debuff: "burn", side: u.side, slot: u.slot, instanceId: u.instanceId, amount: d });
+    ev.push({
+      type: "debuff_tick",
+      debuff: "burn",
+      target: uref(u),
+      amount: d,
+    });
   }
 }
 
@@ -667,7 +702,7 @@ function applyStartTurnAbilities(seed: string, round: number, ev: any[], actor: 
     actor.shield += amount;
     ev.push({
       type: "shield",
-      target: { side: actor.side, slot: actor.slot, instanceId: actor.instanceId },
+      target: uref(actor),
       amount,
       duration_turns: dur,
       shield: actor.shield,
@@ -677,7 +712,12 @@ function applyStartTurnAbilities(seed: string, round: number, ev: any[], actor: 
   if (ab === "taunt") {
     const dur = Math.max(1, Math.floor(Number(params?.duration_turns ?? 2)));
     actor.tauntTurns = Math.max(actor.tauntTurns, dur);
-    ev.push({ type: "buff_applied", buff: "taunt", side: actor.side, slot: actor.slot, instanceId: actor.instanceId, duration_turns: dur });
+    ev.push({
+      type: "buff_applied",
+      buff: "taunt",
+      target: uref(actor),
+      duration_turns: dur,
+    });
   }
 
   if (ab === "heal_ally") {
@@ -690,7 +730,7 @@ function applyStartTurnAbilities(seed: string, round: number, ev: any[], actor: 
       if (healed > 0) {
         ev.push({
           type: "heal",
-          target: { side: ally.side, slot: ally.slot, instanceId: ally.instanceId },
+          target: uref(ally),
           amount: healed,
           hp: ally.hp,
         });
@@ -703,7 +743,13 @@ function applyStartTurnAbilities(seed: string, round: number, ev: any[], actor: 
     const dur = Math.max(1, Math.floor(Number(params?.duration_turns ?? 2)));
     actor.weakenTurns = Math.max(actor.weakenTurns, dur);
     actor.weakenPct = -Math.max(0, pct);
-    ev.push({ type: "buff_applied", buff: "atk_up", side: actor.side, slot: actor.slot, instanceId: actor.instanceId, duration_turns: dur, pct });
+    ev.push({
+      type: "buff_applied",
+      buff: "atk_up",
+      target: uref(actor),
+      duration_turns: dur,
+      pct,
+    });
   }
 }
 
@@ -718,7 +764,13 @@ function applyOnHitDebuffs(seed: string, round: number, ev: any[], actor: Unit, 
     const ticks = Math.max(1, Math.floor(Number(params?.ticks ?? 3)));
     target.poisonDmg = Math.max(target.poisonDmg, tick_damage);
     target.poisonTicks = Math.max(target.poisonTicks, ticks);
-    ev.push({ type: "debuff_applied", debuff: "poison", target: { side: target.side, slot: target.slot, instanceId: target.instanceId }, tick_damage, ticks });
+    ev.push({
+      type: "debuff_applied",
+      debuff: "poison",
+      target: uref(target),
+      tick_damage,
+      ticks,
+    });
   }
 
   if (ab === "burn") {
@@ -726,7 +778,13 @@ function applyOnHitDebuffs(seed: string, round: number, ev: any[], actor: Unit, 
     const ticks = Math.max(1, Math.floor(Number(params?.ticks ?? 3)));
     target.burnDmg = Math.max(target.burnDmg, tick_damage);
     target.burnTicks = Math.max(target.burnTicks, ticks);
-    ev.push({ type: "debuff_applied", debuff: "burn", target: { side: target.side, slot: target.slot, instanceId: target.instanceId }, tick_damage, ticks });
+    ev.push({
+      type: "debuff_applied",
+      debuff: "burn",
+      target: uref(target),
+      tick_damage,
+      ticks,
+    });
   }
 
   if (ab === "stun") {
@@ -735,7 +793,12 @@ function applyOnHitDebuffs(seed: string, round: number, ev: any[], actor: Unit, 
     const r = rand01(`${seed}:${round}:stun:${actor.instanceId}:${target.instanceId}`);
     if (r < chance) {
       target.stunTurns = Math.max(target.stunTurns, dur);
-      ev.push({ type: "debuff_applied", debuff: "stun", target: { side: target.side, slot: target.slot, instanceId: target.instanceId }, duration_turns: dur });
+      ev.push({
+        type: "debuff_applied",
+        debuff: "stun",
+        target: uref(target),
+        duration_turns: dur,
+      });
     }
   }
 
@@ -744,7 +807,13 @@ function applyOnHitDebuffs(seed: string, round: number, ev: any[], actor: Unit, 
     const dur = Math.max(1, Math.floor(Number(params?.duration_turns ?? 2)));
     target.vulnerableTurns = Math.max(target.vulnerableTurns, dur);
     target.vulnerablePct = Math.max(target.vulnerablePct, pct);
-    ev.push({ type: "debuff_applied", debuff: "vulnerable", target: { side: target.side, slot: target.slot, instanceId: target.instanceId }, duration_turns: dur, pct });
+    ev.push({
+      type: "debuff_applied",
+      debuff: "vulnerable",
+      target: uref(target),
+      duration_turns: dur,
+      pct,
+    });
   }
 
   if (ab === "weaken") {
@@ -752,7 +821,13 @@ function applyOnHitDebuffs(seed: string, round: number, ev: any[], actor: Unit, 
     const dur = Math.max(1, Math.floor(Number(params?.duration_turns ?? 2)));
     target.weakenTurns = Math.max(target.weakenTurns, dur);
     target.weakenPct = Math.max(target.weakenPct, pct);
-    ev.push({ type: "debuff_applied", debuff: "weaken", target: { side: target.side, slot: target.slot, instanceId: target.instanceId }, duration_turns: dur, pct });
+    ev.push({
+      type: "debuff_applied",
+      debuff: "weaken",
+      target: uref(target),
+      duration_turns: dur,
+      pct,
+    });
   }
 }
 
