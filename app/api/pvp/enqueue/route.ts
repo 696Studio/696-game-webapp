@@ -6,12 +6,17 @@ import crypto from "crypto";
 
 type EnqueueBody = {
   telegramId?: string;
-  mode?: string; // region
+  mode?: string; // region bucket
 };
 
 type RpcPayload =
   | { status: "queued" }
-  | { status: "matched"; match_id: string; opponent_id?: string | null; seed?: string | null };
+  | {
+      status: "matched";
+      match_id: string;
+      opponent_id?: string | null;
+      seed?: string | null;
+    };
 
 // ===== Card model for sim =====
 type SimCard = {
@@ -28,7 +33,7 @@ type SimCard = {
 };
 
 type Unit = {
-  instanceId: string; // unique per copy per round
+  instanceId: string;
   card: SimCard;
   side: "p1" | "p2";
   slot: number;
@@ -72,6 +77,12 @@ export async function POST(req: Request) {
 
     // 2) Deck (server truth) + power
     const p1Deck = await loadDeckForSim(userRow.id);
+    if (!p1Deck.length) {
+      return NextResponse.json(
+        { error: "Active deck is empty (no pvp_deck_cards). Create deck first." },
+        { status: 400 }
+      );
+    }
     const p1Power = calcDeckPower(p1Deck);
 
     // 3) Atomic matchmaking via RPC (still SQL)
@@ -82,7 +93,10 @@ export async function POST(req: Request) {
     });
 
     if (rpcErr) {
-      return NextResponse.json({ error: `pvp_join_and_match failed: ${rpcErr.message}` }, { status: 500 });
+      return NextResponse.json(
+        { error: `pvp_join_and_match failed: ${rpcErr.message}` },
+        { status: 500 }
+      );
     }
 
     const payload = (rpcData ?? {}) as RpcPayload;
@@ -98,33 +112,56 @@ export async function POST(req: Request) {
     const seed = (payload as any).seed || `${matchId}:${userRow.id}:${opponentId || "none"}`;
 
     // 4) Enrich match: full simulation + expanded timeline
-    //    If opponentId is null (shouldn't, but just in case) — return matched without enrich
     if (opponentId) {
       const p2Deck = await loadDeckForSim(opponentId);
       const p2Power = calcDeckPower(p2Deck);
 
       const sim = simulateBestOf3(seed, p1Deck, p2Deck);
 
-      const winner_user_id = sim.winner === "draw" ? null : sim.winner === "p1" ? userRow.id : opponentId;
+      const winner_user_id =
+        sim.winner === "draw" ? null : sim.winner === "p1" ? userRow.id : opponentId;
+
+      // store full 20-copy decks (expanded ids)
+      const p1DeckAllIds = p1Deck.map((c) => c.id);
+      const p2DeckAllIds = p2Deck.map((c) => c.id);
 
       const log = {
+        combat_version: "combat-spec-v1-lite",
         seed,
         duration_sec: sim.duration_sec,
+
         p1: { deckPower: p1Power },
         p2: { deckPower: p2Power },
-        rounds: sim.rounds, // keep old structure
-        timeline: sim.timeline, // expanded events for animations
+
+        // ✅ canonical keys for battle viewer
+        p1_cards: p1DeckAllIds,
+        p2_cards: p2DeckAllIds,
+
+        // ✅ keep older keys too
+        p1_deck_cards: p1DeckAllIds,
+        p2_deck_cards: p2DeckAllIds,
+
+        rounds: sim.rounds,
+        timeline: sim.timeline,
+
         winner: sim.winner,
       };
 
-      await supabaseAdmin
+      const { error: upErr } = await supabaseAdmin
         .from("pvp_matches")
         .update({
           log,
           winner_user_id,
-          status: "resolved", // constraint requires resolved
+          status: "resolved",
         })
         .eq("id", matchId);
+
+      if (upErr) {
+        return NextResponse.json(
+          { error: `Failed to persist match log: ${upErr.message}`, matchId },
+          { status: 500 }
+        );
+      }
     }
 
     return NextResponse.json({
@@ -140,22 +177,22 @@ export async function POST(req: Request) {
 }
 
 // ======================================================
-// Deck loader (YOUR SCHEMA): decks / deck_cards / cards
+// Deck loader (PVP SCHEMA): pvp_decks / pvp_deck_cards / cards
+// NOTE: cards table currently гарантирует: id, rarity, base_power, name_ru/name_en, image_url
+// We keep hp/initiative/ability/tags as defaults for now.
 // ======================================================
 async function loadDeckForSim(userId: string): Promise<SimCard[]> {
-  // active deck
   const { data: deck, error: deckErr } = await supabaseAdmin
-    .from("decks")
-    .select("id, is_active")
+    .from("pvp_decks")
+    .select("id")
     .eq("user_id", userId)
-    .eq("is_active", true)
     .maybeSingle();
 
   if (deckErr) throw new Error(deckErr.message);
   if (!deck?.id) return [];
 
   const { data: deckCards, error: dcErr } = await supabaseAdmin
-    .from("deck_cards")
+    .from("pvp_deck_cards")
     .select("card_id, copies")
     .eq("deck_id", deck.id);
 
@@ -164,13 +201,11 @@ async function loadDeckForSim(userId: string): Promise<SimCard[]> {
   const rows: { card_id: string; copies: number }[] = (deckCards ?? []) as any;
   if (rows.length === 0) return [];
 
-  const ids = rows.map((r) => r.card_id);
+  const ids = rows.map((r) => String(r.card_id));
 
   const { data: cards, error: cardsErr } = await supabaseAdmin
     .from("cards")
-    .select(
-      "id, rarity, base_power, hp, initiative, ability_id, ability_params, tags, name_ru, name_en, image_url"
-    )
+    .select("id, rarity, base_power, name_ru, name_en, image_url")
     .in("id", ids);
 
   if (cardsErr) throw new Error(cardsErr.message);
@@ -186,15 +221,19 @@ async function loadDeckForSim(userId: string): Promise<SimCard[]> {
 
     const rarity = (String(c.rarity || "common").toLowerCase() as any) as SimCard["rarity"];
     const base_power = Number(c.base_power || 0);
-    const hp = Math.max(1, Number(c.hp || 100));
-    const initiative = Math.max(1, Number(c.initiative || 10));
-    const ability_id = c.ability_id != null ? String(c.ability_id) : null;
-    const ability_params = c.ability_params ?? {};
-    const tags = Array.isArray(c.tags) ? c.tags.map((x: any) => String(x)) : [];
+
+    // Defaults until you define real combat stats for 100 cards
+    const hp = 100;
+    const initiative = 10;
+    const ability_id = null;
+    const ability_params = {};
+    const tags: string[] = [];
+
     const name =
       (c.name_ru && String(c.name_ru).trim()) ||
       (c.name_en && String(c.name_en).trim()) ||
       String(c.id);
+
     const image_url = c.image_url ?? null;
 
     for (let i = 0; i < copies; i++) {
@@ -233,7 +272,6 @@ function rand01(seed: string): number {
 }
 
 function pick5(seed: string, expandedDeck: SimCard[], side: "p1" | "p2", round: number): SimCard[] {
-  // stable order by hash(seed + round + side + idx + cardid)
   const keyed = expandedDeck.map((c, idx) => ({
     c,
     k: crypto
@@ -247,24 +285,20 @@ function pick5(seed: string, expandedDeck: SimCard[], side: "p1" | "p2", round: 
 
 // ======================================================
 // Simulation: Best-of-3, each round = 5v5 fight
-// Timeline includes: round_start, reveal(full), spawn, turn, attack, damage, heal, buff/debuff, death, score, round_end
 // ======================================================
 function simulateBestOf3(seed: string, p1Deck: SimCard[], p2Deck: SimCard[]) {
   const timeline: any[] = [];
   const rounds: any[] = [];
 
-  let cursor = 0;
   let p1Wins = 0;
   let p2Wins = 0;
 
-  const roundSpan = 30; // seconds per round (UI-friendly)
+  const roundSpan = 30;
   const maxRounds = 3;
 
   for (let round = 1; round <= maxRounds; round++) {
     const baseT = (round - 1) * roundSpan;
-    cursor = baseT;
 
-    // pick 5 cards per side deterministically
     const p1Cards = pick5(seed, p1Deck, "p1", round);
     const p2Cards = pick5(seed, p2Deck, "p2", round);
 
@@ -299,7 +333,6 @@ function simulateBestOf3(seed: string, p1Deck: SimCard[], p2Deck: SimCard[]) {
 
     timeline.push({ t: baseT + 0, type: "round_start", round });
 
-    // reveal (UI uses this)
     timeline.push({
       t: baseT + 2,
       type: "reveal",
@@ -310,8 +343,8 @@ function simulateBestOf3(seed: string, p1Deck: SimCard[], p2Deck: SimCard[]) {
       p2_cards_full: p2CardsFull,
     });
 
-    // create units + spawn events
     const state = initRoundState(seed, round, p1Cards, p2Cards);
+
     for (const u of state.units) {
       timeline.push({
         t: baseT + 3,
@@ -326,7 +359,6 @@ function simulateBestOf3(seed: string, p1Deck: SimCard[], p2Deck: SimCard[]) {
       });
     }
 
-    // simulate turns (compressed into [4..18] seconds)
     const simEvents = simulateRoundTurns(seed, round, state);
     const tStart = baseT + 4;
     const tEnd = baseT + 18;
@@ -347,7 +379,6 @@ function simulateBestOf3(seed: string, p1Deck: SimCard[], p2Deck: SimCard[]) {
       winner,
     });
 
-    // score + end (UI uses this)
     timeline.push({ t: baseT + 18, type: "score", round, p1: p1Total, p2: p2Total });
     timeline.push({ t: baseT + 22, type: "round_end", round, winner });
 
@@ -358,12 +389,11 @@ function simulateBestOf3(seed: string, p1Deck: SimCard[], p2Deck: SimCard[]) {
     p1Wins > p2Wins ? "p1" : p2Wins > p1Wins ? "p2" : "draw";
 
   timeline.push({
-    t: (Math.min(3, rounds.length) * roundSpan) - 1,
+    t: Math.max(0, Math.min(3, rounds.length) * roundSpan - 1),
     type: "match_end",
     winner: finalWinner,
   });
 
-  // duration_sec for your player
   const duration_sec = Math.max(30, rounds.length * roundSpan);
 
   return { winner: finalWinner, rounds, timeline: timeline.sort((a, b) => a.t - b.t), duration_sec };
@@ -416,18 +446,15 @@ function makeUnit(seed: string, round: number, side: "p1" | "p2", slot: number, 
 function simulateRoundTurns(seed: string, round: number, state: { units: Unit[] }) {
   const ev: any[] = [];
 
-  // build turn order by initiative desc, tie-break by hash
-  const order = state.units
-    .slice()
-    .sort((a, b) => {
-      const di = (b.card.initiative || 0) - (a.card.initiative || 0);
-      if (di !== 0) return di;
-      const ka = crypto.createHash("md5").update(`${seed}:${round}:tie:${a.instanceId}`).digest("hex");
-      const kb = crypto.createHash("md5").update(`${seed}:${round}:tie:${b.instanceId}`).digest("hex");
-      return ka < kb ? -1 : ka > kb ? 1 : 0;
-    });
+  const order = state.units.slice().sort((a, b) => {
+    const di = (b.card.initiative || 0) - (a.card.initiative || 0);
+    if (di !== 0) return di;
+    const ka = crypto.createHash("md5").update(`${seed}:${round}:tie:${a.instanceId}`).digest("hex");
+    const kb = crypto.createHash("md5").update(`${seed}:${round}:tie:${b.instanceId}`).digest("hex");
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
 
-  const maxTurns = 16; // enough for "feel"
+  const maxTurns = 16;
   let turns = 0;
 
   while (turns < maxTurns && aliveCount(state.units, "p1") > 0 && aliveCount(state.units, "p2") > 0) {
@@ -435,10 +462,8 @@ function simulateRoundTurns(seed: string, round: number, state: { units: Unit[] 
       if (turns >= maxTurns) break;
       if (!actor.alive) continue;
 
-      // DOT ticks at start of own turn (simple)
       tickDots(ev, actor);
 
-      // stun
       if (actor.stunTurns > 0) {
         actor.stunTurns -= 1;
         ev.push({ type: "turn_start", side: actor.side, slot: actor.slot, instanceId: actor.instanceId });
@@ -447,20 +472,16 @@ function simulateRoundTurns(seed: string, round: number, state: { units: Unit[] 
         continue;
       }
 
-      // start turn
       ev.push({ type: "turn_start", side: actor.side, slot: actor.slot, instanceId: actor.instanceId });
 
-      // very simple ability triggers (enough to animate + feel)
       applyStartTurnAbilities(seed, round, ev, actor, state.units);
 
-      // choose target
       const target = pickTarget(seed, round, actor, state.units);
       if (!target) {
         turns++;
         continue;
       }
 
-      // attack sequence
       const hits = getHits(actor);
       ev.push({
         type: "attack",
@@ -474,7 +495,6 @@ function simulateRoundTurns(seed: string, round: number, state: { units: Unit[] 
         const dmg = computeDamage(seed, round, actor, target, h);
         applyDamage(ev, target, dmg);
 
-        // on-hit: poison/burn (basic)
         applyOnHitDebuffs(seed, round, ev, actor, target);
 
         if (!target.alive) {
@@ -489,7 +509,6 @@ function simulateRoundTurns(seed: string, round: number, state: { units: Unit[] 
         }
       }
 
-      // decay buffs
       decayStatuses(actor);
 
       turns++;
@@ -509,11 +528,9 @@ function pickTarget(seed: string, round: number, actor: Unit, units: Unit[]): Un
   const enemies = units.filter((u) => u.side === enemySide && u.alive);
   if (enemies.length === 0) return null;
 
-  // taunt priority
   const taunters = enemies.filter((u) => u.tauntTurns > 0);
   const pool = taunters.length ? taunters : enemies;
 
-  // prefer same slot if alive, else deterministic pick
   const sameSlot = pool.find((u) => u.slot === actor.slot);
   if (sameSlot) return sameSlot;
 
@@ -546,13 +563,14 @@ function computeDamage(seed: string, round: number, actor: Unit, target: Unit, h
     if (target.hp / Math.max(1, target.maxHp) <= thr) mult = 1.0 + bonus;
   }
   if (ab === "cleave") {
-    // main hit slightly reduced
     mult = Number(params?.main_mult || 0.85);
   }
 
-  // crit/dodge (seeded, light)
-  const critChance = actor.card.rarity === "legendary" ? 0.12 : actor.card.rarity === "epic" ? 0.09 : actor.card.rarity === "rare" ? 0.06 : 0.04;
-  const dodgeChance = target.card.rarity === "legendary" ? 0.07 : target.card.rarity === "epic" ? 0.05 : target.card.rarity === "rare" ? 0.04 : 0.03;
+  const critChance =
+    actor.card.rarity === "legendary" ? 0.12 : actor.card.rarity === "epic" ? 0.09 : actor.card.rarity === "rare" ? 0.06 : 0.04;
+
+  const dodgeChance =
+    target.card.rarity === "legendary" ? 0.07 : target.card.rarity === "epic" ? 0.05 : target.card.rarity === "rare" ? 0.04 : 0.03;
 
   const rCrit = rand01(`${seed}:${round}:crit:${actor.instanceId}:${target.instanceId}:${hitIndex}`);
   const rDodge = rand01(`${seed}:${round}:dodge:${actor.instanceId}:${target.instanceId}:${hitIndex}`);
@@ -565,7 +583,6 @@ function computeDamage(seed: string, round: number, actor: Unit, target: Unit, h
     dmg = Math.floor(dmg * 1.45);
   }
 
-  // weaken/vulnerable effects
   if (actor.weakenTurns > 0) {
     dmg = Math.floor(dmg * (1 - Math.max(0, actor.weakenPct)));
   }
@@ -682,21 +699,11 @@ function applyStartTurnAbilities(seed: string, round: number, ev: any[], actor: 
   }
 
   if (ab === "buff_attack") {
-    // simplified: turn into "weaken negative" (i.e. increase dmg by reducing weakenPct negative)
     const pct = Number(params?.atk_up_pct ?? 0.18);
     const dur = Math.max(1, Math.floor(Number(params?.duration_turns ?? 2)));
-    // apply to self for now (UI shows buff)
     actor.weakenTurns = Math.max(actor.weakenTurns, dur);
-    actor.weakenPct = -Math.max(0, pct); // negative weaken = buff
+    actor.weakenPct = -Math.max(0, pct);
     ev.push({ type: "buff_applied", buff: "atk_up", side: actor.side, slot: actor.slot, instanceId: actor.instanceId, duration_turns: dur, pct });
-  }
-
-  if (ab === "vulnerable") {
-    // this is normally on-hit, ignore here
-  }
-
-  if (ab === "stun") {
-    // this is normally on-hit; we keep it on-hit to avoid toxic perma-stun
   }
 }
 
@@ -767,6 +774,7 @@ function pickAllyLowestHp(seed: string, round: number, actor: Unit, units: Unit[
 
 function decayStatuses(u: Unit) {
   if (u.tauntTurns > 0) u.tauntTurns -= 1;
+
   if (u.vulnerableTurns > 0) u.vulnerableTurns -= 1;
   if (u.vulnerableTurns <= 0) u.vulnerablePct = 0;
 
@@ -775,7 +783,6 @@ function decayStatuses(u: Unit) {
 }
 
 function computeRoundScore(seed: string, round: number, state: { units: Unit[] }) {
-  // Score = sum of remaining HP + small ATK contribution (deterministic)
   const p1Alive = state.units.filter((u) => u.side === "p1" && u.alive);
   const p2Alive = state.units.filter((u) => u.side === "p2" && u.alive);
 
@@ -785,13 +792,13 @@ function computeRoundScore(seed: string, round: number, state: { units: Unit[] }
   const p1Atk = p1Alive.reduce((s, u) => s + u.card.base_power, 0);
   const p2Atk = p2Alive.reduce((s, u) => s + u.card.base_power, 0);
 
-  // light luck, but seeded and tight
   const luck1 = 0.985 + rand01(`${seed}:${round}:score:p1`) * 0.03;
   const luck2 = 0.985 + rand01(`${seed}:${round}:score:p2`) * 0.03;
 
   const p1Total = Math.floor((p1Hp + Math.floor(p1Atk * 0.4)) * luck1);
   const p2Total = Math.floor((p2Hp + Math.floor(p2Atk * 0.4)) * luck2);
 
-  const winner: "p1" | "p2" | "draw" = p1Total > p2Total ? "p1" : p2Total > p1Total ? "p2" : "draw";
+  const winner: "p1" | "p2" | "draw" =
+    p1Total > p2Total ? "p1" : p2Total > p1Total ? "p2" : "draw";
   return { p1Total, p2Total, winner };
 }

@@ -35,13 +35,38 @@ type TimelineEvent =
       p2_cards_full?: CardMeta[];
     }
   | { t: number; type: "score"; round: number; p1: number; p2: number }
+  | { t: number; type: "round_end"; round: number; winner: "p1" | "p2" | "draw" }
+  | { t: number; type: "spawn"; round: number; side: "p1" | "p2"; slot: number; instanceId: string; card_id: string; hp: number; maxHp: number }
+  | { t: number; type: "turn_start"; round: number; side: "p1" | "p2"; slot: number; instanceId: string }
   | {
       t: number;
-      type: "round_end";
+      type: "attack";
       round: number;
-      winner: "p1" | "p2" | "draw";
+      from: { side: "p1" | "p2"; slot: number; instanceId: string };
+      to: { side: "p1" | "p2"; slot: number; instanceId: string };
+      hits?: number;
     }
+  | { t: number; type: "damage"; round: number; target: { side: "p1" | "p2"; slot: number; instanceId: string }; amount: number; blocked?: boolean; hp?: number; shield?: number }
+  | { t: number; type: "heal"; round: number; target: { side: "p1" | "p2"; slot: number; instanceId: string }; amount: number; hp?: number }
+  | { t: number; type: "shield"; round: number; target: { side: "p1" | "p2"; slot: number; instanceId: string }; amount: number; shield?: number }
+  | { t: number; type: "shield_hit"; round: number; target: { side: "p1" | "p2"; slot: number; instanceId: string }; amount: number; shield?: number }
+  | { t: number; type: "debuff_applied"; round: number; debuff: string; target: { side: "p1" | "p2"; slot: number; instanceId: string }; ticks?: number; duration_turns?: number; pct?: number; tick_damage?: number }
+  | { t: number; type: "buff_applied"; round: number; buff: string; side: "p1" | "p2"; slot: number; instanceId: string; duration_turns?: number; pct?: number }
+  | { t: number; type: "debuff_tick"; round: number; debuff: string; side: "p1" | "p2"; slot: number; instanceId: string; amount?: number }
+  | { t: number; type: "death"; round: number; side: "p1" | "p2"; slot: number; instanceId: string; card_id?: string }
   | { t: number; type: string; [k: string]: any };
+
+type UnitView = {
+  instanceId: string;
+  side: "p1" | "p2";
+  slot: number;
+  card_id: string;
+  hp: number;
+  maxHp: number;
+  shield: number;
+  alive: boolean;
+  tags: Set<string>; // buffs/debuffs
+};
 
 function fmtTime(sec: number) {
   const m = Math.floor(sec / 60);
@@ -113,17 +138,8 @@ function toCardMetaArray(v: any): CardMeta[] {
     .filter(Boolean) as CardMeta[];
 }
 
-function isIosUA(ua: string) {
-  return /iPad|iPhone|iPod/i.test(ua);
-}
-
-function isTelegramWebView() {
-  try {
-    const w = window as any;
-    return Boolean(w?.Telegram?.WebApp);
-  } catch {
-    return false;
-  }
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n));
 }
 
 function BattleInner() {
@@ -137,18 +153,6 @@ function BattleInner() {
   const [match, setMatch] = useState<MatchRow | null>(null);
   const [errText, setErrText] = useState<string | null>(null);
 
-  // iOS TG WebView "Lite FX" mode
-  const [liteFx, setLiteFx] = useState(false);
-  useEffect(() => {
-    try {
-      const ua = navigator.userAgent || "";
-      const isLite = isIosUA(ua) && isTelegramWebView();
-      setLiteFx(isLite);
-    } catch {
-      setLiteFx(false);
-    }
-  }, []);
-
   const logObj = useMemo(() => {
     const l = match?.log;
     return (parseMaybeJson(l) ?? {}) as any;
@@ -157,7 +161,7 @@ function BattleInner() {
   const durationSec = useMemo(() => {
     const d = Number(logObj?.duration_sec ?? 30);
     if (!Number.isFinite(d) || d <= 0) return 30;
-    return Math.min(120, Math.max(10, Math.floor(d)));
+    return Math.min(240, Math.max(10, Math.floor(d)));
   }, [logObj]);
 
   const timeline: TimelineEvent[] = useMemo(() => {
@@ -232,6 +236,15 @@ function BattleInner() {
 
   const prevEndSigRef = useRef<string>("");
 
+  // ===== NEW: round live state derived from timeline =====
+  const [activeInstance, setActiveInstance] = useState<string | null>(null);
+  const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
+  const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
+  const [hitPulse, setHitPulse] = useState<Record<string, number>>({});
+  const [attackPulse, setAttackPulse] = useState<Record<string, number>>({});
+  const prevDamageSigRef = useRef<string>("");
+  const prevAttackSigRef = useRef<string>("");
+
   function seek(nextT: number) {
     const clamped = Math.max(0, Math.min(durationSec, Number(nextT) || 0));
     setT(clamped);
@@ -247,9 +260,7 @@ function BattleInner() {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(
-          `/api/pvp/match?id=${encodeURIComponent(matchId)}`
-        );
+        const res = await fetch(`/api/pvp/match?id=${encodeURIComponent(matchId)}`);
         const data = await res.json();
         if (!alive) return;
 
@@ -279,6 +290,15 @@ function BattleInner() {
     let s2: number | null = null;
     let rw: string | null = null;
 
+    // Derived round state
+    const units = new Map<string, UnitView>();
+    const slotMapP1: Record<number, UnitView | null> = { 0: null, 1: null, 2: null, 3: null, 4: null };
+    const slotMapP2: Record<number, UnitView | null> = { 0: null, 1: null, 2: null, 3: null, 4: null };
+    let active: string | null = null;
+
+    let lastDamageSig = "";
+    let lastAttackSig = "";
+
     for (const e of timeline) {
       if (e.t > t) break;
 
@@ -291,6 +311,12 @@ function BattleInner() {
         s1 = null;
         s2 = null;
         rw = null;
+
+        // reset round state on round_start
+        units.clear();
+        slotMapP1[0] = slotMapP1[1] = slotMapP1[2] = slotMapP1[3] = slotMapP1[4] = null;
+        slotMapP2[0] = slotMapP2[1] = slotMapP2[2] = slotMapP2[3] = slotMapP2[4] = null;
+        active = null;
       } else if (e.type === "reveal") {
         rr = (e as any).round ?? rr;
         c1 = toStringArray((e as any).p1_cards ?? c1);
@@ -300,6 +326,99 @@ function BattleInner() {
         const a2 = toCardMetaArray((e as any).p2_cards_full);
         if (a1.length) cf1 = a1;
         if (a2.length) cf2 = a2;
+      } else if (e.type === "spawn") {
+        if ((e as any).round != null) rr = (e as any).round ?? rr;
+        const side = (e as any).side as "p1" | "p2";
+        const slot = Number((e as any).slot ?? 0);
+        const instanceId = String((e as any).instanceId ?? "");
+        const card_id = String((e as any).card_id ?? "");
+        const hp = Number((e as any).hp ?? 1);
+        const maxHp = Number((e as any).maxHp ?? hp);
+        if (instanceId) {
+          const u: UnitView = {
+            instanceId,
+            side,
+            slot,
+            card_id,
+            hp: Math.max(0, hp),
+            maxHp: Math.max(1, maxHp),
+            shield: 0,
+            alive: true,
+            tags: new Set(),
+          };
+          units.set(instanceId, u);
+          if (side === "p1") slotMapP1[slot] = u;
+          else slotMapP2[slot] = u;
+        }
+      } else if (e.type === "turn_start") {
+        const instanceId = String((e as any).instanceId ?? "");
+        if (instanceId) active = instanceId;
+      } else if (e.type === "attack") {
+        const fromId = String((e as any)?.from?.instanceId ?? "");
+        const toId = String((e as any)?.to?.instanceId ?? "");
+        if (fromId && toId) {
+          lastAttackSig = `${rr}:${fromId}->${toId}:${e.t}`;
+        }
+      } else if (e.type === "damage") {
+        const tid = String((e as any)?.target?.instanceId ?? "");
+        const amount = Number((e as any)?.amount ?? 0);
+        const hp = (e as any)?.hp;
+        const shield = (e as any)?.shield;
+        if (tid) {
+          const u = units.get(tid);
+          if (u) {
+            if (Number.isFinite(hp)) u.hp = Math.max(0, Number(hp));
+            else u.hp = Math.max(0, u.hp - Math.max(0, Math.floor(amount)));
+            if (Number.isFinite(shield)) u.shield = Math.max(0, Number(shield));
+            if (u.hp <= 0) u.alive = false;
+          }
+          lastDamageSig = `${rr}:${tid}:${e.t}:${amount}`;
+        }
+      } else if (e.type === "heal") {
+        const tid = String((e as any)?.target?.instanceId ?? "");
+        const amount = Number((e as any)?.amount ?? 0);
+        const hp = (e as any)?.hp;
+        if (tid) {
+          const u = units.get(tid);
+          if (u) {
+            if (Number.isFinite(hp)) u.hp = clamp(Number(hp), 0, u.maxHp);
+            else u.hp = clamp(u.hp + Math.max(0, Math.floor(amount)), 0, u.maxHp);
+          }
+        }
+      } else if (e.type === "shield" || e.type === "shield_hit") {
+        const tid = String((e as any)?.target?.instanceId ?? "");
+        const shield = (e as any)?.shield;
+        const amount = Number((e as any)?.amount ?? 0);
+        if (tid) {
+          const u = units.get(tid);
+          if (u) {
+            if (Number.isFinite(shield)) u.shield = Math.max(0, Number(shield));
+            else u.shield = Math.max(0, u.shield + Math.max(0, Math.floor(amount)) * (e.type === "shield_hit" ? -1 : 1));
+          }
+        }
+      } else if (e.type === "debuff_applied") {
+        const tid = String((e as any)?.target?.instanceId ?? "");
+        const debuff = String((e as any)?.debuff ?? "");
+        if (tid && debuff) {
+          const u = units.get(tid);
+          if (u) u.tags.add(debuff);
+        }
+      } else if (e.type === "buff_applied") {
+        const tid = String((e as any)?.instanceId ?? "");
+        const buff = String((e as any)?.buff ?? "");
+        if (tid && buff) {
+          const u = units.get(tid);
+          if (u) u.tags.add(buff);
+        }
+      } else if (e.type === "death") {
+        const tid = String((e as any)?.instanceId ?? "");
+        if (tid) {
+          const u = units.get(tid);
+          if (u) {
+            u.alive = false;
+            u.hp = 0;
+          }
+        }
       } else if (e.type === "score") {
         rr = (e as any).round ?? rr;
         s1 = Number((e as any).p1 ?? 0);
@@ -310,37 +429,51 @@ function BattleInner() {
       }
     }
 
-    // reveal anim trigger (disable in liteFx to reduce GPU spikes)
-    if (!liteFx) {
-      const sigLeft = (cf1?.map((x) => x?.id).join("|") || c1.join("|")) ?? "";
-      const sigRight = (cf2?.map((x) => x?.id).join("|") || c2.join("|")) ?? "";
-      const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
+    // reveal anim trigger
+    const sigLeft = (cf1?.map((x) => x?.id).join("|") || c1.join("|")) ?? "";
+    const sigRight = (cf2?.map((x) => x?.id).join("|") || c2.join("|")) ?? "";
+    const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
 
-      if (revealSig !== prevRevealSigRef.current) {
-        const hasSomething =
-          (cf1?.length || 0) > 0 ||
-          (cf2?.length || 0) > 0 ||
-          (c1?.length || 0) > 0 ||
-          (c2?.length || 0) > 0;
-        if (hasSomething) setRevealTick((x) => x + 1);
-        prevRevealSigRef.current = revealSig;
-      }
+    if (revealSig !== prevRevealSigRef.current) {
+      const hasSomething =
+        (cf1?.length || 0) > 0 ||
+        (cf2?.length || 0) > 0 ||
+        (c1?.length || 0) > 0 ||
+        (c2?.length || 0) > 0;
+      if (hasSomething) setRevealTick((x) => x + 1);
+      prevRevealSigRef.current = revealSig;
     }
 
     // score hit
     const prevS1 = prevScoreRef.current.p1;
     const prevS2 = prevScoreRef.current.p2;
-    if (!liteFx) {
-      if (s1 != null && prevS1 != null && s1 !== prevS1) {
-        setP1Hit(true);
-        window.setTimeout(() => setP1Hit(false), 220);
-      }
-      if (s2 != null && prevS2 != null && s2 !== prevS2) {
-        setP2Hit(true);
-        window.setTimeout(() => setP2Hit(false), 220);
-      }
+    if (s1 != null && prevS1 != null && s1 !== prevS1) {
+      setP1Hit(true);
+      window.setTimeout(() => setP1Hit(false), 220);
+    }
+    if (s2 != null && prevS2 != null && s2 !== prevS2) {
+      setP2Hit(true);
+      window.setTimeout(() => setP2Hit(false), 220);
     }
     prevScoreRef.current = { p1: s1, p2: s2 };
+
+    // attack pulse (light)
+    if (lastAttackSig && lastAttackSig !== prevAttackSigRef.current) {
+      prevAttackSigRef.current = lastAttackSig;
+      // parse toId from sig "r:from->to:t"
+      const m = lastAttackSig.split(":")[1] || "";
+      const to = (m.split("->")[1] || "").split(":")[0] || "";
+      const from = (m.split("->")[0] || "").split(":")[0] || "";
+      if (from) setAttackPulse((p) => ({ ...p, [from]: (p[from] || 0) + 1 }));
+      if (to) setHitPulse((p) => ({ ...p, [to]: (p[to] || 0) + 1 }));
+    }
+
+    // damage pulse (if we didn't get attack event)
+    if (lastDamageSig && lastDamageSig !== prevDamageSigRef.current) {
+      prevDamageSigRef.current = lastDamageSig;
+      const tid = lastDamageSig.split(":")[1] || "";
+      if (tid) setHitPulse((p) => ({ ...p, [tid]: (p[tid] || 0) + 1 }));
+    }
 
     setRoundN(rr);
     setP1Cards(c1);
@@ -350,7 +483,11 @@ function BattleInner() {
     setP1Score(s1);
     setP2Score(s2);
     setRoundWinner(rw);
-  }, [t, timeline, liteFx]);
+
+    setActiveInstance(active);
+    setP1UnitsBySlot(slotMapP1);
+    setP2UnitsBySlot(slotMapP2);
+  }, [t, timeline]);
 
   // playback loop with rate
   useEffect(() => {
@@ -428,7 +565,6 @@ function BattleInner() {
   useEffect(() => {
     if (phase !== "end") return;
     if (!roundWinner) return;
-    if (liteFx) return; // banner glow is GPU-ish, skip in lite
 
     const sig = `${roundN}:${roundWinner}`;
     if (sig === prevEndSigRef.current) return;
@@ -463,7 +599,7 @@ function BattleInner() {
     }, 900);
 
     return () => window.clearTimeout(to);
-  }, [phase, roundWinner, roundN, liteFx]);
+  }, [phase, roundWinner, roundN]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -479,8 +615,9 @@ function BattleInner() {
       Array.from({ length: 5 }).map((_, i) => ({
         card: p1CardsFull?.[i] ?? null,
         fallbackId: p1Cards?.[i] ?? null,
+        unit: p1UnitsBySlot?.[i] ?? null,
       })),
-    [p1CardsFull, p1Cards]
+    [p1CardsFull, p1Cards, p1UnitsBySlot]
   );
 
   const p2Slots = useMemo(
@@ -488,29 +625,35 @@ function BattleInner() {
       Array.from({ length: 5 }).map((_, i) => ({
         card: p2CardsFull?.[i] ?? null,
         fallbackId: p2Cards?.[i] ?? null,
+        unit: p2UnitsBySlot?.[i] ?? null,
       })),
-    [p2CardsFull, p2Cards]
+    [p2CardsFull, p2Cards, p2UnitsBySlot]
   );
 
   const boardFxClass = useMemo(() => {
     if (!scored) return "";
-    if (liteFx) return ""; // no shake/extra shadows in lite
     if (roundWinner === "p1") return "fx-p1";
     if (roundWinner === "p2") return "fx-p2";
     if (roundWinner === "draw") return "fx-draw";
     return "";
-  }, [scored, roundWinner, liteFx]);
+  }, [scored, roundWinner]);
+
+  function TagPill({ label }: { label: string }) {
+    return <span className="bb-tag">{label}</span>;
+  }
 
   function CardSlot({
     card,
     fallbackId,
     revealed,
     delayMs,
+    unit,
   }: {
     card?: CardMeta | null;
     fallbackId?: string | null;
     revealed: boolean;
     delayMs: number;
+    unit?: UnitView | null;
   }) {
     const id = card?.id || fallbackId || "";
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
@@ -518,15 +661,86 @@ function BattleInner() {
     const power = typeof card?.base_power === "number" ? card.base_power : null;
     const img = card?.image_url || null;
 
+    const hpPct = useMemo(() => {
+      if (!unit) return 100;
+      const maxHp = Math.max(1, unit.maxHp);
+      return clamp((unit.hp / maxHp) * 100, 0, 100);
+    }, [unit]);
+
+    const shieldPct = useMemo(() => {
+      if (!unit) return 0;
+      const maxHp = Math.max(1, unit.maxHp);
+      return clamp((unit.shield / maxHp) * 100, 0, 100);
+    }, [unit]);
+
+    const isDead = unit ? !unit.alive : false;
+    const isActive = unit && activeInstance ? unit.instanceId === activeInstance : false;
+    const isHit = unit ? (hitPulse[unit.instanceId] || 0) > 0 : false;
+    const isAttacking = unit ? (attackPulse[unit.instanceId] || 0) > 0 : false;
+
+    // reduce pulse counters quickly (no timers per card)
+    useEffect(() => {
+      if (!unit) return;
+      const idd = unit.instanceId;
+
+      if ((hitPulse[idd] || 0) > 0) {
+        const to = window.setTimeout(() => {
+          setHitPulse((p) => {
+            const v = (p[idd] || 0) - 1;
+            const next = { ...p };
+            if (v <= 0) delete next[idd];
+            else next[idd] = v;
+            return next;
+          });
+        }, 160);
+        return () => window.clearTimeout(to);
+      }
+
+      return;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [unit?.instanceId, hitPulse?.[unit?.instanceId || ""]]);
+
+    useEffect(() => {
+      if (!unit) return;
+      const idd = unit.instanceId;
+
+      if ((attackPulse[idd] || 0) > 0) {
+        const to = window.setTimeout(() => {
+          setAttackPulse((p) => {
+            const v = (p[idd] || 0) - 1;
+            const next = { ...p };
+            if (v <= 0) delete next[idd];
+            else next[idd] = v;
+            return next;
+          });
+        }, 160);
+        return () => window.clearTimeout(to);
+      }
+
+      return;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [unit?.instanceId, attackPulse?.[unit?.instanceId || ""]]);
+
+    const tags = useMemo(() => {
+      if (!unit) return [];
+      const arr = Array.from(unit.tags || []);
+      // show only a few to avoid clutter
+      return arr.slice(0, 3);
+    }, [unit]);
+
     return (
       <div
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
-          !liteFx ? `rt-${revealTick}` : "",
-          liteFx ? "is-lite" : "",
+          `rt-${revealTick}`,
+          unit ? "has-unit" : "",
+          isDead ? "is-dead" : "",
+          isActive ? "is-active" : "",
+          isHit ? "is-hit" : "",
+          isAttacking ? "is-attacking" : "",
         ].join(" ")}
-        style={!liteFx ? { animationDelay: `${delayMs}ms` } : undefined}
+        style={{ animationDelay: `${delayMs}ms` }}
       >
         <div className="bb-card-inner">
           <div className="bb-face bb-back">
@@ -535,16 +749,14 @@ function BattleInner() {
 
           <div className={["bb-face bb-front", rarityFxClass(r)].join(" ")}>
             {img ? (
-              <div
-                className="bb-art"
-                style={{ backgroundImage: `url(${img})` }}
-              />
+              <div className="bb-art" style={{ backgroundImage: `url(${img})` }} />
             ) : (
               <div className="bb-art bb-art--ph">
                 <div className="bb-mark-sm">CARD</div>
               </div>
             )}
 
+            {/* overlays */}
             <div className="bb-overlay">
               <div className="bb-title">{title}</div>
               <div className="bb-subrow">
@@ -555,7 +767,47 @@ function BattleInner() {
                   </span>
                 )}
               </div>
+
+              {/* HP + SHIELD */}
+              {unit && (
+                <div className="bb-bars">
+                  <div className="bb-bar bb-bar--hp">
+                    <div style={{ width: `${hpPct}%` }} />
+                  </div>
+                  {unit.shield > 0 && (
+                    <div className="bb-bar bb-bar--shield">
+                      <div style={{ width: `${shieldPct}%` }} />
+                    </div>
+                  )}
+                  <div className="bb-hptext">
+                    <span className="tabular-nums">{unit.hp}</span> /{" "}
+                    <span className="tabular-nums">{unit.maxHp}</span>
+                    {unit.shield > 0 ? (
+                      <span className="bb-shieldnum">
+                        {" "}
+                        +<span className="tabular-nums">{unit.shield}</span>
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/* Tags */}
+                  {tags.length > 0 && (
+                    <div className="bb-tags">
+                      {tags.map((x) => (
+                        <TagPill key={x} label={String(x).toUpperCase()} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* minimal corner markers */}
+            {unit && (
+              <div className="bb-corner">
+                <span className="bb-corner-dot" />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -567,9 +819,7 @@ function BattleInner() {
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
-          <div className="text-sm ui-subtle">
-            Эта страница работает только внутри Telegram WebApp.
-          </div>
+          <div className="text-sm ui-subtle">Эта страница работает только внутри Telegram WebApp.</div>
         </div>
       </main>
     );
@@ -593,16 +843,9 @@ function BattleInner() {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5">
-          <div className="text-lg font-semibold">
-            {timedOut ? "Таймаут" : "Ошибка сессии"}
-          </div>
-          <div className="mt-2 text-sm ui-subtle">
-            Нажми Re-sync и попробуй снова.
-          </div>
-          <button
-            onClick={() => refreshSession?.()}
-            className="mt-5 ui-btn ui-btn-primary w-full"
-          >
+          <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
+          <div className="mt-2 text-sm ui-subtle">Нажми Re-sync и попробуй снова.</div>
+          <button onClick={() => refreshSession?.()} className="mt-5 ui-btn ui-btn-primary w-full">
             Re-sync
           </button>
         </div>
@@ -616,10 +859,7 @@ function BattleInner() {
         <div className="w-full max-w-md ui-card p-5">
           <div className="text-lg font-semibold">Ошибка</div>
           <div className="mt-2 text-sm ui-subtle">{errText}</div>
-          <button
-            onClick={backToPvp}
-            className="mt-5 ui-btn ui-btn-ghost w-full"
-          >
+          <button onClick={backToPvp} className="mt-5 ui-btn ui-btn-ghost w-full">
             Назад
           </button>
         </div>
@@ -633,8 +873,7 @@ function BattleInner() {
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загружаю матч…</div>
           <div className="mt-2 text-sm ui-subtle">
-            MatchId:{" "}
-            <span className="font-semibold">{matchId.slice(0, 8)}…</span>
+            MatchId: <span className="font-semibold">{matchId.slice(0, 8)}…</span>
           </div>
           <div className="mt-4 ui-progress">
             <div className="w-1/3 opacity-70 animate-pulse" />
@@ -670,7 +909,6 @@ function BattleInner() {
           80% { transform: translate3d(1px,0,0); }
           100% { transform: translate3d(0,0,0); }
         }
-
         @keyframes bannerIn {
           0% { transform: translateY(10px) scale(0.98); opacity: 0; }
           60% { transform: translateY(0) scale(1.02); opacity: 1; }
@@ -680,6 +918,23 @@ function BattleInner() {
           0% { opacity: 0.0; transform: scale(0.96); }
           40% { opacity: 0.65; transform: scale(1.05); }
           100% { opacity: 0.0; transform: scale(1.18); }
+        }
+
+        /* NEW: light combat pulses */
+        @keyframes activePulse {
+          0% { transform: translateZ(0) scale(1); }
+          50% { transform: translateZ(0) scale(1.02); }
+          100% { transform: translateZ(0) scale(1); }
+        }
+        @keyframes hitFlash {
+          0% { transform: translateZ(0) scale(1); }
+          35% { transform: translateZ(0) scale(0.985); }
+          100% { transform: translateZ(0) scale(1); }
+        }
+        @keyframes attackNudge {
+          0% { transform: translateZ(0) scale(1); }
+          40% { transform: translateZ(0) scale(1.02); }
+          100% { transform: translateZ(0) scale(1); }
         }
 
         .battle-progress {
@@ -781,8 +1036,6 @@ function BattleInner() {
           overflow: hidden;
           background: rgba(0,0,0,0.22);
         }
-
-        /* Normal (non-lite) background */
         .arena::before {
           content: "";
           position: absolute;
@@ -809,18 +1062,6 @@ function BattleInner() {
           animation: glowPulse 2.2s ease-in-out infinite;
           mix-blend-mode: screen;
         }
-
-        /* Lite FX for iOS TG WebView: remove heavy layers */
-        .arena.is-lite {
-          background: linear-gradient(
-            to bottom,
-            rgba(0, 0, 0, 0.35),
-            rgba(0, 0, 0, 0.22)
-          );
-        }
-        .arena.is-lite::before { background-image: none; }
-        .arena.is-lite::after { content: none; }
-
         .arena > * { position: relative; z-index: 1; }
 
         .arena.fx-p1,
@@ -831,6 +1072,53 @@ function BattleInner() {
         .arena.fx-p2 .row-top { box-shadow: 0 0 0 1px rgba(184,92,255,0.18), 0 0 24px rgba(184,92,255,0.12); }
         .arena.fx-draw .row-top,
         .arena.fx-draw .row-bottom { box-shadow: 0 0 0 1px rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.10); }
+
+        /* Round banner overlay */
+        .round-banner {
+          position: absolute;
+          left: 50%;
+          top: 52%;
+          transform: translate(-50%, -50%);
+          padding: 12px 14px;
+          border-radius: 18px;
+          border: 1px solid rgba(255,255,255,0.20);
+          background: rgba(0,0,0,0.42);
+          backdrop-filter: blur(10px);
+          min-width: min(520px, calc(100% - 28px));
+          text-align: center;
+          box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+          animation: bannerIn 320ms var(--ease-out) both;
+          pointer-events: none;
+          z-index: 5;
+        }
+        .round-banner::before {
+          content: "";
+          position: absolute;
+          inset: -18px;
+          border-radius: 22px;
+          background: radial-gradient(closest-side, rgba(255,255,255,0.22), transparent 70%);
+          opacity: 0;
+          animation: bannerGlow 520ms ease-out both;
+        }
+        .round-banner .title {
+          font-weight: 1000;
+          letter-spacing: 0.24em;
+          text-transform: uppercase;
+          font-size: 13px;
+          opacity: 0.9;
+        }
+        .round-banner .sub {
+          margin-top: 6px;
+          font-weight: 900;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          font-size: 18px;
+        }
+        .round-banner.tone-p1 { border-color: rgba(88,240,255,0.28); }
+        .round-banner.tone-p1 .sub { text-shadow: 0 0 18px rgba(88,240,255,0.18); }
+        .round-banner.tone-p2 { border-color: rgba(184,92,255,0.28); }
+        .round-banner.tone-p2 .sub { text-shadow: 0 0 18px rgba(184,92,255,0.18); }
+        .round-banner.tone-draw { border-color: rgba(255,255,255,0.22); }
 
         .lane { display: grid; gap: 14px; }
 
@@ -843,9 +1131,8 @@ function BattleInner() {
           border: 1px solid rgba(255,255,255,0.14);
           border-radius: 16px;
           background: rgba(0,0,0,0.22);
+          backdrop-filter: blur(6px);
         }
-
-        /* IMPORTANT: avoid backdrop-filter on iOS TG (handled inline too) */
 
         .player-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
@@ -906,6 +1193,7 @@ function BattleInner() {
           border-radius: 18px;
           border: 1px solid rgba(255,255,255,0.12);
           background: rgba(0,0,0,0.22);
+          backdrop-filter: blur(6px);
           padding: 10px;
           display: flex;
           justify-content: center;
@@ -937,8 +1225,6 @@ function BattleInner() {
         }
         .bb-card.is-revealed .bb-card-inner { transform: rotateY(180deg); }
         .bb-card.is-revealed { animation: flipIn 520ms var(--ease-out) both; }
-
-        .bb-card.is-lite.is-revealed { animation: none; } /* lite: skip flip anim */
 
         .bb-face {
           position: absolute;
@@ -992,7 +1278,7 @@ function BattleInner() {
         .bb-art--ph {
           background:
             radial-gradient(420px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
-            linear-gradient(to bottom, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.36));
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.22), rgba(0,  0, 0, 0.36));
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1041,51 +1327,80 @@ function BattleInner() {
         .rar-epic { box-shadow: inset 0 0 0 9999px rgba(184, 92, 255, 0.07); }
         .rar-legendary { box-shadow: inset 0 0 0 9999px rgba(255, 204, 87, 0.07); }
 
-        /* Round banner overlay */
-        .round-banner {
-          position: absolute;
-          left: 50%;
-          top: 52%;
-          transform: translate(-50%, -50%);
-          padding: 12px 14px;
-          border-radius: 18px;
-          border: 1px solid rgba(255,255,255,0.20);
-          background: rgba(0,0,0,0.42);
-          min-width: min(520px, calc(100% - 28px));
-          text-align: center;
-          box-shadow: 0 12px 40px rgba(0,0,0,0.35);
-          animation: bannerIn 320ms var(--ease-out) both;
-          pointer-events: none;
-          z-index: 5;
+        /* NEW: Unit UI */
+        .bb-bars {
+          margin-top: 10px;
+          display: grid;
+          gap: 6px;
         }
-        .round-banner::before {
-          content: "";
-          position: absolute;
-          inset: -18px;
-          border-radius: 22px;
-          background: radial-gradient(closest-side, rgba(255,255,255,0.22), transparent 70%);
-          opacity: 0;
-          animation: bannerGlow 520ms ease-out both;
+        .bb-bar {
+          height: 7px;
+          border-radius: 999px;
+          overflow: hidden;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(0,0,0,0.22);
         }
-        .round-banner .title {
-          font-weight: 1000;
-          letter-spacing: 0.24em;
-          text-transform: uppercase;
-          font-size: 13px;
-          opacity: 0.9;
+        .bb-bar > div {
+          height: 100%;
+          background: rgba(255,255,255,0.18);
         }
-        .round-banner .sub {
-          margin-top: 6px;
-          font-weight: 900;
+        .bb-bar--hp > div { background: rgba(88, 240, 255, 0.22); }
+        .bb-bar--shield > div { background: rgba(255, 204, 87, 0.18); }
+        .bb-hptext {
+          font-size: 10px;
           letter-spacing: 0.10em;
           text-transform: uppercase;
-          font-size: 18px;
+          opacity: 0.9;
         }
-        .round-banner.tone-p1 { border-color: rgba(88,240,255,0.28); }
-        .round-banner.tone-p1 .sub { text-shadow: 0 0 18px rgba(88,240,255,0.18); }
-        .round-banner.tone-p2 { border-color: rgba(184,92,255,0.28); }
-        .round-banner.tone-p2 .sub { text-shadow: 0 0 18px rgba(184,92,255,0.18); }
-        .round-banner.tone-draw { border-color: rgba(255,255,255,0.22); }
+        .bb-shieldnum { opacity: 0.9; }
+
+        .bb-tags {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 2px;
+        }
+        .bb-tag {
+          display: inline-flex;
+          align-items: center;
+          padding: 4px 8px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(0,0,0,0.18);
+          font-size: 9px;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          opacity: 0.92;
+        }
+
+        .bb-corner {
+          position: absolute;
+          right: 10px;
+          top: 10px;
+          width: 12px;
+          height: 12px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.20);
+          background: rgba(0,0,0,0.18);
+          display: grid;
+          place-items: center;
+        }
+        .bb-corner-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.28);
+        }
+
+        /* NEW: combat pulses (very light) */
+        .bb-card.has-unit.is-active { animation: activePulse 180ms ease-out 1; }
+        .bb-card.has-unit.is-hit { animation: hitFlash 160ms ease-out 1; }
+        .bb-card.has-unit.is-attacking { animation: attackNudge 160ms ease-out 1; }
+
+        .bb-card.has-unit.is-dead {
+          opacity: 0.55;
+          filter: grayscale(0.35);
+        }
 
         @media (max-width: 640px) {
           .slots { gap: 8px; }
@@ -1094,6 +1409,7 @@ function BattleInner() {
           .bb-card-inner { border-radius: 16px; }
           .round-banner { top: 54%; }
           .round-banner .sub { font-size: 16px; }
+          .bb-bar { height: 6px; }
         }
       `}</style>
 
@@ -1104,11 +1420,6 @@ function BattleInner() {
               <div className="hud-title">BATTLE</div>
               <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">
                 Поле боя • {fmtTime(t)} / {fmtTime(durationSec)}
-                {liteFx ? (
-                  <span className="ml-3 text-[11px] opacity-70 tracking-[0.18em] uppercase">
-                    iOS Lite FX
-                  </span>
-                ) : null}
               </div>
 
               <div
@@ -1137,9 +1448,7 @@ function BattleInner() {
                 />
 
                 <button
-                  className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(
-                    " "
-                  )}
+                  className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")}
                   onClick={() => setRate(0.5)}
                   type="button"
                 >
@@ -1173,17 +1482,11 @@ function BattleInner() {
                 </span>
 
                 <span className="hud-pill">
-                  Раунд{" "}
-                  <b className="tabular-nums">
-                    {roundN}/{roundCount}
-                  </b>
+                  Раунд <b className="tabular-nums">{roundN}/{roundCount}</b>
                 </span>
 
                 <span className="hud-pill">
-                  Match{" "}
-                  <b className="tabular-nums">
-                    {String(match.id).slice(0, 8)}…
-                  </b>
+                  Match <b className="tabular-nums">{String(match.id).slice(0, 8)}…</b>
                 </span>
 
                 <span className="hud-pill">
@@ -1212,14 +1515,7 @@ function BattleInner() {
           </div>
         </header>
 
-        <section
-          className={[
-            "board",
-            "arena",
-            boardFxClass,
-            liteFx ? "is-lite" : "",
-          ].join(" ")}
-        >
+        <section className={["board", "arena", boardFxClass].join(" ")}>
           {/* ROUND END BANNER */}
           {roundBanner.visible && (
             <div
@@ -1240,27 +1536,12 @@ function BattleInner() {
 
           <div className="lane">
             {/* ENEMY */}
-            <div
-              className="playerbar"
-              style={
-                liteFx
-                  ? {
-                      backdropFilter: "none",
-                      WebkitBackdropFilter: "none",
-                    }
-                  : {
-                      backdropFilter: "blur(6px)",
-                      WebkitBackdropFilter: "blur(6px)",
-                    }
-              }
-            >
+            <div className="playerbar">
               <div className="player-left">
                 <div className="avatar">
                   <img
                     alt="enemy"
-                    src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${
-                      match.p2_user_id || "enemy"
-                    }`}
+                    src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${match.p2_user_id || "enemy"}`}
                   />
                 </div>
                 <div className="nameblock">
@@ -1280,29 +1561,15 @@ function BattleInner() {
             </div>
 
             {/* TOP ROW */}
-            <div
-              className="row row-top"
-              style={
-                liteFx
-                  ? {
-                      backdropFilter: "none",
-                      WebkitBackdropFilter: "none",
-                    }
-                  : {
-                      backdropFilter: "blur(6px)",
-                      WebkitBackdropFilter: "blur(6px)",
-                    }
-              }
-            >
+            <div className="row row-top">
               <div className="slots">
                 {p2Slots.map((s, i) => (
                   <CardSlot
                     key={`p2-${revealTick}-${i}`}
                     card={s.card}
                     fallbackId={s.fallbackId}
-                    revealed={
-                      revealed && (p2CardsFull.length > 0 || p2Cards.length > 0)
-                    }
+                    unit={s.unit}
+                    revealed={revealed && (p2CardsFull.length > 0 || p2Cards.length > 0)}
                     delayMs={i * 70}
                   />
                 ))}
@@ -1312,11 +1579,7 @@ function BattleInner() {
             {/* CENTER INFO */}
             <div
               className="ui-card p-4"
-              style={{
-                background: "rgba(0,0,0,0.22)",
-                backdropFilter: liteFx ? "none" : "blur(6px)",
-                WebkitBackdropFilter: liteFx ? "none" : "blur(6px)",
-              }}
+              style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}
             >
               <div className="ui-subtitle">Раунд {roundN}</div>
               <div className="mt-2 text-sm ui-subtle">
@@ -1325,32 +1588,24 @@ function BattleInner() {
                   {roundWinner ? String(roundWinner).toUpperCase() : "…"}
                 </span>
               </div>
+              <div className="mt-2 text-[12px] ui-subtle">
+                Активный юнит:{" "}
+                <span className="font-semibold">
+                  {activeInstance ? safeSliceId(activeInstance) : "—"}
+                </span>
+              </div>
             </div>
 
             {/* BOTTOM ROW */}
-            <div
-              className="row row-bottom"
-              style={
-                liteFx
-                  ? {
-                      backdropFilter: "none",
-                      WebkitBackdropFilter: "none",
-                    }
-                  : {
-                      backdropFilter: "blur(6px)",
-                      WebkitBackdropFilter: "blur(6px)",
-                    }
-              }
-            >
+            <div className="row row-bottom">
               <div className="slots">
                 {p1Slots.map((s, i) => (
                   <CardSlot
                     key={`p1-${revealTick}-${i}`}
                     card={s.card}
                     fallbackId={s.fallbackId}
-                    revealed={
-                      revealed && (p1CardsFull.length > 0 || p1Cards.length > 0)
-                    }
+                    unit={s.unit}
+                    revealed={revealed && (p1CardsFull.length > 0 || p1Cards.length > 0)}
                     delayMs={i * 70}
                   />
                 ))}
@@ -1358,27 +1613,12 @@ function BattleInner() {
             </div>
 
             {/* YOU */}
-            <div
-              className="playerbar"
-              style={
-                liteFx
-                  ? {
-                      backdropFilter: "none",
-                      WebkitBackdropFilter: "none",
-                    }
-                  : {
-                      backdropFilter: "blur(6px)",
-                      WebkitBackdropFilter: "blur(6px)",
-                    }
-              }
-            >
+            <div className="playerbar">
               <div className="player-left">
                 <div className="avatar">
                   <img
                     alt="you"
-                    src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${
-                      match.p1_user_id || "you"
-                    }`}
+                    src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${match.p1_user_id || "you"}`}
                   />
                 </div>
                 <div className="nameblock">
@@ -1400,11 +1640,7 @@ function BattleInner() {
             {!playing && t >= durationSec && (
               <div
                 className="ui-card p-5"
-                style={{
-                  background: "rgba(0,0,0,0.22)",
-                  backdropFilter: liteFx ? "none" : "blur(6px)",
-                  WebkitBackdropFilter: liteFx ? "none" : "blur(6px)",
-                }}
+                style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}
               >
                 <div className="ui-subtitle">Результат матча</div>
                 <div className="mt-2 text-sm ui-subtle">{finalWinnerLabel}</div>
@@ -1417,19 +1653,13 @@ function BattleInner() {
                         P1: {r?.p1?.total ?? "—"} • P2: {r?.p2?.total ?? "—"}
                       </div>
                       <div className="mt-2 text-[11px] ui-subtle">
-                        Победитель:{" "}
-                        <span className="font-semibold">
-                          {r?.winner ?? "—"}
-                        </span>
+                        Победитель: <span className="font-semibold">{r?.winner ?? "—"}</span>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <button
-                  onClick={backToPvp}
-                  className="mt-5 ui-btn ui-btn-primary w-full"
-                >
+                <button onClick={backToPvp} className="mt-5 ui-btn ui-btn-primary w-full">
                   Ок
                 </button>
               </div>

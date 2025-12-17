@@ -19,6 +19,7 @@ type CardMeta = {
   id: string;
   rarity: "common" | "rare" | "epic" | "legendary";
   base_power: number;
+  // optional extras (can come from log.p1_cards_full)
   hp?: number;
   initiative?: number;
   ability_id?: string | null;
@@ -56,11 +57,10 @@ async function loadCardsMeta(cardIds: string[]): Promise<Map<string, CardMeta>> 
   const map = new Map<string, CardMeta>();
   if (uniq.length === 0) return map;
 
+  // IMPORTANT: don't select columns that may not exist yet (hp/initiative/ability/tags)
   const { data, error } = await supabaseAdmin
     .from("cards")
-    .select(
-      "id, rarity, base_power, hp, initiative, ability_id, ability_params, tags, name_ru, name_en, image_url"
-    )
+    .select("id, rarity, base_power, name_ru, name_en, image_url")
     .in("id", uniq);
 
   if (error) throw new Error(error.message);
@@ -71,11 +71,6 @@ async function loadCardsMeta(cardIds: string[]): Promise<Map<string, CardMeta>> 
       id,
       rarity: (String((c as any).rarity || "common").toLowerCase() as any) ?? "common",
       base_power: Number((c as any).base_power || 0),
-      hp: (c as any).hp != null ? Number((c as any).hp) : undefined,
-      initiative: (c as any).initiative != null ? Number((c as any).initiative) : undefined,
-      ability_id: (c as any).ability_id != null ? String((c as any).ability_id) : null,
-      ability_params: (c as any).ability_params ?? {},
-      tags: Array.isArray((c as any).tags) ? (c as any).tags.map((x: any) => String(x)) : [],
       name:
         ((c as any).name_ru && String((c as any).name_ru).trim()) ||
         ((c as any).name_en && String((c as any).name_en).trim()) ||
@@ -127,7 +122,6 @@ function mulberry32(seed: number) {
 
 function pickNDeterministic(ids: string[], n: number, rand: () => number): string[] {
   const pool = ids.slice();
-  // Fisher-Yates shuffle partial
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     const tmp = pool[i];
@@ -144,19 +138,14 @@ function sumPower(cards: CardMeta[]): number {
 }
 
 /**
- * Debug simulation: produces a timeline compatible with your Battle UI:
+ * Debug simulation: produces a timeline compatible with Battle UI:
  * round_start -> reveal -> score -> round_end (x3)
  *
- * Source of decks:
- * - tries log.p1_cards / log.p2_cards (arrays or json strings)
- * If not found -> can't simulate.
+ * Needs decks in log:
+ * - log.p1_cards / log.p2_cards (preferred, from enqueue)
+ * - fallback: log.p1_deck / log.p2_deck
  */
-async function simulateTimelineV0(params: {
-  matchId: string;
-  logObj: any;
-  p1_user_id: string;
-  p2_user_id: string;
-}) {
+async function simulateTimelineV0(params: { matchId: string; logObj: any }) {
   const { matchId, logObj } = params;
 
   const p1All = toStringArray(logObj?.p1_cards ?? logObj?.p1_deck ?? logObj?.p1 ?? []);
@@ -168,21 +157,19 @@ async function simulateTimelineV0(params: {
       rounds: null as any,
       duration_sec: 30,
       warning:
-        "simulate=1 requested, but log.p1_cards/log.p2_cards not found. Provide decks in match.log or implement /api/pvp/enqueue to write expanded timeline.",
+        "simulate=1 requested, but log.p1_cards/log.p2_cards not found. Ensure /api/pvp/enqueue writes p1_cards/p2_cards (expanded 20 ids).",
     };
   }
 
   const seed = hash32(String(matchId));
   const rand = mulberry32(seed);
 
-  // pick meta once
   const needIds = [...p1All, ...p2All];
   const meta = await loadCardsMeta(needIds);
 
   const timeline: any[] = [];
   const rounds: any[] = [];
 
-  // 3 rounds, 10 seconds each (fits your default)
   const roundCount = 3;
   const secPerRound = 10;
 
@@ -194,7 +181,6 @@ async function simulateTimelineV0(params: {
 
     timeline.push({ t: t0 + 0.0, type: "round_start", round: r });
 
-    // reveal 5 cards each (deterministic but “random enough”)
     const p1Pick = pickNDeterministic(p1All, 5, rand);
     const p2Pick = pickNDeterministic(p2All, 5, rand);
 
@@ -234,7 +220,6 @@ async function simulateTimelineV0(params: {
     });
   }
 
-  // optional: final result summary for debugging
   let matchWinner: "p1" | "p2" | "draw" = "draw";
   if (p1Wins > p2Wins) matchWinner = "p1";
   else if (p2Wins > p1Wins) matchWinner = "p2";
@@ -267,22 +252,24 @@ export async function GET(req: Request) {
     if (!match) return NextResponse.json({ match: null });
 
     const logObj = (parseMaybeJson((match as any).log) ?? {}) as any;
-    const timelineExisting = Array.isArray(logObj?.timeline) ? logObj.timeline : null;
+
+    // timeline may be jsonb array OR stringified json
+    const timelineParsed = parseMaybeJson(logObj?.timeline);
+    const timelineExisting = Array.isArray(timelineParsed) ? timelineParsed : null;
 
     // If no timeline — keep read-only by default, BUT allow debug simulation.
     if (!timelineExisting) {
       if (!simulate) {
         return NextResponse.json({
           match: { ...(match as any), log: logObj },
-          warning: "match.log.timeline is missing. Add ?simulate=1 for debug timeline OR ensure /api/pvp/enqueue writes expanded timeline.",
+          warning:
+            "match.log.timeline is missing. Add ?simulate=1 for debug timeline OR ensure /api/pvp/enqueue writes expanded timeline.",
         });
       }
 
       const sim = await simulateTimelineV0({
         matchId: String((match as any).id),
         logObj,
-        p1_user_id: String((match as any).p1_user_id),
-        p2_user_id: String((match as any).p2_user_id),
       });
 
       if (!sim.timeline) {
@@ -303,12 +290,13 @@ export async function GET(req: Request) {
 
       return NextResponse.json({
         match: { ...(match as any), log: newLog },
-        warning: "DEBUG: simulated timeline (not persisted). Implement enqueue to persist real battle timeline.",
+        warning: "DEBUG: simulated timeline (not persisted). Your enqueue should persist real timeline.",
       });
     }
 
     // Ensure reveal contains cards_full for UI
-    const timeline = timelineExisting;
+    const timeline = timelineExisting as any[];
+
     const needMetaIds: string[] = [];
     for (const e of timeline) {
       if (!e || e.type !== "reveal") continue;
