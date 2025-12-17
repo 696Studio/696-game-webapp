@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   ReactNode,
 } from "react";
@@ -40,25 +41,75 @@ function pickTelegramId(webApp: any, telegramUser: any): string | null {
   // 1) verified user (после /api/auth/telegram)
   if (telegramUser?.id) return String(telegramUser.id);
 
-  // 2) fallback (самое надёжное на Desktop): initDataUnsafe.user.id
+  // 2) fallback: initDataUnsafe.user.id
   const unsafeId = webApp?.initDataUnsafe?.user?.id;
   if (unsafeId) return String(unsafeId);
 
   return null;
 }
 
+function getWindowWebApp(): any | null {
+  if (typeof window === "undefined") return null;
+  return (window as any)?.Telegram?.WebApp ?? null;
+}
+
 export function GameSessionProvider({ children }: { children: ReactNode }) {
   const {
-    webApp,
-    initData,
+    webApp: hookWebApp,
+    initData: hookInitData,
     telegramUser,
     authLoading,
     authError,
     authData,
   } = useTelegramWebApp() as any;
 
-  const isTelegramEnv = !!webApp;
-  const initDataRaw = typeof initData === "string" ? initData : initData || "";
+  // --------------------------
+  // ✅ STABLE ENV LOCK
+  // --------------------------
+  const stableWebAppRef = useRef<any | null>(null);
+  const stableInitDataRef = useRef<string>("");
+  const envLockedRef = useRef<boolean>(false);
+
+  // state only to trigger re-render when we first "lock"
+  const [envLocked, setEnvLocked] = useState(false);
+
+  // take best available webApp each render
+  const windowWebApp = getWindowWebApp();
+  const effectiveWebApp = hookWebApp || windowWebApp || stableWebAppRef.current;
+
+  // initDataRaw
+  const hookInitRaw = typeof hookInitData === "string" ? hookInitData : hookInitData || "";
+  const effectiveInitRaw = hookInitRaw || stableInitDataRef.current || "";
+
+  // lock if we saw Telegram WebApp at least once
+  useEffect(() => {
+    const seen = !!effectiveWebApp;
+    if (seen) {
+      stableWebAppRef.current = effectiveWebApp;
+      stableInitDataRef.current = effectiveInitRaw || stableInitDataRef.current;
+
+      if (!envLockedRef.current) {
+        envLockedRef.current = true;
+        setEnvLocked(true);
+      }
+    } else {
+      // even if not seen now, keep previously stable values (do nothing)
+      // IMPORTANT: do NOT unlock env once locked
+      if (stableInitDataRef.current && !stableWebAppRef.current && windowWebApp) {
+        stableWebAppRef.current = windowWebApp;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!effectiveWebApp, effectiveInitRaw]);
+
+  // ✅ for consumers: once locked, always true
+  const isTelegramEnv = envLockedRef.current || envLocked;
+
+  const initDataRaw = useMemo(() => {
+    // if locked, always return stable initData (doesn't drop to "")
+    if (isTelegramEnv) return stableInitDataRef.current || effectiveInitRaw || "";
+    return effectiveInitRaw || "";
+  }, [isTelegramEnv, effectiveInitRaw]);
 
   const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
   const [bootstrapLoading, setBootstrapLoading] = useState(true);
@@ -84,6 +135,8 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
         setBootstrapError(null);
         setBootstrapTimedOut(false);
 
+        // ✅ DO NOT flip to error if we simply haven't locked yet.
+        // Wait for Telegram env to appear, otherwise just idle with a friendly error for UI.
         if (!isTelegramEnv) {
           setTelegramId(null);
           setBootstrap(null);
@@ -91,7 +144,15 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const effectiveTelegramId = pickTelegramId(webApp, telegramUser);
+        const wa = stableWebAppRef.current || effectiveWebApp;
+        if (!wa) {
+          setTelegramId(null);
+          setBootstrap(null);
+          setBootstrapError("Telegram WebApp not ready");
+          return;
+        }
+
+        const effectiveTelegramId = pickTelegramId(wa, telegramUser);
         setTelegramId(effectiveTelegramId);
 
         if (!effectiveTelegramId) {
@@ -105,7 +166,7 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             telegramId: effectiveTelegramId,
-            initData: initDataRaw, // пусть уходит, даже если сервер пока не использует
+            initData: initDataRaw,
           }),
           signal: controller.signal,
         });
@@ -123,7 +184,6 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
       } catch (err: any) {
         if (cancelled) return;
 
-        // timeout / abort
         const isAbort =
           err?.name === "AbortError" ||
           String(err?.message || "").toLowerCase().includes("aborted");
@@ -131,9 +191,7 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
         if (isAbort) {
           setBootstrap(null);
           setBootstrapTimedOut(true);
-          setBootstrapError(
-            "Session sync timed out. Please tap Re-sync and try again."
-          );
+          setBootstrapError("Session sync timed out. Please tap Re-sync and try again.");
           return;
         }
 
@@ -151,16 +209,14 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isTelegramEnv, webApp, telegramUser?.id, initDataRaw, refreshNonce]);
+    // IMPORTANT: do not depend on hookWebApp directly (it can be transient null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTelegramEnv, telegramUser?.id, initDataRaw, refreshNonce]);
 
-  // единое состояние для UI
   const loading = authLoading || bootstrapLoading;
 
   const error = useMemo(() => {
     if (!isTelegramEnv) return "Telegram WebApp environment required";
-
-    // показываем bootstrap ошибку как основную (она важнее для игрока)
-    // authError оставим как debug, но не блокируем игру из-за него
     return bootstrapError || null;
   }, [isTelegramEnv, bootstrapError]);
 
@@ -204,9 +260,7 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
 export function useGameSessionContext(): GameSessionContextValue {
   const ctx = useContext(GameSessionContext);
   if (!ctx) {
-    throw new Error(
-      "useGameSessionContext must be used within GameSessionProvider"
-    );
+    throw new Error("useGameSessionContext must be used within GameSessionProvider");
   }
   return ctx;
 }
