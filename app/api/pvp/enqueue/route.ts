@@ -178,8 +178,31 @@ export async function POST(req: Request) {
 
 // ======================================================
 // Deck loader (PVP SCHEMA): pvp_decks / pvp_deck_cards / cards
-// cards содержит: id(text), rarity, base_power, image_url, hp, initiative, ability_id, ability_params, tags
+// cards содержит: id(text), rarity, base_power, image_url, (optional) hp, initiative, ability_id, ability_params, tags
 // ======================================================
+
+function hashTo01(input: string): number {
+  const h = crypto.createHash("md5").update(input).digest("hex").slice(0, 8);
+  const n = parseInt(h, 16);
+  return (n >>> 0) / 0xffffffff;
+}
+
+function rarityRanges(rarity: SimCard["rarity"]) {
+  // ranges from your balance note
+  if (rarity === "legendary") return { hp: [145, 210], init: [14, 20] };
+  if (rarity === "epic") return { hp: [120, 175], init: [12, 18] };
+  if (rarity === "rare") return { hp: [95, 140], init: [10, 16] };
+  return { hp: [70, 110], init: [8, 14] };
+}
+
+function deriveHpInit(cardId: string, rarity: SimCard["rarity"]) {
+  const r = hashTo01(`hpinit:${rarity}:${cardId}`);
+  const rr = rarityRanges(rarity);
+  const hp = Math.floor(rr.hp[0] + r * (rr.hp[1] - rr.hp[0]));
+  const init = Math.floor(rr.init[0] + r * (rr.init[1] - rr.init[0]));
+  return { hp: Math.max(1, hp), initiative: Math.max(0, init) };
+}
+
 async function loadDeckForSim(userId: string): Promise<SimCard[]> {
   const { data: deck, error: deckErr } = await supabaseAdmin
     .from("pvp_decks")
@@ -202,16 +225,32 @@ async function loadDeckForSim(userId: string): Promise<SimCard[]> {
 
   const ids = rows.map((r) => String(r.card_id));
 
-  const { data: cards, error: cardsErr } = await supabaseAdmin
-    .from("cards")
-    .select(
-      "id, rarity, base_power, name_ru, name_en, image_url, hp, initiative, ability_id, ability_params, tags"
-    )
-    .in("id", ids);
+  // --- Try EXTENDED cards select first. If columns don't exist -> fallback to BASE select.
+  let cards: any[] = [];
+  let extended = true;
 
-  if (cardsErr) throw new Error(cardsErr.message);
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("cards")
+      .select(
+        "id, rarity, base_power, name_ru, name_en, image_url, hp, initiative, ability_id, ability_params, tags"
+      )
+      .in("id", ids);
 
-  const byId = new Map((cards ?? []).map((c: any) => [String(c.id), c]));
+    if (error) throw new Error(error.message);
+    cards = data ?? [];
+  } catch {
+    extended = false;
+    const { data, error } = await supabaseAdmin
+      .from("cards")
+      .select("id, rarity, base_power, name_ru, name_en, image_url")
+      .in("id", ids);
+
+    if (error) throw new Error(error.message);
+    cards = data ?? [];
+  }
+
+  const byId = new Map(cards.map((c: any) => [String(c.id), c]));
 
   const out: SimCard[] = [];
   for (const r of rows) {
@@ -223,15 +262,24 @@ async function loadDeckForSim(userId: string): Promise<SimCard[]> {
     const rarity = (String(c.rarity || "common").toLowerCase() as any) as SimCard["rarity"];
     const base_power = Number(c.base_power || 0);
 
-    // ✅ now reads real combat stats from DB (with safe fallbacks)
-    const hp = Math.max(1, Math.floor(Number(c.hp ?? 100)));
-    const initiative = Math.max(0, Math.floor(Number(c.initiative ?? 10)));
+    // ✅ hp/init from DB if exists, else deterministic by rarity ranges
+    let hp: number;
+    let initiative: number;
 
-    const ability_id_raw = c.ability_id != null ? String(c.ability_id).trim() : "";
+    if (extended && c.hp != null && c.initiative != null) {
+      hp = Math.max(1, Math.floor(Number(c.hp)));
+      initiative = Math.max(0, Math.floor(Number(c.initiative)));
+    } else {
+      const d = deriveHpInit(String(c.id), rarity);
+      hp = d.hp;
+      initiative = d.initiative;
+    }
+
+    const ability_id_raw = extended && c.ability_id != null ? String(c.ability_id).trim() : "";
     const ability_id = ability_id_raw ? ability_id_raw : null;
 
-    const ability_params = c.ability_params ?? {};
-    const tags: string[] = Array.isArray(c.tags) ? c.tags.map((x: any) => String(x)) : [];
+    const ability_params = extended ? (c.ability_params ?? {}) : {};
+    const tags: string[] = extended && Array.isArray(c.tags) ? c.tags.map((x: any) => String(x)) : [];
 
     const name =
       (c.name_ru && String(c.name_ru).trim()) ||
