@@ -76,6 +76,13 @@ function safeErr(e: any) {
   }
 }
 
+// only stop bubbling; DO NOT preventDefault (iOS click can break)
+function stopBubble(e: any) {
+  try {
+    e.stopPropagation?.();
+  } catch {}
+}
+
 export default function PvpPage() {
   const router = useRouter();
   const { telegramId, isTelegramEnv, loading, timedOut, error, refreshSession } =
@@ -102,7 +109,7 @@ export default function PvpPage() {
 
   // Debug HUD state
   const [dbg, setDbg] = useState<string[]>([]);
-  const [dbgOpen, setDbgOpen] = useState(true);
+  const [dbgOpen, setDbgOpen] = useState(false);
 
   const totalCopies = useMemo(() => countTotalCopies(deckMap), [deckMap]);
 
@@ -116,7 +123,9 @@ export default function PvpPage() {
   useEffect(() => {
     dbgPush("PVP_MOUNT");
     dbgPush(
-      `ENV isTelegramEnv=${String(isTelegramEnv)} telegramId=${telegramId ? "yes" : "no"}`
+      `ENV isTelegramEnv=${String(isTelegramEnv)} telegramId=${
+        telegramId ? "yes" : "no"
+      }`
     );
 
     // close Debug by default on narrow screens (so it won't cover taps)
@@ -180,7 +189,9 @@ export default function PvpPage() {
   // track session flags changes
   useEffect(() => {
     dbgPush(
-      `CTX loading=${String(loading)} timedOut=${String(timedOut)} error=${error ? "yes" : "no"}`
+      `CTX loading=${String(loading)} timedOut=${String(timedOut)} error=${
+        error ? "yes" : "no"
+      }`
     );
     setDbg(dbgRead());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,7 +207,9 @@ export default function PvpPage() {
         `/api/pvp/cards/list?telegramId=${encodeURIComponent(telegramId)}`
       );
       const data = await res.json();
-      dbgPush(`LOAD_CARDS ok status=${res.status} count=${(data?.cards ?? []).length}`);
+      dbgPush(
+        `LOAD_CARDS ok status=${res.status} count=${(data?.cards ?? []).length}`
+      );
       setCards((data?.cards ?? []) as Card[]);
     } catch (e) {
       dbgPush(`LOAD_CARDS fail ${safeErr(e)}`);
@@ -315,7 +328,9 @@ export default function PvpPage() {
       });
       const data = await res.json();
       dbgPush(
-        `ENQUEUE resp status=${res.status} ok=${String(res.ok)} payload=${data?.status || "?"}`
+        `ENQUEUE resp status=${res.status} ok=${String(res.ok)} payload=${
+          data?.status || "?"
+        }`
       );
       if (!res.ok) throw new Error(data?.error || "Enqueue failed");
 
@@ -376,9 +391,9 @@ export default function PvpPage() {
     const tick = async () => {
       try {
         const res = await fetch(
-          `/api/pvp/queue/status?telegramId=${encodeURIComponent(telegramId)}&mode=${encodeURIComponent(
-            MODE
-          )}`
+          `/api/pvp/queue/status?telegramId=${encodeURIComponent(
+            telegramId
+          )}&mode=${encodeURIComponent(MODE)}`
         );
         const data = await res.json();
         if (!alive) return;
@@ -446,20 +461,14 @@ export default function PvpPage() {
     });
   }
 
-  // single helper: stop iOS weird gesture/defaults for our tiny +/- buttons
-  function hardStop(e: any) {
-    try {
-      e.preventDefault?.();
-      e.stopPropagation?.();
-    } catch {}
-  }
-
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
-          <div className="text-sm ui-subtle">Эта страница работает только внутри Telegram WebApp.</div>
+          <div className="text-sm ui-subtle">
+            Эта страница работает только внутри Telegram WebApp.
+          </div>
         </div>
       </main>
     );
@@ -487,8 +496,12 @@ export default function PvpPage() {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5">
-          <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
-          <div className="mt-2 text-sm ui-subtle">Нажми Re-sync и попробуй снова.</div>
+          <div className="text-lg font-semibold">
+            {timedOut ? "Таймаут" : "Ошибка сессии"}
+          </div>
+          <div className="mt-2 text-sm ui-subtle">
+            Нажми Re-sync и попробуй снова.
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -512,7 +525,7 @@ export default function PvpPage() {
   const canFight = totalCopies === 20;
 
   return (
-    <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
+    <main className="min-h-screen px-4 pt-6 pb-40 flex justify-center">
       <style jsx global>{`
         @keyframes scanSweep {
           0% {
@@ -542,10 +555,27 @@ export default function PvpPage() {
           position: absolute;
           inset: -22px;
           pointer-events: none;
-          background: radial-gradient(900px 420px at 50% -8%, rgba(88, 240, 255, 0.18) 0%, transparent 62%),
-            radial-gradient(720px 520px at 70% 34%, rgba(184, 92, 255, 0.14) 0%, transparent 65%),
-            radial-gradient(720px 520px at 30% 44%, rgba(255, 204, 87, 0.08) 0%, transparent 70%),
-            linear-gradient(to bottom, rgba(255, 255, 255, 0.04), transparent 40%, rgba(0, 0, 0, 0.22));
+          background: radial-gradient(
+              900px 420px at 50% -8%,
+              rgba(88, 240, 255, 0.18) 0%,
+              transparent 62%
+            ),
+            radial-gradient(
+              720px 520px at 70% 34%,
+              rgba(184, 92, 255, 0.14) 0%,
+              transparent 65%
+            ),
+            radial-gradient(
+              720px 520px at 30% 44%,
+              rgba(255, 204, 87, 0.08) 0%,
+              transparent 70%
+            ),
+            linear-gradient(
+              to bottom,
+              rgba(255, 255, 255, 0.04),
+              transparent 40%,
+              rgba(0, 0, 0, 0.22)
+            );
           opacity: 0.95;
         }
 
@@ -555,7 +585,12 @@ export default function PvpPage() {
           inset: -35%;
           pointer-events: none;
           opacity: 0;
-          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.22),
+            transparent
+          );
           transform: translateX(-120%) rotate(10deg);
           animation: scanSweep 1.9s var(--ease-out) infinite;
           mix-blend-mode: screen;
@@ -565,8 +600,7 @@ export default function PvpPage() {
           opacity: 1;
         }
 
-        /* Debug HUD
-           IMPORTANT: do NOT steal taps from content (iPhone) */
+        /* Debug HUD: never steal taps */
         .dbg-hud {
           position: fixed;
           left: 10px;
@@ -581,7 +615,7 @@ export default function PvpPage() {
           max-height: 34vh;
           overflow: auto;
 
-          pointer-events: none; /* 👈 KEY FIX */
+          pointer-events: none;
           user-select: none;
           -webkit-user-select: none;
         }
@@ -590,7 +624,7 @@ export default function PvpPage() {
           pointer-events: none;
         }
         .dbg-hud .dbg-btn {
-          pointer-events: auto; /* 👈 allow buttons only */
+          pointer-events: auto;
         }
 
         .dbg-hud pre {
@@ -623,8 +657,12 @@ export default function PvpPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="ui-subtitle">PVP</div>
-              <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">Авто-бой колод</div>
-              <div className="text-[11px] ui-subtle mt-1">Собери 20 копий → сохрани → нажми “В бой”</div>
+              <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">
+                Авто-бой колод
+              </div>
+              <div className="text-[11px] ui-subtle mt-1">
+                Собери 20 копий → сохрани → нажми “В бой”
+              </div>
             </div>
             <button
               type="button"
@@ -662,7 +700,10 @@ export default function PvpPage() {
                   style={{ minWidth: 220 }}
                 />
                 <span className="ui-pill">
-                  Копии: <span className="ml-2 font-extrabold tabular-nums">{totalCopies}/20</span>
+                  Копии:{" "}
+                  <span className="ml-2 font-extrabold tabular-nums">
+                    {totalCopies}/20
+                  </span>
                 </span>
               </div>
             </div>
@@ -672,7 +713,10 @@ export default function PvpPage() {
                 type="button"
                 onClick={saveDeck}
                 disabled={saving || !canFight || searching}
-                className={["ui-btn", canFight && !searching ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
+                className={[
+                  "ui-btn",
+                  canFight && !searching ? "ui-btn-primary" : "ui-btn-ghost",
+                ].join(" ")}
               >
                 {saving ? "Сохранение…" : "Сохранить колоду"}
               </button>
@@ -682,12 +726,20 @@ export default function PvpPage() {
                   type="button"
                   onClick={findMatch}
                   disabled={queueing || !canFight}
-                  className={["ui-btn", canFight ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
+                  className={[
+                    "ui-btn",
+                    canFight ? "ui-btn-primary" : "ui-btn-ghost",
+                  ].join(" ")}
                 >
                   {queueing ? "Старт…" : "В бой"}
                 </button>
               ) : (
-                <button type="button" onClick={cancelSearch} disabled={queueing} className="ui-btn ui-btn-ghost">
+                <button
+                  type="button"
+                  onClick={cancelSearch}
+                  disabled={queueing}
+                  className="ui-btn ui-btn-ghost"
+                >
                   {queueing ? "…" : "Отмена"}
                 </button>
               )}
@@ -715,7 +767,12 @@ export default function PvpPage() {
                   const copies = deckMap[c.id] || 0;
 
                   return (
-                    <div key={c.id} className={["ui-card p-4", rarityFxClass(c.rarity)].join(" ")}>
+                    <div
+                      key={c.id}
+                      className={["ui-card p-4", rarityFxClass(c.rarity)].join(
+                        " "
+                      )}
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           <div className="font-extrabold truncate">{c.name}</div>
@@ -724,23 +781,27 @@ export default function PvpPage() {
                           </div>
                           {typeof c.owned_copies === "number" && (
                             <div className="text-[11px] ui-subtle mt-1">
-                              У тебя: <span className="font-semibold tabular-nums">{c.owned_copies}</span>
+                              У тебя:{" "}
+                              <span className="font-semibold tabular-nums">
+                                {c.owned_copies}
+                              </span>
                             </div>
                           )}
                         </div>
 
                         <span className="ui-pill">
-                          x <span className="ml-2 font-extrabold tabular-nums">{copies}</span>
+                          x{" "}
+                          <span className="ml-2 font-extrabold tabular-nums">
+                            {copies}
+                          </span>
                         </span>
                       </div>
 
                       <div className="mt-3 flex gap-2">
                         <button
                           type="button"
-                          onPointerDown={hardStop}
-                          onTouchStart={hardStop}
                           onClick={(e) => {
-                            hardStop(e);
+                            stopBubble(e);
                             removeCopy(c.id);
                           }}
                           disabled={copies <= 0 || searching}
@@ -751,10 +812,8 @@ export default function PvpPage() {
 
                         <button
                           type="button"
-                          onPointerDown={hardStop}
-                          onTouchStart={hardStop}
                           onClick={(e) => {
-                            hardStop(e);
+                            stopBubble(e);
                             addCopy(c.id);
                           }}
                           disabled={searching || totalCopies >= 20 || copies >= 9}
@@ -775,7 +834,9 @@ export default function PvpPage() {
       {dbgOpen && (
         <div className="dbg-hud">
           <div className="dbg-row">
-            <div className="text-[11px] font-extrabold uppercase tracking-[0.18em]">DEBUG</div>
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.18em]">
+              DEBUG
+            </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 className="dbg-btn"
