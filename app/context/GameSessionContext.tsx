@@ -66,7 +66,6 @@ function sleep(ms: number) {
 export function GameSessionProvider({ children }: { children: ReactNode }) {
   const hook = useTelegramWebApp() as any;
 
-  // hook values (may be null on iOS for a moment)
   const hookWebApp = hook?.webApp;
   const hookInitData = hook?.initData;
   const hookTelegramUser = hook?.telegramUser;
@@ -81,28 +80,27 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
   const stableUserRef = useRef<any | null>(null);
   const stableTelegramIdRef = useRef<string | null>(null);
 
-  // pick "current" webapp (may flap)
+  // Current (volatile) sources
   const fallbackWebApp = getWindowWebApp();
   const volatileWebApp = hookWebApp || fallbackWebApp;
 
-  // once we saw WebApp -> keep it
+  // Once Telegram WebApp was seen -> keep forever in this session
   if (volatileWebApp && !stableWebAppRef.current) {
     stableWebAppRef.current = volatileWebApp;
   }
 
-  // isTelegramEnv should be sticky: once true, stays true
+  // Sticky env: once true, stays true (iOS fix)
   const isTelegramEnv = !!stableWebAppRef.current;
 
-  // telegram user: keep last known
+  // Sticky user: keep last known valid user.id
   const volatileUser =
     hookTelegramUser || volatileWebApp?.initDataUnsafe?.user || null;
   if (volatileUser?.id) {
     stableUserRef.current = volatileUser;
   }
 
-  // initDataRaw: keep last non-empty (do NOT drop to "")
+  // Compute initData (may be empty during flaps). Never drop sticky value to ""
   const computedInitDataRaw = useMemo(() => {
-    // prefer hook initData if provided
     if (typeof hookInitData === "string" && hookInitData) return hookInitData;
     if (hookInitData) return String(hookInitData);
 
@@ -114,7 +112,7 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
     stableInitDataRef.current = computedInitDataRaw;
   }
 
-  const initDataRaw = stableInitDataRef.current; // sticky source of truth
+  const initDataRaw = stableInitDataRef.current;
   const effectiveTelegramUser = stableUserRef.current;
 
   const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
@@ -131,22 +129,21 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    const controller = new AbortController();
 
     async function runBootstrap() {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
 
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-      }, BOOTSTRAP_TIMEOUT_MS);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), BOOTSTRAP_TIMEOUT_MS);
 
       try {
         setBootstrapLoading(true);
-        setBootstrapError(null);
         setBootstrapTimedOut(false);
+        // IMPORTANT: не сносим bootstrapError заранее, чтобы не мигало UI
+        // но если всё успешно — обнулим ниже
 
-        // Wait a bit for Telegram to inject on iOS (but use STICKY webapp too)
+        // Wait a bit for Telegram injection (but prefer sticky WA)
         let wa = stableWebAppRef.current || getWindowWebApp();
         if (!wa) {
           const start = Date.now();
@@ -159,9 +156,12 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
         }
 
         // If still no WebApp:
-        // IMPORTANT: do NOT nuke existing telegramId/bootstrap — just report error.
+        // If we already have telegramId/bootstrap -> DO NOTHING (it's just an iOS flap)
         if (!wa) {
-          setBootstrapError("Telegram WebApp environment required");
+          const alreadyOk = !!stableTelegramIdRef.current && !!bootstrap;
+          if (!alreadyOk) {
+            setBootstrapError("Telegram WebApp environment required");
+          }
           return;
         }
 
@@ -170,7 +170,10 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
         const effectiveTelegramId = picked || stableTelegramIdRef.current;
 
         if (!effectiveTelegramId) {
-          setBootstrapError("Telegram user not found");
+          const alreadyOk = !!stableTelegramIdRef.current && !!bootstrap;
+          if (!alreadyOk) {
+            setBootstrapError("Telegram user not found");
+          }
           return;
         }
 
@@ -181,8 +184,7 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
           sessionStorage.setItem(TG_ID_KEY, effectiveTelegramId);
         } catch {}
 
-        // initData can be empty on some clients; but if we already have telegramId,
-        // bootstrap can still work with telegramId alone (server should accept it).
+        // Build payload: allow initData to be absent (server should accept telegramId-only)
         const payload: any = { telegramId: effectiveTelegramId };
         if (initDataRaw) payload.initData = initDataRaw;
 
@@ -198,7 +200,7 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
 
         setBootstrap(data);
-        setBootstrapError(null);
+        setBootstrapError(null); // ✅ success -> clear errors
       } catch (err: any) {
         if (cancelled) return;
 
@@ -227,17 +229,14 @@ export function GameSessionProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
-      controller.abort();
     };
-    // Не зависим от volatileWebApp/initData, иначе iOS флап будет триггерить перезапуски
+    // не зависим от volatileWebApp/initData чтобы iOS-flap не дёргал эффект
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveTelegramUser?.id, refreshNonce]);
 
   const loading = authLoading || bootstrapLoading;
 
-  const error = useMemo(() => {
-    return bootstrapError || null;
-  }, [bootstrapError]);
+  const error = useMemo(() => bootstrapError || null, [bootstrapError]);
 
   const value: GameSessionContextValue = useMemo(
     () => ({
