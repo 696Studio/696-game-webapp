@@ -35,6 +35,47 @@ function rarityFxClass(r: string) {
   return "ui-rarity-common";
 }
 
+function countTotalCopies(map: Record<string, number>) {
+  return Object.values(map).reduce((a, b) => a + (Number(b) || 0), 0);
+}
+
+/** ---------- Persistent Debug HUD (survives reloads) ---------- **/
+const DBG_KEY = "__pvp_dbg_log_v1__";
+
+function dbgPush(msg: string) {
+  try {
+    const ts = new Date().toISOString().slice(11, 19);
+    const line = `[${ts}] ${msg}`;
+    const raw = localStorage.getItem(DBG_KEY);
+    const arr = raw ? (JSON.parse(raw) as string[]) : [];
+    arr.push(line);
+    const trimmed = arr.slice(-120);
+    localStorage.setItem(DBG_KEY, JSON.stringify(trimmed));
+  } catch {
+    // ignore
+  }
+}
+
+function dbgRead(): string[] {
+  try {
+    const raw = localStorage.getItem(DBG_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function safeErr(e: any) {
+  try {
+    if (!e) return "unknown";
+    if (typeof e === "string") return e;
+    if (e?.message) return String(e.message);
+    return JSON.stringify(e);
+  } catch {
+    return "unknown";
+  }
+}
+
 export default function PvpPage() {
   const router = useRouter();
   const { telegramId, isTelegramEnv, loading, timedOut, error, refreshSession } =
@@ -57,10 +98,14 @@ export default function PvpPage() {
 
   const pushedRef = useRef<string | null>(null);
 
-  const totalCopies = useMemo(
-    () => Object.values(deckMap).reduce((a, b) => a + (b || 0), 0),
-    [deckMap]
-  );
+  const editedRef = useRef(false);
+  const loadedDeckForTelegramIdRef = useRef<string | null>(null);
+
+  // Debug HUD state
+  const [dbg, setDbg] = useState<string[]>([]);
+  const [dbgOpen, setDbgOpen] = useState(true);
+
+  const totalCopies = useMemo(() => countTotalCopies(deckMap), [deckMap]);
 
   const deckRows: DeckCardRow[] = useMemo(() => {
     return Object.entries(deckMap)
@@ -68,39 +113,175 @@ export default function PvpPage() {
       .map(([card_id, copies]) => ({ card_id, copies }));
   }, [deckMap]);
 
+  // ---- Install global listeners (client) ----
+  useEffect(() => {
+    dbgPush("PVP_MOUNT");
+    dbgPush(
+      `ENV isTelegramEnv=${String(isTelegramEnv)} telegramId=${
+        telegramId ? "yes" : "no"
+      }`
+    );
+
+    // detect reload count
+    try {
+      const k = "__pvp_reload_count__";
+      const n = Number(sessionStorage.getItem(k) || "0") + 1;
+      sessionStorage.setItem(k, String(n));
+      dbgPush(`RELOAD_COUNT=${n}`);
+    } catch {}
+
+    const onErr = (ev: ErrorEvent) => {
+      dbgPush(
+        `WINDOW_ERROR: ${ev.message || "unknown"} @${ev.filename}:${ev.lineno}:${ev.colno}`
+      );
+      setDbg(dbgRead());
+    };
+
+    const onRej = (ev: PromiseRejectionEvent) => {
+      dbgPush(`UNHANDLED_REJECTION: ${safeErr((ev as any).reason)}`);
+      setDbg(dbgRead());
+    };
+
+    const onVis = () => {
+      dbgPush(`VISIBILITY: ${document.visibilityState}`);
+      setDbg(dbgRead());
+    };
+
+    const onPageHide = () => {
+      dbgPush("PAGEHIDE");
+      setDbg(dbgRead());
+    };
+
+    const onBeforeUnload = () => {
+      dbgPush("BEFOREUNLOAD");
+    };
+
+    // ---- click/touch capture logger (shows REAL target path on iOS) ----
+    const logPath = (label: string, e: any) => {
+      try {
+        const path = (e?.composedPath?.() || []) as any[];
+        const picked = path
+          .slice(0, 10)
+          .map((n) => {
+            const tag = n?.tagName ? String(n.tagName).toLowerCase() : "";
+            const href = n?.getAttribute?.("href");
+            const type = n?.getAttribute?.("type");
+            return tag
+              ? `${tag}${href ? `[href=${href}]` : ""}${type ? `[type=${type}]` : ""}`
+              : String(n?.constructor?.name || "node");
+          })
+          .join(" > ");
+
+        const t = e?.target as any;
+        const tTag = t?.tagName ? String(t.tagName).toLowerCase() : "unknown";
+        const tHref = t?.getAttribute?.("href");
+
+        dbgPush(`${label} target=${tTag}${tHref ? ` href=${tHref}` : ""} path=${picked}`);
+        setDbg(dbgRead());
+      } catch {}
+    };
+
+    const onClickCap = (e: any) => logPath("CLICK_CAP", e);
+    const onTouchCap = (e: any) => logPath("TOUCH_CAP", e);
+
+    window.addEventListener("error", onErr);
+    window.addEventListener("unhandledrejection", onRej);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    document.addEventListener("click", onClickCap, true);
+    document.addEventListener("touchstart", onTouchCap, true);
+
+    setDbg(dbgRead());
+
+    return () => {
+      window.removeEventListener("error", onErr);
+      window.removeEventListener("unhandledrejection", onRej);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+
+      document.removeEventListener("click", onClickCap, true);
+      document.removeEventListener("touchstart", onTouchCap, true);
+
+      dbgPush("PVP_UNMOUNT");
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // track session flags changes
+  useEffect(() => {
+    dbgPush(
+      `CTX loading=${String(loading)} timedOut=${String(
+        timedOut
+      )} error=${error ? "yes" : "no"}`
+    );
+    setDbg(dbgRead());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, timedOut, error]);
+
   async function loadCards() {
     if (!telegramId) return;
 
     setLoadingCards(true);
     try {
+      dbgPush("LOAD_CARDS start");
       const res = await fetch(
         `/api/pvp/cards/list?telegramId=${encodeURIComponent(telegramId)}`
       );
       const data = await res.json();
+      dbgPush(
+        `LOAD_CARDS ok status=${res.status} count=${(data?.cards ?? []).length}`
+      );
       setCards((data?.cards ?? []) as Card[]);
     } catch (e) {
+      dbgPush(`LOAD_CARDS fail ${safeErr(e)}`);
       console.error(e);
       setCards([]);
     } finally {
       setLoadingCards(false);
+      setDbg(dbgRead());
     }
   }
 
   async function loadDeck() {
     if (!telegramId) return;
-    const res = await fetch(
-      `/api/pvp/deck/get?telegramId=${encodeURIComponent(telegramId)}`
-    );
-    const data = await res.json();
-    const deck = data?.deck;
 
-    if (deck?.cards) {
-      const next: Record<string, number> = {};
-      for (const row of deck.cards as DeckCardRow[]) {
-        next[row.card_id] = Number(row.copies || 0);
+    if (editedRef.current) {
+      dbgPush("LOAD_DECK skipped (edited)");
+      setDbg(dbgRead());
+      return;
+    }
+    if (loadedDeckForTelegramIdRef.current === telegramId) {
+      dbgPush("LOAD_DECK skipped (already loaded)");
+      setDbg(dbgRead());
+      return;
+    }
+    loadedDeckForTelegramIdRef.current = telegramId;
+
+    try {
+      dbgPush("LOAD_DECK start");
+      const res = await fetch(
+        `/api/pvp/deck/get?telegramId=${encodeURIComponent(telegramId)}`
+      );
+      const data = await res.json();
+      dbgPush(`LOAD_DECK ok status=${res.status}`);
+      const deck = data?.deck;
+
+      if (deck?.cards) {
+        const next: Record<string, number> = {};
+        for (const row of deck.cards as DeckCardRow[]) {
+          next[String(row.card_id)] = Number(row.copies || 0);
+        }
+        setDeckMap(next);
+        if (deck?.name) setDeckName(deck.name);
       }
-      setDeckMap(next);
-      if (deck?.name) setDeckName(deck.name);
+    } catch (e) {
+      dbgPush(`LOAD_DECK fail ${safeErr(e)}`);
+      console.error(e);
+    } finally {
+      setDbg(dbgRead());
     }
   }
 
@@ -126,6 +307,8 @@ export default function PvpPage() {
 
     setSaving(true);
     setStatusText(null);
+    dbgPush("SAVE_DECK start");
+
     try {
       const res = await fetch("/api/pvp/deck/save", {
         method: "POST",
@@ -133,12 +316,15 @@ export default function PvpPage() {
         body: JSON.stringify({ telegramId, deckName, cards: deckRows }),
       });
       const data = await res.json();
+      dbgPush(`SAVE_DECK resp status=${res.status} ok=${String(res.ok)}`);
       if (!res.ok) throw new Error(data?.error || "Save failed");
       setStatusText("Колода сохранена ✅");
     } catch (e: any) {
+      dbgPush(`SAVE_DECK fail ${safeErr(e)}`);
       setStatusText(`Ошибка: ${e?.message || "Save failed"}`);
     } finally {
       setSaving(false);
+      setDbg(dbgRead());
     }
   }
 
@@ -156,6 +342,8 @@ export default function PvpPage() {
     setSearching(false);
     pushedRef.current = null;
 
+    dbgPush("ENQUEUE start");
+
     try {
       const res = await fetch("/api/pvp/enqueue", {
         method: "POST",
@@ -163,6 +351,11 @@ export default function PvpPage() {
         body: JSON.stringify({ telegramId, mode: MODE }),
       });
       const data = await res.json();
+      dbgPush(
+        `ENQUEUE resp status=${res.status} ok=${String(res.ok)} payload=${
+          data?.status || "?"
+        }`
+      );
       if (!res.ok) throw new Error(data?.error || "Enqueue failed");
 
       if (data.status === "matched" && data.matchId) {
@@ -175,16 +368,20 @@ export default function PvpPage() {
       setStatusText("В очереди… ищем соперника.");
       setSearching(true);
     } catch (e: any) {
+      dbgPush(`ENQUEUE fail ${safeErr(e)}`);
       setStatusText(`Ошибка: ${e?.message || "Enqueue failed"}`);
       setSearching(false);
     } finally {
       setQueueing(false);
+      setDbg(dbgRead());
     }
   }
 
   async function cancelSearch() {
     if (!telegramId) return;
     setQueueing(true);
+    dbgPush("CANCEL start");
+
     try {
       const res = await fetch("/api/pvp/cancel", {
         method: "POST",
@@ -192,6 +389,7 @@ export default function PvpPage() {
         body: JSON.stringify({ telegramId, mode: MODE }),
       });
       const data = await res.json();
+      dbgPush(`CANCEL resp status=${res.status} ok=${String(res.ok)}`);
       if (!res.ok) throw new Error(data?.error || "Cancel failed");
 
       setSearching(false);
@@ -199,9 +397,11 @@ export default function PvpPage() {
       pushedRef.current = null;
       setStatusText("Поиск отменён.");
     } catch (e: any) {
+      dbgPush(`CANCEL fail ${safeErr(e)}`);
       setStatusText(`Ошибка: ${e?.message || "Cancel failed"}`);
     } finally {
       setQueueing(false);
+      setDbg(dbgRead());
     }
   }
 
@@ -223,9 +423,11 @@ export default function PvpPage() {
         if (!alive) return;
 
         if (data?.status === "matched" && data?.matchId) {
+          dbgPush("QUEUE matched");
           setStatusText("Матч найден ✅");
           setSearching(false);
           setMatchId(data.matchId);
+          setDbg(dbgRead());
           return;
         }
 
@@ -248,28 +450,46 @@ export default function PvpPage() {
     if (!matchId) return;
     if (pushedRef.current === matchId) return;
     pushedRef.current = matchId;
+    dbgPush(`ROUTE push battle matchId=${matchId}`);
+    setDbg(dbgRead());
     router.push(`/pvp/battle?matchId=${encodeURIComponent(matchId)}`);
   }, [matchId, router]);
 
-  // ✅ важно: предотвращаем submit/навигации на iOS/внутри возможных <form>
-  function addCopy(cardId: string, e?: any) {
-    e?.preventDefault?.();
-    e?.stopPropagation?.();
+  // iOS ghost-tap guard: kill default + bubbling for touch events
+  function killTap(e: any, label: string) {
+    try {
+      e.preventDefault?.();
+      e.stopPropagation?.();
+      dbgPush(label);
+      setDbg(dbgRead());
+    } catch {}
+  }
+
+  function addCopy(cardId: string) {
+    dbgPush(`ADD_CLICK card=${cardId}`);
+    setDbg(dbgRead());
+
+    editedRef.current = true;
 
     setDeckMap((prev) => {
-      const curr = prev[cardId] || 0;
-      if (totalCopies >= 20) return prev;
+      const prevTotal = countTotalCopies(prev);
+      const curr = Number(prev[cardId] || 0);
+
+      if (prevTotal >= 20) return prev;
+
       const next = clamp(curr + 1, 0, 9);
       return { ...prev, [cardId]: next };
     });
   }
 
-  function removeCopy(cardId: string, e?: any) {
-    e?.preventDefault?.();
-    e?.stopPropagation?.();
+  function removeCopy(cardId: string) {
+    dbgPush(`REMOVE_CLICK card=${cardId}`);
+    setDbg(dbgRead());
+
+    editedRef.current = true;
 
     setDeckMap((prev) => {
-      const curr = prev[cardId] || 0;
+      const curr = Number(prev[cardId] || 0);
       const next = clamp(curr - 1, 0, 9);
       const out = { ...prev, [cardId]: next };
       if (next === 0) delete out[cardId];
@@ -299,6 +519,10 @@ export default function PvpPage() {
           <div className="mt-4 ui-progress">
             <div className="w-1/3 opacity-70 animate-pulse" />
           </div>
+
+          <div className="mt-4 text-[10px] ui-subtle whitespace-pre-wrap break-words">
+            {dbg.slice(-6).join("\n")}
+          </div>
         </div>
       </main>
     );
@@ -311,14 +535,24 @@ export default function PvpPage() {
           <div className="text-lg font-semibold">
             {timedOut ? "Таймаут" : "Ошибка сессии"}
           </div>
-          <div className="mt-2 text-sm ui-subtle">Нажми Re-sync и попробуй снова.</div>
+          <div className="mt-2 text-sm ui-subtle">
+            Нажми Re-sync и попробуй снова.
+          </div>
           <button
             type="button"
-            onClick={() => refreshSession?.()}
+            onClick={() => {
+              dbgPush("RESYNC_CLICK");
+              setDbg(dbgRead());
+              refreshSession?.();
+            }}
             className="mt-5 ui-btn ui-btn-primary w-full"
           >
             Re-sync
           </button>
+
+          <div className="mt-4 text-[10px] ui-subtle whitespace-pre-wrap break-words">
+            {dbg.slice(-12).join("\n")}
+          </div>
         </div>
       </main>
     );
@@ -401,6 +635,45 @@ export default function PvpPage() {
         .pvp-altar.is-searching::after {
           opacity: 1;
         }
+
+        /* Debug HUD */
+        .dbg-hud {
+          position: fixed;
+          left: 10px;
+          right: 10px;
+          bottom: 10px;
+          z-index: 9999;
+          border-radius: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          background: rgba(0, 0, 0, 0.65);
+          backdrop-filter: blur(8px);
+          padding: 10px;
+          max-height: 38vh;
+          overflow: auto;
+        }
+        .dbg-hud pre {
+          margin: 8px 0 0;
+          font-size: 10px;
+          white-space: pre-wrap;
+          word-break: break-word;
+          opacity: 0.92;
+        }
+        .dbg-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .dbg-btn {
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          background: rgba(255, 255, 255, 0.06);
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
       `}</style>
 
       <div className="w-full max-w-5xl">
@@ -417,8 +690,13 @@ export default function PvpPage() {
             </div>
             <button
               type="button"
-              onClick={() => refreshSession?.()}
+              onClick={() => {
+                dbgPush("RESYNC_CLICK (header)");
+                setDbg(dbgRead());
+                refreshSession?.();
+              }}
               className="ui-btn ui-btn-ghost"
+              style={{ touchAction: "manipulation" }}
             >
               Re-sync
             </button>
@@ -437,9 +715,14 @@ export default function PvpPage() {
               <div className="mt-2 flex gap-2 items-center flex-wrap">
                 <input
                   value={deckName}
-                  onChange={(e) => setDeckName(e.target.value)}
+                  onChange={(e) => {
+                    editedRef.current = true;
+                    setDeckName(e.target.value);
+                    dbgPush("DECKNAME_CHANGE");
+                    setDbg(dbgRead());
+                  }}
                   className="px-4 py-2 rounded-full border border-[color:var(--border)] bg-[rgba(255,255,255,0.04)] text-sm outline-none"
-                  style={{ minWidth: 220 }}
+                  style={{ minWidth: 220, touchAction: "manipulation" as any }}
                 />
                 <span className="ui-pill">
                   Копии:{" "}
@@ -459,6 +742,7 @@ export default function PvpPage() {
                   "ui-btn",
                   canFight && !searching ? "ui-btn-primary" : "ui-btn-ghost",
                 ].join(" ")}
+                style={{ touchAction: "manipulation" }}
               >
                 {saving ? "Сохранение…" : "Сохранить колоду"}
               </button>
@@ -468,9 +752,11 @@ export default function PvpPage() {
                   type="button"
                   onClick={findMatch}
                   disabled={queueing || !canFight}
-                  className={["ui-btn", canFight ? "ui-btn-primary" : "ui-btn-ghost"].join(
-                    " "
-                  )}
+                  className={[
+                    "ui-btn",
+                    canFight ? "ui-btn-primary" : "ui-btn-ghost",
+                  ].join(" ")}
+                  style={{ touchAction: "manipulation" }}
                 >
                   {queueing ? "Старт…" : "В бой"}
                 </button>
@@ -480,6 +766,7 @@ export default function PvpPage() {
                   onClick={cancelSearch}
                   disabled={queueing}
                   className="ui-btn ui-btn-ghost"
+                  style={{ touchAction: "manipulation" }}
                 >
                   {queueing ? "…" : "Отмена"}
                 </button>
@@ -539,18 +826,32 @@ export default function PvpPage() {
                       <div className="mt-3 flex gap-2">
                         <button
                           type="button"
-                          onClick={(e) => removeCopy(c.id, e)}
+                          onTouchStart={(e) => killTap(e, `MINUS_TOUCH_START card=${c.id}`)}
+                          onTouchEnd={(e) => killTap(e, `MINUS_TOUCH_END card=${c.id}`)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            removeCopy(c.id);
+                          }}
                           disabled={copies <= 0 || searching}
                           className="ui-btn ui-btn-ghost"
+                          style={{ touchAction: "manipulation" }}
                         >
                           −
                         </button>
 
                         <button
                           type="button"
-                          onClick={(e) => addCopy(c.id, e)}
+                          onTouchStart={(e) => killTap(e, `PLUS_TOUCH_START card=${c.id}`)}
+                          onTouchEnd={(e) => killTap(e, `PLUS_TOUCH_END card=${c.id}`)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            addCopy(c.id);
+                          }}
                           disabled={searching || totalCopies >= 20 || copies >= 9}
                           className="ui-btn ui-btn-primary"
+                          style={{ touchAction: "manipulation" }}
                         >
                           +
                         </button>
@@ -563,6 +864,49 @@ export default function PvpPage() {
           </div>
         </section>
       </div>
+
+      {dbgOpen && (
+        <div className="dbg-hud">
+          <div className="dbg-row">
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.18em]">
+              DEBUG
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="dbg-btn"
+                onClick={() => {
+                  try {
+                    localStorage.removeItem(DBG_KEY);
+                    dbgPush("DBG_CLEARED");
+                    setDbg(dbgRead());
+                  } catch {}
+                }}
+              >
+                Clear
+              </button>
+              <button className="dbg-btn" onClick={() => setDbgOpen(false)}>
+                Hide
+              </button>
+            </div>
+          </div>
+          <pre>{dbg.slice(-60).join("\n")}</pre>
+        </div>
+      )}
+
+      {!dbgOpen && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 10,
+            right: 10,
+            zIndex: 9999,
+          }}
+        >
+          <button className="dbg-btn" onClick={() => setDbgOpen(true)}>
+            Debug
+          </button>
+        </div>
+      )}
     </main>
   );
 }
