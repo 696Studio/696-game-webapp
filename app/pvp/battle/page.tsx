@@ -339,11 +339,8 @@ function BattleInner() {
   const [roundWinner, setRoundWinner] = useState<string | null>(null);
 
   const [revealTick, setRevealTick] = useState(0);
-  const [p1Hit, setP1Hit] = useState(false);
-  const [p2Hit, setP2Hit] = useState(false);
 
   const prevRevealSigRef = useRef<string>("");
-  const prevScoreRef = useRef<{ p1: number | null; p2: number | null }>({ p1: null, p2: null });
 
   const [roundBanner, setRoundBanner] = useState<{
     visible: boolean;
@@ -616,18 +613,6 @@ function BattleInner() {
       prevRevealSigRef.current = revealSig;
     }
 
-    const prevS1 = prevScoreRef.current.p1;
-    const prevS2 = prevScoreRef.current.p2;
-    if (s1 != null && prevS1 != null && s1 !== prevS1) {
-      setP1Hit(true);
-      window.setTimeout(() => setP1Hit(false), 220);
-    }
-    if (s2 != null && prevS2 != null && s2 !== prevS2) {
-      setP2Hit(true);
-      window.setTimeout(() => setP2Hit(false), 220);
-    }
-    prevScoreRef.current = { p1: s1, p2: s2 };
-
     setRoundN(rr);
     setP1Cards(c1);
     setP2Cards(c2);
@@ -770,12 +755,6 @@ function BattleInner() {
 
   const topCards = enemySide === "p1" ? p1Cards : p2Cards;
   const bottomCards = youSide === "p1" ? p1Cards : p2Cards;
-
-  const topScore = enemySide === "p1" ? p1Score : p2Score;
-  const bottomScore = youSide === "p1" ? p1Score : p2Score;
-
-  const topHit = enemySide === "p1" ? p1Hit : p2Hit;
-  const bottomHit = youSide === "p1" ? p1Hit : p2Hit;
 
   const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   const youUserId = youSide === "p1" ? match?.p1_user_id : match?.p2_user_id;
@@ -1569,73 +1548,6 @@ function BattleInner() {
 
         .lane { display: grid; gap: 14px; }
 
-        .playerbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          padding: 12px 12px;
-          border: 1px solid rgba(255,255,255,0.14);
-          border-radius: 16px;
-          background: rgba(0,0,0,0.22);
-          backdrop-filter: blur(6px);
-        }
-
-        .player-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
-
-        .avatar {
-          width: 38px;
-          height: 38px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(255,255,255,0.06);
-          overflow: hidden;
-          flex: 0 0 auto;
-        }
-        .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-        .nameblock { min-width: 0; }
-        .nameblock .label {
-          font-size: 10px;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-          opacity: 0.75;
-        }
-        .nameblock .name {
-          margin-top: 2px;
-          font-weight: 900;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          font-size: 12px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .player-right { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-
-        .hp {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(255,255,255,0.06);
-          font-weight: 900;
-          letter-spacing: 0.08em;
-          font-variant-numeric: tabular-nums;
-          font-size: 11px;
-        }
-
-        .score {
-          font-weight: 900;
-          letter-spacing: 0.06em;
-          font-variant-numeric: tabular-nums;
-          font-size: 18px;
-        }
-        .score.is-hit { animation: popHit 220ms var(--ease-out) both; }
-
         .row {
           border-radius: 18px;
           border: 1px solid rgba(255,255,255,0.12);
@@ -2035,26 +1947,7 @@ function BattleInner() {
           )}
 
           <div className="lane">
-            <div className="playerbar">
-              <div className="player-left">
-                <div className="avatar">
-                  <img alt="enemy" src={enemyAvatar} />
-                </div>
-                <div className="nameblock">
-                  <div className="label">ENEMY</div>
-                  <div className="name">{enemyName}</div>
-                </div>
-              </div>
-
-              <div className="player-right">
-                <div className="hp">
-                  HP <b className="tabular-nums">30</b>
-                </div>
-                <div className={["score", topHit ? "is-hit" : ""].join(" ")}>
-                  {scored ? (topScore == null ? "…" : topScore) : "…"}
-                </div>
-              </div>
-            </div>
+            {/* ✅ REMOVED: playerbar (was duplicating portrait + name) */}
 
             <div className="row row-top">
               <div className="slots">
@@ -2086,6 +1979,12 @@ function BattleInner() {
               <div className="mt-2 text-[12px] ui-subtle">
                 Активный юнит: <span className="font-semibold">{activeInstance ? safeSliceId(activeInstance) : "—"}</span>
               </div>
+              <div className="mt-2 text-[12px] ui-subtle">
+                Score:{" "}
+                <span className="font-semibold tabular-nums">
+                  {(enemySide === "p1" ? p1Score : p2Score) ?? "—"} : {(youSide === "p1" ? p1Score : p2Score) ?? "—"}
+                </span>
+              </div>
             </div>
 
             <div className="row row-bottom">
@@ -2107,26 +2006,7 @@ function BattleInner() {
               </div>
             </div>
 
-            <div className="playerbar">
-              <div className="player-left">
-                <div className="avatar">
-                  <img alt="you" src={youAvatar} />
-                </div>
-                <div className="nameblock">
-                  <div className="label">YOU</div>
-                  <div className="name">{youName}</div>
-                </div>
-              </div>
-
-              <div className="player-right">
-                <div className="hp">
-                  HP <b className="tabular-nums">30</b>
-                </div>
-                <div className={["score", bottomHit ? "is-hit" : ""].join(" ")}>
-                  {scored ? (bottomScore == null ? "…" : bottomScore) : "…"}
-                </div>
-              </div>
-            </div>
+            {/* ✅ REMOVED: playerbar (was duplicating portrait + name) */}
 
             {!playing && t >= durationSec && (
               <div className="ui-card p-5" style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
@@ -2158,6 +2038,7 @@ function BattleInner() {
     </main>
   );
 }
+
 export default function BattlePage() {
   return (
     <Suspense
