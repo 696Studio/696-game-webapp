@@ -902,12 +902,7 @@ function BattleInner() {
     const arenaEl = arenaRef.current;
     if (!arenaEl) return [];
 
-    const curves: Array<{
-      key: string;
-      d: string;
-      fromId: string;
-      toId: string;
-    }> = [];
+    const curves: Array<{ key: string; d: string; fromId: string; toId: string }> = [];
 
     for (const atk of recentAttacks) {
       const p1 = getCenterInArena(atk.fromId);
@@ -936,6 +931,35 @@ function BattleInner() {
 
   function TagPill({ label }: { label: string }) {
     return <span className="bb-tag">{label}</span>;
+  }
+
+  function MapPortrait({
+    where,
+    name,
+    avatar,
+    tone,
+  }: {
+    where: "top" | "bottom";
+    name: string;
+    avatar: string;
+    tone: "enemy" | "you";
+  }) {
+    return (
+      <div
+        className={[
+          "map-portrait",
+          where === "top" ? "is-top" : "is-bottom",
+          tone === "enemy" ? "tone-enemy" : "tone-you",
+        ].join(" ")}
+      >
+        <div className="map-portrait-ring">
+          <div className="map-portrait-img">
+            <img src={avatar} alt={tone} />
+          </div>
+        </div>
+        <div className="map-portrait-name">{name}</div>
+      </div>
+    );
   }
 
   function CardSlot({
@@ -1083,7 +1107,8 @@ function BattleInner() {
                     </div>
                   )}
                   <div className="bb-hptext">
-                    <span className="tabular-nums">{unit.hp}</span> / <span className="tabular-nums">{unit.maxHp}</span>
+                    <span className="tabular-nums">{unit.hp}</span> /{" "}
+                    <span className="tabular-nums">{unit.maxHp}</span>
                     {unit.shield > 0 ? (
                       <span className="bb-shieldnum">
                         {" "}
@@ -1391,7 +1416,13 @@ function BattleInner() {
           animation: glowPulse 2.2s ease-in-out infinite;
           mix-blend-mode: screen;
         }
-        .arena > * { position: relative; z-index: 1; }
+
+        /* ✅ FIX: don't force z-index:1 on ALL arena children (was breaking portrait z-index) */
+        .arena > .lane,
+        .arena > .atk-overlay {
+          position: relative;
+          z-index: 1;
+        }
 
         .arena.fx-p1,
         .arena.fx-p2,
@@ -1430,6 +1461,63 @@ function BattleInner() {
           marker-end: url(#atkArrow);
         }
 
+        /* ✅ portraits inside the map circles */
+        .map-portrait {
+          position: absolute;
+          left: 50%;
+          transform: translateX(-50%);
+          pointer-events: none;
+          display: grid;
+          justify-items: center;
+          gap: 8px;
+          filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
+        }
+        /* ✅ FIX: higher specificity so it always wins */
+        .arena .map-portrait { z-index: 6; }
+
+        .map-portrait.is-top { top: 18px; }
+        .map-portrait.is-bottom { bottom: 18px; }
+
+        .map-portrait-ring {
+          width: 96px;
+          height: 96px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.22);
+          background: rgba(0,0,0,0.20);
+          backdrop-filter: blur(8px);
+          display: grid;
+          place-items: center;
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+        }
+        .map-portrait.tone-enemy .map-portrait-ring { box-shadow: inset 0 0 0 1px rgba(184,92,255,0.18), 0 0 22px rgba(184,92,255,0.10); }
+        .map-portrait.tone-you .map-portrait-ring { box-shadow: inset 0 0 0 1px rgba(88,240,255,0.18), 0 0 22px rgba(88,240,255,0.10); }
+
+        .map-portrait-img {
+          width: 82px;
+          height: 82px;
+          border-radius: 999px;
+          overflow: hidden;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(255,255,255,0.06);
+        }
+        .map-portrait-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+        .map-portrait-name {
+          max-width: 220px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(0,0,0,0.30);
+          backdrop-filter: blur(8px);
+          font-weight: 900;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          font-size: 11px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
         .round-banner {
           position: absolute;
           left: 50%;
@@ -1445,8 +1533,11 @@ function BattleInner() {
           box-shadow: 0 12px 40px rgba(0,0,0,0.35);
           animation: bannerIn 320ms var(--ease-out) both;
           pointer-events: none;
-          z-index: 5;
+          z-index: 7;
         }
+        /* ✅ keep banner above portraits */
+        .arena .round-banner { z-index: 7; }
+
         .round-banner::before {
           content: "";
           position: absolute;
@@ -1492,7 +1583,6 @@ function BattleInner() {
 
         .player-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
-        /* ✅ circle avatar */
         .avatar {
           width: 38px;
           height: 38px;
@@ -1793,6 +1883,12 @@ function BattleInner() {
           .round-banner { top: 54%; }
           .round-banner .sub { font-size: 16px; }
           .bb-bar { height: 6px; }
+
+          .map-portrait-ring { width: 84px; height: 84px; }
+          .map-portrait-img { width: 72px; height: 72px; }
+          .map-portrait.is-top { top: 14px; }
+          .map-portrait.is-bottom { bottom: 14px; }
+          .map-portrait-name { max-width: 180px; font-size: 10px; }
         }
           `,
         }}
@@ -1823,15 +1919,34 @@ function BattleInner() {
               </div>
 
               <div className="scrub-row">
-                <input type="range" min={0} max={durationSec} step={0.05} value={t} onChange={(e) => seek(Number(e.target.value))} />
+                <input
+                  type="range"
+                  min={0}
+                  max={durationSec}
+                  step={0.05}
+                  value={t}
+                  onChange={(e) => seek(Number(e.target.value))}
+                />
 
-                <button className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")} onClick={() => setRate(0.5)} type="button">
+                <button
+                  className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")}
+                  onClick={() => setRate(0.5)}
+                  type="button"
+                >
                   0.5x
                 </button>
-                <button className={["rate-pill", rate === 1 ? "is-on" : ""].join(" ")} onClick={() => setRate(1)} type="button">
+                <button
+                  className={["rate-pill", rate === 1 ? "is-on" : ""].join(" ")}
+                  onClick={() => setRate(1)}
+                  type="button"
+                >
                   1x
                 </button>
-                <button className={["rate-pill", rate === 2 ? "is-on" : ""].join(" ")} onClick={() => setRate(2)} type="button">
+                <button
+                  className={["rate-pill", rate === 2 ? "is-on" : ""].join(" ")}
+                  onClick={() => setRate(2)}
+                  type="button"
+                >
                   2x
                 </button>
               </div>
@@ -1841,7 +1956,10 @@ function BattleInner() {
                   {phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}
                 </span>
                 <span className="hud-pill">
-                  Раунд <b className="tabular-nums">{roundN}/{roundCount}</b>
+                  Раунд{" "}
+                  <b className="tabular-nums">
+                    {roundN}/{roundCount}
+                  </b>
                 </span>
                 <span className="hud-pill">
                   Match <b className="tabular-nums">{String(match.id).slice(0, 8)}…</b>
@@ -1859,7 +1977,14 @@ function BattleInner() {
               <button onClick={() => setPlaying((p) => !p)} className="ui-btn ui-btn-ghost" type="button">
                 {playing ? "Пауза" : "▶"}
               </button>
-              <button onClick={() => { setPlaying(true); seek(0); }} className="ui-btn ui-btn-ghost" type="button">
+              <button
+                onClick={() => {
+                  setPlaying(true);
+                  seek(0);
+                }}
+                className="ui-btn ui-btn-ghost"
+                type="button"
+              >
                 ↺
               </button>
               <button onClick={() => router.push("/pvp")} className="ui-btn ui-btn-ghost" type="button">
@@ -1872,7 +1997,15 @@ function BattleInner() {
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
           <svg className="atk-overlay" width="100%" height="100%">
             <defs>
-              <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+              <marker
+                id="atkArrow"
+                markerWidth="10"
+                markerHeight="10"
+                refX="9"
+                refY="5"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
                 <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.85)" />
               </marker>
             </defs>
@@ -1885,6 +2018,9 @@ function BattleInner() {
             ))}
           </svg>
 
+          {/* ✅ AVATARS INSIDE THE MAP CIRCLES + NICKNAMES */}
+          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} />
+          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} />
           {roundBanner.visible && (
             <div
               key={roundBanner.tick}
@@ -2022,7 +2158,6 @@ function BattleInner() {
     </main>
   );
 }
-
 export default function BattlePage() {
   return (
     <Suspense
