@@ -553,7 +553,10 @@ function BattleInner() {
           if (u) {
             if (Number.isFinite(shield)) u.shield = Math.max(0, Number(shield));
             else
-              u.shield = Math.max(0, u.shield + Math.max(0, Math.floor(amount)) * (e.type === "shield_hit" ? -1 : 1));
+              u.shield = Math.max(
+                0,
+                u.shield + Math.max(0, Math.floor(amount)) * (e.type === "shield_hit" ? -1 : 1)
+              );
           }
         }
       } else if (e.type === "debuff_applied") {
@@ -601,7 +604,11 @@ function BattleInner() {
     const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
 
     if (revealSig !== prevRevealSigRef.current) {
-      const hasSomething = (cf1?.length || 0) > 0 || (cf2?.length || 0) > 0 || (c1?.length || 0) > 0 || (c2?.length || 0) > 0;
+      const hasSomething =
+        (cf1?.length || 0) > 0 ||
+        (cf2?.length || 0) > 0 ||
+        (c1?.length || 0) > 0 ||
+        (c2?.length || 0) > 0;
       if (hasSomething) setRevealTick((x) => x + 1);
       prevRevealSigRef.current = revealSig;
     }
@@ -928,20 +935,43 @@ function BattleInner() {
     name,
     avatar,
     tone,
+    hp,
+    score,
+    scoreHit,
   }: {
     where: "top" | "bottom";
     name: string;
     avatar: string;
     tone: "enemy" | "you";
+    hp: number;
+    score: number | null;
+    scoreHit?: boolean;
   }) {
     return (
-      <div className={["map-portrait", where === "top" ? "is-top" : "is-bottom", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}>
+      <div
+        className={[
+          "map-portrait",
+          where === "top" ? "is-top" : "is-bottom",
+          tone === "enemy" ? "tone-enemy" : "tone-you",
+        ].join(" ")}
+      >
         <div className="map-portrait-ring">
           <div className="map-portrait-img">
             <img src={avatar} alt={tone} />
           </div>
         </div>
-        <div className="map-portrait-name">{name}</div>
+
+        <div className="map-portrait-meta">
+          <div className="map-portrait-name">{name}</div>
+          <div className="map-portrait-stats">
+            <div className="map-pill">
+              HP <b className="tabular-nums">{hp}</b>
+            </div>
+            <div className={["map-pill", "map-pill--score", scoreHit ? "is-hit" : ""].join(" ")}>
+              <b className="tabular-nums">{score == null ? "…" : score}</b>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -1400,21 +1430,13 @@ function BattleInner() {
           mix-blend-mode: screen;
         }
 
-        /* don't force z-index on all children */
+        /* don't force z-index on everything */
         .arena > .lane,
-        .arena > .atk-overlay {
-          position: relative;
-          z-index: 1;
-        }
+        .arena > .atk-overlay { position: relative; z-index: 1; }
 
         .arena.fx-p1,
         .arena.fx-p2,
         .arena.fx-draw { animation: microShake 240ms ease-out 1; }
-
-        .arena.fx-p1 .row-bottom { box-shadow: 0 0 0 1px rgba(88,240,255,0.18), 0 0 24px rgba(88,240,255,0.12); }
-        .arena.fx-p2 .row-top { box-shadow: 0 0 0 1px rgba(184,92,255,0.18), 0 0 24px rgba(184,92,255,0.12); }
-        .arena.fx-draw .row-top,
-        .arena.fx-draw .row-bottom { box-shadow: 0 0 0 1px rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.10); }
 
         .atk-overlay {
           position: absolute;
@@ -1444,7 +1466,7 @@ function BattleInner() {
           marker-end: url(#atkArrow);
         }
 
-        /* portraits inside the map circles */
+        /* portraits (center circles) */
         .map-portrait {
           position: absolute;
           left: 50%;
@@ -1452,7 +1474,7 @@ function BattleInner() {
           pointer-events: none;
           display: grid;
           justify-items: center;
-          gap: 8px;
+          gap: 10px;
           filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
         }
         .arena .map-portrait { z-index: 6; }
@@ -1460,8 +1482,8 @@ function BattleInner() {
         .map-portrait.is-bottom { bottom: 18px; }
 
         .map-portrait-ring {
-          width: 96px;
-          height: 96px;
+          width: 92px;
+          height: 92px;
           border-radius: 999px;
           border: 1px solid rgba(255,255,255,0.22);
           background: rgba(0,0,0,0.20);
@@ -1474,8 +1496,8 @@ function BattleInner() {
         .map-portrait.tone-you .map-portrait-ring { box-shadow: inset 0 0 0 1px rgba(88,240,255,0.18), 0 0 22px rgba(88,240,255,0.10); }
 
         .map-portrait-img {
-          width: 82px;
-          height: 82px;
+          width: 78px;
+          height: 78px;
           border-radius: 999px;
           overflow: hidden;
           border: 1px solid rgba(255,255,255,0.18);
@@ -1483,8 +1505,10 @@ function BattleInner() {
         }
         .map-portrait-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
+        .map-portrait-meta { display: grid; justify-items: center; gap: 8px; }
+
         .map-portrait-name {
-          max-width: 220px;
+          max-width: 240px;
           padding: 6px 10px;
           border-radius: 999px;
           border: 1px solid rgba(255,255,255,0.18);
@@ -1498,6 +1522,25 @@ function BattleInner() {
           overflow: hidden;
           text-overflow: ellipsis;
         }
+
+        .map-portrait-stats { display: flex; gap: 8px; align-items: center; }
+        .map-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 7px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(0,0,0,0.30);
+          backdrop-filter: blur(8px);
+          font-weight: 900;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          font-size: 11px;
+          font-variant-numeric: tabular-nums;
+        }
+        .map-pill--score { min-width: 64px; justify-content: center; }
+        .map-pill.is-hit { animation: popHit 220ms var(--ease-out) both; }
 
         .round-banner {
           position: absolute;
@@ -1518,90 +1561,59 @@ function BattleInner() {
         }
         .arena .round-banner { z-index: 7; }
 
-        /* ✅ MOVE enemy block down into center band */
-        .lane {
-          display: grid;
-          gap: 14px;
-          padding-top: 110px;
-          padding-bottom: 88px;
+        .round-banner::before {
+          content: "";
+          position: absolute;
+          inset: -18px;
+          border-radius: 22px;
+          background: radial-gradient(closest-side, rgba(255,255,255,0.22), transparent 70%);
+          opacity: 0;
+          animation: bannerGlow 520ms ease-out both;
         }
-
-        .playerbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          padding: 12px 12px;
-          border: 1px solid rgba(255,255,255,0.14);
-          border-radius: 16px;
-          background: rgba(0,0,0,0.22);
-          backdrop-filter: blur(6px);
-        }
-
-        /* ✅ enemy smaller */
-        .playerbar--enemy {
-          transform: scale(0.92);
-          transform-origin: center top;
-          opacity: 0.95;
-        }
-
-        .player-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
-
-        .avatar {
-          width: 38px;
-          height: 38px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(255,255,255,0.06);
-          overflow: hidden;
-          flex: 0 0 auto;
-        }
-        .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-        .nameblock { min-width: 0; }
-        .nameblock .label {
-          font-size: 10px;
-          letter-spacing: 0.18em;
+        .round-banner .title {
+          font-weight: 1000;
+          letter-spacing: 0.24em;
           text-transform: uppercase;
-          opacity: 0.75;
+          font-size: 13px;
+          opacity: 0.9;
         }
-        .nameblock .name {
-          margin-top: 2px;
+        .round-banner .sub {
+          margin-top: 6px;
           font-weight: 900;
-          letter-spacing: 0.06em;
+          letter-spacing: 0.10em;
           text-transform: uppercase;
-          font-size: 12px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .player-right { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-
-        .hp {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(255,255,255,0.06);
-          font-weight: 900;
-          letter-spacing: 0.08em;
-          font-variant-numeric: tabular-nums;
-          font-size: 11px;
-        }
-
-        .score {
-          font-weight: 900;
-          letter-spacing: 0.06em;
-          font-variant-numeric: tabular-nums;
           font-size: 18px;
         }
-        .score.is-hit { animation: popHit 220ms var(--ease-out) both; }
 
-        /* ✅ REMOVE big translucent panels under card rows */
+        /* ✅ LEFT CORNER INFO (progress / round state) */
+        .battle-info {
+          position: absolute;
+          left: 14px;
+          top: 14px;
+          z-index: 6;
+          width: min(320px, calc(100% - 28px));
+          border-radius: 18px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: rgba(0,0,0,0.28);
+          backdrop-filter: blur(8px);
+          padding: 12px 12px;
+          box-shadow: 0 12px 32px rgba(0,0,0,0.30);
+        }
+        .battle-info .h { font-weight: 1000; letter-spacing: 0.18em; text-transform: uppercase; font-size: 11px; opacity: 0.9; }
+        .battle-info .p { margin-top: 6px; font-size: 12px; opacity: 0.9; }
+        .battle-info .small { margin-top: 6px; font-size: 11px; opacity: 0.75; }
+
+        .lane {
+          position: relative;
+          min-height: 720px;
+          display: block;
+        }
+
+        /* ✅ rows placed into your red zones; remove translucent row rectangles */
         .row {
+          position: absolute;
+          left: 14px;
+          right: 14px;
           border-radius: 18px;
           border: none;
           background: transparent;
@@ -1609,7 +1621,10 @@ function BattleInner() {
           padding: 0;
           display: flex;
           justify-content: center;
+          z-index: 2;
         }
+        .row-top { top: 150px; }
+        .row-bottom { top: 430px; }
 
         .slots {
           width: 100%;
@@ -1619,14 +1634,13 @@ function BattleInner() {
           max-width: 820px;
         }
 
-        /* enemy cards a bit smaller */
-        .row--enemy .bb-card { max-width: 132px; }
-        .row--enemy .slots { max-width: 760px; }
+        /* enemy slightly smaller */
+        .row-top .bb-card { max-width: 128px; }
+        .row-bottom .bb-card { max-width: 150px; }
 
         .bb-card {
           width: 100%;
           aspect-ratio: 3 / 4;
-          max-width: 150px;
           perspective: 900px;
           border-radius: 18px;
           margin: 0 auto;
@@ -1658,7 +1672,7 @@ function BattleInner() {
         .bb-back {
           background:
             radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
-            linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.34));
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(0, 0,  0, 0.34));
         }
 
         .bb-front {
@@ -1682,14 +1696,13 @@ function BattleInner() {
         .bb-art--ph {
           background:
             radial-gradient(420px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
-            linear-gradient(to bottom, rgba(0, 0, 0, 0.22), rgba(0,  0, 0, 0.36));
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.36));
           display: flex;
           align-items: center;
           justify-content: center;
         }
 
         .bb-fx { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
-
         .bb-spawn {
           position: absolute;
           inset: 0;
@@ -1697,9 +1710,7 @@ function BattleInner() {
           box-shadow: inset 0 0 0 9999px rgba(255,255,255,0.06), 0 0 22px rgba(255,255,255,0.12);
           animation: spawnPop 260ms ease-out both;
         }
-
         .bb-atkfx { position: absolute; inset: 0; }
-
         .bb-slash {
           position: absolute;
           left: 50%;
@@ -1726,7 +1737,6 @@ function BattleInner() {
           animation: impactRing 190ms ease-out both;
           mix-blend-mode: screen;
         }
-
         .bb-dmgflash {
           position: absolute;
           inset: 0;
@@ -1751,7 +1761,6 @@ function BattleInner() {
           font-size: 11px;
           animation: dmgFloat 320ms ease-out both;
         }
-
         .bb-death {
           position: absolute;
           inset: -10%;
@@ -1840,28 +1849,29 @@ function BattleInner() {
         .bb-corner-dot { width: 6px; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.28); }
 
         .bb-card.has-unit.is-active { animation: activePulse 180ms ease-out 1; }
-
         .bb-card.has-unit.is-dead { opacity: 0.55; filter: grayscale(0.35); }
-        .bb-card.has-unit.is-dying { filter: saturate(0.9); }
 
         @media (max-width: 640px) {
+          .lane { min-height: 640px; }
+          .row-top { top: 132px; }
+          .row-bottom { top: 390px; }
           .slots { gap: 8px; }
-          .bb-card { max-width: 110px; border-radius: 16px; }
-          .row--enemy .bb-card { max-width: 98px; }
+          .row-top .bb-card { max-width: 112px; }
+          .row-bottom .bb-card { max-width: 128px; }
+          .bb-card { border-radius: 16px; }
           .bb-face { border-radius: 16px; }
           .bb-card-inner { border-radius: 16px; }
           .round-banner { top: 54%; }
           .round-banner .sub { font-size: 16px; }
           .bb-bar { height: 6px; }
 
-          .map-portrait-ring { width: 84px; height: 84px; }
-          .map-portrait-img { width: 72px; height: 72px; }
+          .map-portrait-ring { width: 82px; height: 82px; }
+          .map-portrait-img { width: 70px; height: 70px; }
           .map-portrait.is-top { top: 14px; }
           .map-portrait.is-bottom { bottom: 14px; }
           .map-portrait-name { max-width: 180px; font-size: 10px; }
 
-          .lane { padding-top: 92px; padding-bottom: 70px; }
-          .playerbar--enemy { transform: scale(0.9); }
+          .battle-info { width: min(280px, calc(100% - 28px)); }
         }
           `,
         }}
@@ -1906,7 +1916,9 @@ function BattleInner() {
               </div>
 
               <div className="hud-sub">
-                <span className="hud-pill">{phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}</span>
+                <span className="hud-pill">
+                  {phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}
+                </span>
                 <span className="hud-pill">
                   Раунд <b className="tabular-nums">{roundN}/{roundCount}</b>
                 </span>
@@ -1942,7 +1954,6 @@ function BattleInner() {
             </div>
           </div>
         </header>
-
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
           <svg className="atk-overlay" width="100%" height="100%">
             <defs>
@@ -1959,13 +1970,31 @@ function BattleInner() {
             ))}
           </svg>
 
-          {/* AVATARS INSIDE THE MAP CIRCLES + NICKNAMES */}
-          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} />
-          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} />
+          {/* LEFT CORNER PROGRESS / ROUND INFO */}
+          <div className="battle-info">
+            <div className="h">Раунд {roundN}</div>
+            <div className="p">
+              Победитель раунда:{" "}
+              <span className="font-extrabold">
+                {!roundWinner ? "…" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}
+              </span>
+            </div>
+            <div className="small">
+              Активный юнит: <span className="font-semibold">{activeInstance ? safeSliceId(activeInstance) : "—"}</span>
+            </div>
+          </div>
+
+          {/* CENTER PORTRAITS + HP/SCORE UNDER THEM */}
+          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hp={30} score={scored ? topScore : null} scoreHit={topHit} />
+          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={30} score={scored ? bottomScore : null} scoreHit={bottomHit} />
+
           {roundBanner.visible && (
             <div
               key={roundBanner.tick}
-              className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
+              className={[
+                "round-banner",
+                roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw",
+              ].join(" ")}
             >
               <div className="title">ROUND END</div>
               <div className="sub">{roundBanner.text}</div>
@@ -1973,28 +2002,8 @@ function BattleInner() {
           )}
 
           <div className="lane">
-            <div className="playerbar playerbar--enemy">
-              <div className="player-left">
-                <div className="avatar">
-                  <img alt="enemy" src={enemyAvatar} />
-                </div>
-                <div className="nameblock">
-                  <div className="label">ENEMY</div>
-                  <div className="name">{enemyName}</div>
-                </div>
-              </div>
-
-              <div className="player-right">
-                <div className="hp">
-                  HP <b className="tabular-nums">30</b>
-                </div>
-                <div className={["score", topHit ? "is-hit" : ""].join(" ")}>
-                  {scored ? (topScore == null ? "…" : topScore) : "…"}
-                </div>
-              </div>
-            </div>
-
-            <div className="row row-top row--enemy">
+            {/* TOP CARDS ZONE */}
+            <div className="row row-top">
               <div className="slots">
                 {topSlots.map((s, i) => (
                   <CardSlot
@@ -2013,17 +2022,7 @@ function BattleInner() {
               </div>
             </div>
 
-            <div className="ui-card p-4" style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
-              <div className="ui-subtitle">Раунд {roundN}</div>
-              <div className="mt-2 text-sm ui-subtle">
-                Победитель раунда:{" "}
-                <span className="font-extrabold">{!roundWinner ? "…" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</span>
-              </div>
-              <div className="mt-2 text-[12px] ui-subtle">
-                Активный юнит: <span className="font-semibold">{activeInstance ? safeSliceId(activeInstance) : "—"}</span>
-              </div>
-            </div>
-
+            {/* BOTTOM CARDS ZONE */}
             <div className="row row-bottom">
               <div className="slots">
                 {bottomSlots.map((s, i) => (
@@ -2043,29 +2042,8 @@ function BattleInner() {
               </div>
             </div>
 
-            <div className="playerbar">
-              <div className="player-left">
-                <div className="avatar">
-                  <img alt="you" src={youAvatar} />
-                </div>
-                <div className="nameblock">
-                  <div className="label">YOU</div>
-                  <div className="name">{youName}</div>
-                </div>
-              </div>
-
-              <div className="player-right">
-                <div className="hp">
-                  HP <b className="tabular-nums">30</b>
-                </div>
-                <div className={["score", bottomHit ? "is-hit" : ""].join(" ")}>
-                  {scored ? (bottomScore == null ? "…" : bottomScore) : "…"}
-                </div>
-              </div>
-            </div>
-
             {!playing && t >= durationSec && (
-              <div className="ui-card p-5" style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
+              <div className="ui-card p-5" style={{ marginTop: 16, background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
                 <div className="ui-subtitle">Результат матча</div>
                 <div className="mt-2 text-sm ui-subtle">{finalWinnerLabel}</div>
 
