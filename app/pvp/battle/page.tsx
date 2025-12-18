@@ -149,8 +149,8 @@ function fmtTime(sec: number) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function safeSliceId(id: string) {
-  const s = String(id || "");
+function safeSliceId(id?: string | null) {
+  const s = String(id ?? "");
   return s.length > 10 ? `${s.slice(0, 8)}…` : s || "—";
 }
 
@@ -228,7 +228,6 @@ function readUnitRefFromEvent(e: any, key: "unit" | "target" | "from" | "to" = "
     }
   }
 
-  // back-compat: side/slot/instanceId on root
   const side = e?.side as "p1" | "p2";
   const slot = Number(e?.slot ?? 0);
   const instanceId = String(e?.instanceId ?? "");
@@ -243,7 +242,15 @@ function BattleInner() {
   const sp = useSearchParams();
   const matchId = sp.get("matchId") || "";
 
-  const { isTelegramEnv, loading, timedOut, error, refreshSession } = useGameSessionContext() as any;
+  const session = useGameSessionContext() as any;
+  const { isTelegramEnv, loading, timedOut, error, refreshSession } = session as any;
+
+  const myUserId: string | null =
+    (session?.user?.id as string) ||
+    (session?.profile?.id as string) ||
+    (session?.bootstrap?.user?.id as string) ||
+    (session?.bootstrap?.bootstrap?.user?.id as string) ||
+    null;
 
   const [match, setMatch] = useState<MatchRow | null>(null);
   const [errText, setErrText] = useState<string | null>(null);
@@ -287,7 +294,6 @@ function BattleInner() {
     return 3;
   }, [timeline, rounds.length]);
 
-  // playback
   const [playing, setPlaying] = useState(true);
   const [t, setT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
@@ -327,6 +333,17 @@ function BattleInner() {
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
+  // refs for drawing attack lines (SVG overlay)
+  const arenaRef = useRef<HTMLDivElement | null>(null);
+  const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const [layoutTick, setLayoutTick] = useState(0);
+
+  useEffect(() => {
+    const onResize = () => setLayoutTick((x) => x + 1);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   function seek(nextT: number) {
     const clamped = Math.max(0, Math.min(durationSec, Number(nextT) || 0));
     setT(clamped);
@@ -363,7 +380,14 @@ function BattleInner() {
     };
   }, [matchId]);
 
-  // timeline → state at time t
+  const youSide: "p1" | "p2" = useMemo(() => {
+    if (!match) return "p1";
+    if (myUserId && myUserId === match.p2_user_id) return "p2";
+    return "p1";
+  }, [match, myUserId]);
+
+  const enemySide: "p1" | "p2" = youSide === "p1" ? "p2" : "p1";
+
   useEffect(() => {
     if (!timeline.length) return;
 
@@ -520,7 +544,11 @@ function BattleInner() {
     const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
 
     if (revealSig !== prevRevealSigRef.current) {
-      const hasSomething = (cf1?.length || 0) > 0 || (cf2?.length || 0) > 0 || (c1?.length || 0) > 0 || (c2?.length || 0) > 0;
+      const hasSomething =
+        (cf1?.length || 0) > 0 ||
+        (cf2?.length || 0) > 0 ||
+        (c1?.length || 0) > 0 ||
+        (c2?.length || 0) > 0;
       if (hasSomething) setRevealTick((x) => x + 1);
       prevRevealSigRef.current = revealSig;
     }
@@ -549,6 +577,8 @@ function BattleInner() {
     setActiveInstance(active);
     setP1UnitsBySlot(slotMapP1);
     setP2UnitsBySlot(slotMapP2);
+
+    setLayoutTick((x) => x + 1);
   }, [t, timeline]);
 
   useEffect(() => {
@@ -616,32 +646,29 @@ function BattleInner() {
     if (phase !== "end") return;
     if (!roundWinner) return;
 
-    const sig = `${roundN}:${roundWinner}`;
+    const sig = `${roundN}:${roundWinner}:${youSide}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
     let tone: "p1" | "p2" | "draw" = "draw";
     let text = "DRAW";
 
-    if (roundWinner === "p1") {
-      tone = "p1";
-      text = "YOU WIN ROUND";
-    } else if (roundWinner === "p2") {
-      tone = "p2";
-      text = "ENEMY WIN ROUND";
-    } else if (roundWinner === "draw") {
+    if (roundWinner === "draw") {
       tone = "draw";
       text = "DRAW";
+    } else if (roundWinner === youSide) {
+      tone = "p1";
+      text = "YOU WIN ROUND";
     } else {
-      tone = "draw";
-      text = String(roundWinner).toUpperCase();
+      tone = "p2";
+      text = "ENEMY WIN ROUND";
     }
 
     setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
 
     const to = window.setTimeout(() => setRoundBanner((b) => ({ ...b, visible: false })), 900);
     return () => window.clearTimeout(to);
-  }, [phase, roundWinner, roundN]);
+  }, [phase, roundWinner, roundN, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -672,15 +699,32 @@ function BattleInner() {
     [p2CardsFull, p2Cards, p2UnitsBySlot]
   );
 
+  const topSlots = enemySide === "p1" ? p1Slots : p2Slots;
+  const bottomSlots = youSide === "p1" ? p1Slots : p2Slots;
+
+  const topCardsFull = enemySide === "p1" ? p1CardsFull : p2CardsFull;
+  const bottomCardsFull = youSide === "p1" ? p1CardsFull : p2CardsFull;
+
+  const topCards = enemySide === "p1" ? p1Cards : p2Cards;
+  const bottomCards = youSide === "p1" ? p1Cards : p2Cards;
+
+  const topScore = enemySide === "p1" ? p1Score : p2Score;
+  const bottomScore = youSide === "p1" ? p1Score : p2Score;
+
+  const topHit = enemySide === "p1" ? p1Hit : p2Hit;
+  const bottomHit = youSide === "p1" ? p1Hit : p2Hit;
+
+  const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
+  const youUserId = youSide === "p1" ? match?.p1_user_id : match?.p2_user_id;
+
   const boardFxClass = useMemo(() => {
     if (!scored) return "";
-    if (roundWinner === "p1") return "fx-p1";
-    if (roundWinner === "p2") return "fx-p2";
     if (roundWinner === "draw") return "fx-draw";
+    if (roundWinner === youSide) return "fx-p1";
+    if (roundWinner === enemySide) return "fx-p2";
     return "";
-  }, [scored, roundWinner]);
+  }, [scored, roundWinner, youSide, enemySide]);
 
-  // ===== FX maps (deterministic, scrub-safe) =====
   const attackFxByInstance = useMemo(() => {
     const windowSec = 0.35;
     const fromT = Math.max(0, t - windowSec);
@@ -698,6 +742,23 @@ function BattleInner() {
       }
     }
     return map;
+  }, [timeline, t]);
+
+  const recentAttacks = useMemo(() => {
+    const windowSec = 0.22;
+    const fromT = Math.max(0, t - windowSec);
+    const arr: AttackFx[] = [];
+    for (const e of timeline) {
+      if (e.t < fromT) continue;
+      if (e.t > t) break;
+      if (e.type === "attack") {
+        const fromId = String((e as any)?.from?.instanceId ?? "");
+        const toId = String((e as any)?.to?.instanceId ?? "");
+        if (!fromId || !toId) continue;
+        arr.push({ t: e.t, fromId, toId });
+      }
+    }
+    return arr.slice(-2);
   }, [timeline, t]);
 
   const spawnFxByInstance = useMemo(() => {
@@ -750,6 +811,57 @@ function BattleInner() {
     }
     return set;
   }, [timeline, t]);
+
+  function getCenterInArena(instanceId: string) {
+    const arenaEl = arenaRef.current;
+    const el = unitElByIdRef.current[instanceId];
+    if (!arenaEl || !el) return null;
+
+    const aRect = arenaEl.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+
+    return {
+      x: r.left + r.width / 2 - aRect.left,
+      y: r.top + r.height / 2 - aRect.top,
+    };
+  }
+
+  const attackCurves = useMemo(() => {
+    const arenaEl = arenaRef.current;
+    if (!arenaEl) return [];
+
+    const curves: Array<{
+      key: string;
+      d: string;
+      fromId: string;
+      toId: string;
+    }> = [];
+
+    for (const atk of recentAttacks) {
+      const p1 = getCenterInArena(atk.fromId);
+      const p2 = getCenterInArena(atk.toId);
+      if (!p1 || !p2) continue;
+
+      // nice arc (perpendicular offset)
+      const mx = (p1.x + p2.x) / 2;
+      const my = (p1.y + p2.y) / 2;
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const len = Math.max(1, Math.hypot(dx, dy));
+      const nx = -dy / len;
+      const ny = dx / len;
+
+      const bend = clamp(len * 0.10, 14, 46);
+      const cx = mx + nx * bend;
+      const cy = my + ny * bend;
+
+      const d = `M ${p1.x} ${p1.y} Q ${cx} ${cy} ${p2.x} ${p2.y}`;
+      curves.push({ key: `${atk.t}:${atk.fromId}:${atk.toId}`, d, fromId: atk.fromId, toId: atk.toId });
+    }
+
+    return curves;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentAttacks, layoutTick]);
 
   function TagPill({ label }: { label: string }) {
     return <span className="bb-tag">{label}</span>;
@@ -824,6 +936,9 @@ function BattleInner() {
 
     return (
       <div
+        ref={(el) => {
+          if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
+        }}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
@@ -851,13 +966,10 @@ function BattleInner() {
               </div>
             )}
 
-            {/* FX layer */}
             {unit && (
               <div className="bb-fx">
-                {/* Spawn */}
                 {spawned && <div key={`spawn-${spawned.t}-${unit.instanceId}`} className="bb-spawn" />}
 
-                {/* Slash / Impact */}
                 {atk && (
                   <div className="bb-atkfx">
                     {atk.isFrom && <div key={`slash-${atk.t}-${unit.instanceId}`} className="bb-slash" />}
@@ -865,7 +977,6 @@ function BattleInner() {
                   </div>
                 )}
 
-                {/* Damage */}
                 {dmg && (
                   <>
                     <div key={`dmgflash-${dmg.t}-${unit.instanceId}`} className="bb-dmgflash" />
@@ -875,7 +986,6 @@ function BattleInner() {
                   </>
                 )}
 
-                {/* Death sparkle / fade helper */}
                 {isDying && <div className="bb-death" />}
               </div>
             )}
@@ -964,7 +1074,7 @@ function BattleInner() {
         <div className="w-full max-w-md ui-card p-5">
           <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
           <div className="mt-2 text-sm ui-subtle">Нажми Re-sync и попробуй снова.</div>
-          <button onClick={() => refreshSession?.()} className="mt-5 ui-btn ui-btn-primary w-full">
+          <button onClick={() => refreshSession?.()} className="mt-5 ui-btn ui-btn-primary w-full" type="button">
             Re-sync
           </button>
         </div>
@@ -978,7 +1088,7 @@ function BattleInner() {
         <div className="w-full max-w-md ui-card p-5">
           <div className="text-lg font-semibold">Ошибка</div>
           <div className="mt-2 text-sm ui-subtle">{errText}</div>
-          <button onClick={router.back} className="mt-5 ui-btn ui-btn-ghost w-full">
+          <button onClick={() => router.back()} className="mt-5 ui-btn ui-btn-ghost w-full" type="button">
             Назад
           </button>
         </div>
@@ -1004,7 +1114,9 @@ function BattleInner() {
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
-      <style jsx global>{`
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         @keyframes flipIn {
           0% { transform: rotateY(0deg) scale(0.98); }
           55% { transform: rotateY(90deg) scale(1.02); }
@@ -1075,6 +1187,13 @@ function BattleInner() {
           0%   { opacity: 0; }
           30%  { opacity: 0.45; }
           100% { opacity: 0; }
+        }
+
+        /* attack overlay path animation */
+        @keyframes atkPath {
+          0%   { opacity: 0; stroke-dashoffset: 140; }
+          18%  { opacity: 1; }
+          100% { opacity: 0; stroke-dashoffset: 0; }
         }
 
         .battle-progress {
@@ -1212,6 +1331,35 @@ function BattleInner() {
         .arena.fx-p2 .row-top { box-shadow: 0 0 0 1px rgba(184,92,255,0.18), 0 0 24px rgba(184,92,255,0.12); }
         .arena.fx-draw .row-top,
         .arena.fx-draw .row-bottom { box-shadow: 0 0 0 1px rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.10); }
+
+        /* overlay svg */
+        .atk-overlay {
+          position: absolute;
+          inset: 0;
+          z-index: 4;
+          pointer-events: none;
+        }
+        .atk-path-glow {
+          stroke: rgba(255,255,255,0.28);
+          stroke-width: 8;
+          stroke-linecap: round;
+          fill: none;
+          stroke-dasharray: 140;
+          filter: drop-shadow(0 12px 24px rgba(0,0,0,0.35)) drop-shadow(0 0 14px rgba(255,255,255,0.18));
+          animation: atkPath 220ms ease-out both;
+          mix-blend-mode: screen;
+        }
+        .atk-path-core {
+          stroke: rgba(255,255,255,0.85);
+          stroke-width: 3.25;
+          stroke-linecap: round;
+          fill: none;
+          stroke-dasharray: 140;
+          filter: drop-shadow(0 10px 18px rgba(0,0,0,0.35)) drop-shadow(0 0 10px rgba(255,255,255,0.14));
+          animation: atkPath 220ms ease-out both;
+          mix-blend-mode: screen;
+          marker-end: url(#atkArrow);
+        }
 
         .round-banner {
           position: absolute;
@@ -1576,7 +1724,9 @@ function BattleInner() {
           .round-banner .sub { font-size: 16px; }
           .bb-bar { height: 6px; }
         }
-      `}</style>
+          `,
+        }}
+      />
 
       <div className="w-full max-w-5xl">
         <header className="board-topbar ui-card rounded-[var(--r-xl)] mb-4">
@@ -1603,7 +1753,14 @@ function BattleInner() {
               </div>
 
               <div className="scrub-row">
-                <input type="range" min={0} max={durationSec} step={0.05} value={t} onChange={(e) => seek(Number(e.target.value))} />
+                <input
+                  type="range"
+                  min={0}
+                  max={durationSec}
+                  step={0.05}
+                  value={t}
+                  onChange={(e) => seek(Number(e.target.value))}
+                />
 
                 <button className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")} onClick={() => setRate(0.5)} type="button">
                   0.5x
@@ -1617,7 +1774,15 @@ function BattleInner() {
               </div>
 
               <div className="hud-sub">
-                <span className="hud-pill">{phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}</span>
+                <span className="hud-pill">
+                  {phase === "start"
+                    ? "ROUND START"
+                    : phase === "reveal"
+                    ? "REVEAL"
+                    : phase === "score"
+                    ? "SCORE"
+                    : "ROUND END"}
+                </span>
                 <span className="hud-pill">
                   Раунд <b className="tabular-nums">{roundN}/{roundCount}</b>
                 </span>
@@ -1627,24 +1792,43 @@ function BattleInner() {
                 <span className="hud-pill">
                   tl <b className="tabular-nums">{timeline.length}</b>
                 </span>
+                <span className="hud-pill">
+                  side <b className="tabular-nums">{youSide.toUpperCase()}</b>
+                </span>
               </div>
             </div>
 
             <div className="hud-actions">
-              <button onClick={() => setPlaying((p) => !p)} className="ui-btn ui-btn-ghost">
+              <button onClick={() => setPlaying((p) => !p)} className="ui-btn ui-btn-ghost" type="button">
                 {playing ? "Пауза" : "▶"}
               </button>
-              <button onClick={() => { setPlaying(true); seek(0); }} className="ui-btn ui-btn-ghost">
+              <button onClick={() => { setPlaying(true); seek(0); }} className="ui-btn ui-btn-ghost" type="button">
                 ↺
               </button>
-              <button onClick={() => router.push("/pvp")} className="ui-btn ui-btn-ghost">
+              <button onClick={() => router.push("/pvp")} className="ui-btn ui-btn-ghost" type="button">
                 Назад
               </button>
             </div>
           </div>
         </header>
 
-        <section className={["board", "arena", boardFxClass].join(" ")}>
+        <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
+          {/* SVG overlay for attacks */}
+          <svg className="atk-overlay" width="100%" height="100%">
+            <defs>
+              <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.85)" />
+              </marker>
+            </defs>
+
+            {attackCurves.map((c) => (
+              <g key={c.key}>
+                <path className="atk-path-glow" d={c.d} />
+                <path className="atk-path-core" d={c.d} />
+              </g>
+            ))}
+          </svg>
+
           {roundBanner.visible && (
             <div
               key={roundBanner.tick}
@@ -1662,11 +1846,11 @@ function BattleInner() {
             <div className="playerbar">
               <div className="player-left">
                 <div className="avatar">
-                  <img alt="enemy" src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${match.p2_user_id || "enemy"}`} />
+                  <img alt="enemy" src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${enemyUserId || "enemy"}`} />
                 </div>
                 <div className="nameblock">
                   <div className="label">ENEMY</div>
-                  <div className="name">{safeSliceId(match.p2_user_id)}</div>
+                  <div className="name">{safeSliceId(enemyUserId)}</div>
                 </div>
               </div>
 
@@ -1674,15 +1858,17 @@ function BattleInner() {
                 <div className="hp">
                   HP <b className="tabular-nums">30</b>
                 </div>
-                <div className={["score", p2Hit ? "is-hit" : ""].join(" ")}>{scored ? (p2Score == null ? "…" : p2Score) : "…"}</div>
+                <div className={["score", topHit ? "is-hit" : ""].join(" ")}>
+                  {scored ? (topScore == null ? "…" : topScore) : "…"}
+                </div>
               </div>
             </div>
 
             <div className="row row-top">
               <div className="slots">
-                {p2Slots.map((s, i) => (
+                {topSlots.map((s, i) => (
                   <CardSlot
-                    key={`p2-${revealTick}-${i}`}
+                    key={`top-${revealTick}-${i}`}
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
@@ -1690,7 +1876,7 @@ function BattleInner() {
                     spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
                     isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
-                    revealed={revealed && (p2CardsFull.length > 0 || p2Cards.length > 0)}
+                    revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
                   />
                 ))}
@@ -1700,7 +1886,10 @@ function BattleInner() {
             <div className="ui-card p-4" style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
               <div className="ui-subtitle">Раунд {roundN}</div>
               <div className="mt-2 text-sm ui-subtle">
-                Победитель раунда: <span className="font-extrabold">{roundWinner ? String(roundWinner).toUpperCase() : "…"}</span>
+                Победитель раунда:{" "}
+                <span className="font-extrabold">
+                  {!roundWinner ? "…" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}
+                </span>
               </div>
               <div className="mt-2 text-[12px] ui-subtle">
                 Активный юнит: <span className="font-semibold">{activeInstance ? safeSliceId(activeInstance) : "—"}</span>
@@ -1709,9 +1898,9 @@ function BattleInner() {
 
             <div className="row row-bottom">
               <div className="slots">
-                {p1Slots.map((s, i) => (
+                {bottomSlots.map((s, i) => (
                   <CardSlot
-                    key={`p1-${revealTick}-${i}`}
+                    key={`bottom-${revealTick}-${i}`}
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
@@ -1719,7 +1908,7 @@ function BattleInner() {
                     spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
                     isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
-                    revealed={revealed && (p1CardsFull.length > 0 || p1Cards.length > 0)}
+                    revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
                   />
                 ))}
@@ -1729,11 +1918,11 @@ function BattleInner() {
             <div className="playerbar">
               <div className="player-left">
                 <div className="avatar">
-                  <img alt="you" src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${match.p1_user_id || "you"}`} />
+                  <img alt="you" src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${youUserId || "you"}`} />
                 </div>
                 <div className="nameblock">
                   <div className="label">YOU</div>
-                  <div className="name">{safeSliceId(match.p1_user_id)}</div>
+                  <div className="name">{safeSliceId(youUserId)}</div>
                 </div>
               </div>
 
@@ -1741,7 +1930,9 @@ function BattleInner() {
                 <div className="hp">
                   HP <b className="tabular-nums">30</b>
                 </div>
-                <div className={["score", p1Hit ? "is-hit" : ""].join(" ")}>{scored ? (p1Score == null ? "…" : p1Score) : "…"}</div>
+                <div className={["score", bottomHit ? "is-hit" : ""].join(" ")}>
+                  {scored ? (bottomScore == null ? "…" : bottomScore) : "…"}
+                </div>
               </div>
             </div>
 
@@ -1764,7 +1955,7 @@ function BattleInner() {
                   ))}
                 </div>
 
-                <button onClick={() => router.push("/pvp")} className="mt-5 ui-btn ui-btn-primary w-full">
+                <button onClick={() => router.push("/pvp")} className="mt-5 ui-btn ui-btn-primary w-full" type="button">
                   Ок
                 </button>
               </div>

@@ -1,3 +1,4 @@
+// app/api/pvp/match/route.ts
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -75,7 +76,7 @@ function mulberry32(seed: number) {
     a |= 0;
     a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    t = (t + Math.imul(t ^ (a >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
@@ -590,7 +591,13 @@ async function simulateTimelineV1(params: { matchId: string; logObj: any }) {
       if (!target.alive) return;
       if (target.poisonTicks > 0 && target.poisonDmg > 0) {
         target.poisonTicks -= 1;
-        emit(turnT + 0.01, { type: "debuff_tick", round: r, debuff: "poison", target: unitRef(target), amount: target.poisonDmg });
+        emit(turnT + 0.01, {
+          type: "debuff_tick",
+          round: r,
+          debuff: "poison",
+          target: unitRef(target),
+          amount: target.poisonDmg,
+        });
         applyDamage(target, target.poisonDmg);
       }
     }
@@ -760,6 +767,18 @@ async function simulateTimelineV1(params: { matchId: string; logObj: any }) {
   };
 }
 
+/**
+ * Ensure match.log has a version marker (contract hardening).
+ * - Do NOT mutate DB here. Only shape the response log object.
+ */
+function ensureLogV1(logObj: any) {
+  const obj = logObj && typeof logObj === "object" ? logObj : {};
+  const v = obj.version;
+  if (v === 1) return obj;
+  // Only set if missing/invalid. Keep everything else intact.
+  return { ...obj, version: 1 };
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -779,7 +798,8 @@ export async function GET(req: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!match) return NextResponse.json({ match: null });
 
-    const logObj = (parseMaybeJson((match as any).log) ?? {}) as any;
+    const logRaw = parseMaybeJson((match as any).log);
+    const logObj = ensureLogV1((logRaw ?? {}) as any);
 
     // timeline may be jsonb array OR stringified json
     const timelineParsed = parseMaybeJson(logObj?.timeline);
@@ -808,7 +828,7 @@ export async function GET(req: Request) {
           });
         }
 
-        const newLog = {
+        const newLog = ensureLogV1({
           ...logObj,
           duration_sec: sim.duration_sec,
           timeline: sim.timeline,
@@ -816,7 +836,7 @@ export async function GET(req: Request) {
           match_winner: sim.match_winner,
           simulated: true,
           simulated_v: 1,
-        };
+        });
 
         return NextResponse.json({
           match: { ...(match as any), log: newLog },
@@ -837,7 +857,7 @@ export async function GET(req: Request) {
         });
       }
 
-      const newLog = {
+      const newLog = ensureLogV1({
         ...logObj,
         duration_sec: sim.duration_sec,
         timeline: sim.timeline,
@@ -845,7 +865,7 @@ export async function GET(req: Request) {
         match_winner: sim.match_winner,
         simulated: true,
         simulated_v: 0,
-      };
+      });
 
       return NextResponse.json({
         match: { ...(match as any), log: newLog },
@@ -880,8 +900,11 @@ export async function GET(req: Request) {
       }
     }
 
+    // Return normalized log (v1 marker) + timeline possibly enriched with *_cards_full
+    const outLog = ensureLogV1({ ...logObj, timeline });
+
     return NextResponse.json({
-      match: { ...(match as any), log: { ...logObj, timeline } },
+      match: { ...(match as any), log: outLog },
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Unknown error" }, { status: 500 });
