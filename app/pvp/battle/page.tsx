@@ -277,7 +277,6 @@ function BattleInner() {
   const [match, setMatch] = useState<MatchRow | null>(null);
   const [errText, setErrText] = useState<string | null>(null);
 
-  // ✅ profiles for labels/avatars
   const [profiles, setProfiles] = useState<Record<string, PlayerProfile>>({});
 
   const logObj = useMemo(() => {
@@ -358,7 +357,6 @@ function BattleInner() {
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
-  // refs for drawing attack lines (SVG overlay)
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
   const [layoutTick, setLayoutTick] = useState(0);
@@ -405,7 +403,6 @@ function BattleInner() {
     };
   }, [matchId]);
 
-  // ✅ load player profiles for nick + avatar
   useEffect(() => {
     if (!match?.p1_user_id || !match?.p2_user_id) return;
 
@@ -434,7 +431,7 @@ function BattleInner() {
         }
         setProfiles(map);
       } catch {
-        // ignore (fallbacks will work)
+        // ignore
       }
     })();
 
@@ -938,11 +935,17 @@ function BattleInner() {
     name,
     avatar,
     tone,
+    hp,
+    score,
+    isHit,
   }: {
     where: "top" | "bottom";
     name: string;
     avatar: string;
     tone: "enemy" | "you";
+    hp: number;
+    score: number | null;
+    isHit: boolean;
   }) {
     return (
       <div
@@ -957,7 +960,18 @@ function BattleInner() {
             <img src={avatar} alt={tone} />
           </div>
         </div>
+
         <div className="map-portrait-name">{name}</div>
+
+        {/* HP + Score pills UNDER the circle (no big playerbars) */}
+        <div className="map-pillrow">
+          <div className="map-pill">
+            HP <b className="tabular-nums">{hp}</b>
+          </div>
+          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+            {score == null ? "—" : score}
+          </div>
+        </div>
       </div>
     );
   }
@@ -1246,13 +1260,11 @@ function BattleInner() {
           40% { opacity: 0.65; transform: scale(1.05); }
           100% { opacity: 0.0; transform: scale(1.18); }
         }
-
         @keyframes activePulse {
           0% { transform: translateZ(0) scale(1); }
           50% { transform: translateZ(0) scale(1.02); }
           100% { transform: translateZ(0) scale(1); }
         }
-
         @keyframes slashSwipe {
           0%   { opacity: 0; transform: translate3d(-18px, 10px, 0) rotate(-18deg) scaleX(0.6); }
           20%  { opacity: 1; transform: translate3d(0px, 0px, 0) rotate(-18deg) scaleX(1.05); }
@@ -1263,7 +1275,6 @@ function BattleInner() {
           25%  { opacity: 1; transform: translate3d(0,0,0) scale(1.05); }
           100% { opacity: 0; transform: translate3d(0,0,0) scale(1.35); }
         }
-
         @keyframes spawnPop {
           0%   { opacity: 0; transform: scale(0.92); }
           60%  { opacity: 1; transform: scale(1.04); }
@@ -1284,7 +1295,6 @@ function BattleInner() {
           30%  { opacity: 0.45; }
           100% { opacity: 0; }
         }
-
         @keyframes atkPath {
           0%   { opacity: 0; stroke-dashoffset: 140; }
           18%  { opacity: 1; }
@@ -1389,6 +1399,7 @@ function BattleInner() {
           padding: 14px;
           overflow: hidden;
           background: rgba(0,0,0,0.22);
+          min-height: 720px;
         }
         .arena::before {
           content: "";
@@ -1417,7 +1428,7 @@ function BattleInner() {
           mix-blend-mode: screen;
         }
 
-        /* ✅ FIX: don't force z-index:1 on ALL arena children (was breaking portrait z-index) */
+        /* don't force z-index on all children */
         .arena > .lane,
         .arena > .atk-overlay {
           position: relative;
@@ -1427,11 +1438,6 @@ function BattleInner() {
         .arena.fx-p1,
         .arena.fx-p2,
         .arena.fx-draw { animation: microShake 240ms ease-out 1; }
-
-        .arena.fx-p1 .row-bottom { box-shadow: 0 0 0 1px rgba(88,240,255,0.18), 0 0 24px rgba(88,240,255,0.12); }
-        .arena.fx-p2 .row-top { box-shadow: 0 0 0 1px rgba(184,92,255,0.18), 0 0 24px rgba(184,92,255,0.12); }
-        .arena.fx-draw .row-top,
-        .arena.fx-draw .row-bottom { box-shadow: 0 0 0 1px rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.10); }
 
         .atk-overlay {
           position: absolute;
@@ -1461,7 +1467,7 @@ function BattleInner() {
           marker-end: url(#atkArrow);
         }
 
-        /* ✅ portraits inside the map circles */
+        /* portraits inside the map circles */
         .map-portrait {
           position: absolute;
           left: 50%;
@@ -1472,47 +1478,32 @@ function BattleInner() {
           gap: 8px;
           filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
         }
-        /* ✅ FIX: higher specificity so it always wins */
         .arena .map-portrait { z-index: 6; }
 
-        .map-portrait.is-top { top: 18px; }
-        .map-portrait.is-bottom { bottom: 18px; }
+        /* ✅ tune these two to perfectly match the board rings */
+        .map-portrait.is-top { top: 10px; }
+        .map-portrait.is-bottom { bottom: 10px; }
 
-        /* ✅✅ FIX: avatar fills the ring perfectly */
+        /* ✅ make avatar fill ring (no "smaller inside") */
         .map-portrait-ring {
-          width: 96px;
-          height: 96px;
+          width: 124px;
+          height: 124px;
           border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.22);
-          background: rgba(0,0,0,0.20);
-          backdrop-filter: blur(8px);
+          background: transparent;
           display: grid;
           place-items: center;
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
-          padding: 6px;
         }
-        .map-portrait.tone-enemy .map-portrait-ring { box-shadow: inset 0 0 0 1px rgba(184,92,255,0.18), 0 0 22px rgba(184,92,255,0.10); }
-        .map-portrait.tone-you .map-portrait-ring { box-shadow: inset 0 0 0 1px rgba(88,240,255,0.18), 0 0 22px rgba(88,240,255,0.10); }
-
         .map-portrait-img {
-          width: 100%;
-          height: 100%;
+          width: 124px;
+          height: 124px;
           border-radius: 999px;
           overflow: hidden;
-          border: 1px solid rgba(255,255,255,0.18);
           background: rgba(255,255,255,0.06);
         }
-        .map-portrait-img img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-          transform: scale(1.06);
-          transform-origin: center;
-        }
+        .map-portrait-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
         .map-portrait-name {
-          max-width: 220px;
+          max-width: 260px;
           padding: 6px 10px;
           border-radius: 999px;
           border: 1px solid rgba(255,255,255,0.18);
@@ -1526,6 +1517,60 @@ function BattleInner() {
           overflow: hidden;
           text-overflow: ellipsis;
         }
+
+        .map-pillrow {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+        .map-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(0,0,0,0.26);
+          backdrop-filter: blur(10px);
+          font-weight: 900;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          font-variant-numeric: tabular-nums;
+          font-size: 11px;
+          min-width: 60px;
+          justify-content: center;
+        }
+        .map-pill--score { min-width: 70px; }
+        .map-pill.is-hit { animation: popHit 220ms var(--ease-out) both; }
+
+        /* ✅ round/progress info blocks: separated from avatars */
+        .corner-info {
+          position: absolute;
+          left: 14px;
+          z-index: 6;
+          padding: 12px 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,0.16);
+          background: rgba(0,0,0,0.38);
+          backdrop-filter: blur(10px);
+          width: min(320px, calc(100% - 28px));
+          box-shadow: 0 12px 40px rgba(0,0,0,0.28);
+          pointer-events: none;
+        }
+        .corner-info.top { top: 14px; transform: translateY(0); }
+        .corner-info .h1 {
+          font-weight: 1000;
+          letter-spacing: 0.22em;
+          text-transform: uppercase;
+          font-size: 12px;
+          opacity: 0.92;
+        }
+        .corner-info .line {
+          margin-top: 8px;
+          font-size: 12px;
+          opacity: 0.88;
+        }
+        .corner-info .line b { font-weight: 900; }
 
         .round-banner {
           position: absolute;
@@ -1544,9 +1589,7 @@ function BattleInner() {
           pointer-events: none;
           z-index: 7;
         }
-        /* ✅ keep banner above portraits */
         .arena .round-banner { z-index: 7; }
-
         .round-banner::before {
           content: "";
           position: absolute;
@@ -1576,83 +1619,34 @@ function BattleInner() {
         .round-banner.tone-p2 .sub { text-shadow: 0 0 18px rgba(184,92,255,0.18); }
         .round-banner.tone-draw { border-color: rgba(255,255,255,0.22); }
 
-        .lane { display: grid; gap: 14px; }
-
-        .playerbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          padding: 12px 12px;
-          border: 1px solid rgba(255,255,255,0.14);
-          border-radius: 16px;
-          background: rgba(0,0,0,0.22);
-          backdrop-filter: blur(6px);
+        .lane {
+          position: relative;
+          display: grid;
+          gap: 0;
+          min-height: 720px;
         }
 
-        .player-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
-
-        .avatar {
-          width: 38px;
-          height: 38px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(255,255,255,0.06);
-          overflow: hidden;
-          flex: 0 0 auto;
-        }
-        .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-        .nameblock { min-width: 0; }
-        .nameblock .label {
-          font-size: 10px;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-          opacity: 0.75;
-        }
-        .nameblock .name {
-          margin-top: 2px;
-          font-weight: 900;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          font-size: 12px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .player-right { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-
-        .hp {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(255,255,255,0.06);
-          font-weight: 900;
-          letter-spacing: 0.08em;
-          font-variant-numeric: tabular-nums;
-          font-size: 11px;
-        }
-
-        .score {
-          font-weight: 900;
-          letter-spacing: 0.06em;
-          font-variant-numeric: tabular-nums;
-          font-size: 18px;
-        }
-        .score.is-hit { animation: popHit 220ms var(--ease-out) both; }
-
+        /* ✅ place card rows into the red zones (centered + higher) */
         .row {
-          border-radius: 18px;
-          border: 1px solid rgba(255,255,255,0.12);
-          background: rgba(0,0,0,0.22);
-          backdrop-filter: blur(6px);
-          padding: 10px;
+          border-radius: 0;
+          border: 0;
+          background: transparent;
+          backdrop-filter: none;
+          padding: 0;
           display: flex;
           justify-content: center;
+        }
+        .row-top {
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 210px;
+        }
+        .row-bottom {
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 170px;
         }
 
         .slots {
@@ -1660,7 +1654,8 @@ function BattleInner() {
           display: grid;
           grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 10px;
-          max-width: 820px;
+          max-width: 860px;
+          padding: 0 10px;
         }
 
         .bb-card {
@@ -1880,7 +1875,6 @@ function BattleInner() {
         .bb-corner-dot { width: 6px; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.28); }
 
         .bb-card.has-unit.is-active { animation: activePulse 180ms ease-out 1; }
-
         .bb-card.has-unit.is-dead { opacity: 0.55; filter: grayscale(0.35); }
         .bb-card.has-unit.is-dying { filter: saturate(0.9); }
 
@@ -1893,11 +1887,16 @@ function BattleInner() {
           .round-banner .sub { font-size: 16px; }
           .bb-bar { height: 6px; }
 
-          .map-portrait-ring { width: 84px; height: 84px; padding: 6px; }
-          .map-portrait-img { width: 100%; height: 100%; }
-          .map-portrait.is-top { top: 14px; }
-          .map-portrait.is-bottom { bottom: 14px; }
+          .map-portrait-ring { width: 108px; height: 108px; }
+          .map-portrait-img { width: 108px; height: 108px; }
+          .map-portrait.is-top { top: 8px; }
+          .map-portrait.is-bottom { bottom: 8px; }
           .map-portrait-name { max-width: 180px; font-size: 10px; }
+
+          .row-top { top: 190px; }
+          .row-bottom { bottom: 160px; }
+
+          .corner-info { width: min(280px, calc(100% - 28px)); }
         }
           `,
         }}
@@ -2011,15 +2010,7 @@ function BattleInner() {
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
           <svg className="atk-overlay" width="100%" height="100%">
             <defs>
-              <marker
-                id="atkArrow"
-                markerWidth="10"
-                markerHeight="10"
-                refX="9"
-                refY="5"
-                orient="auto"
-                markerUnits="strokeWidth"
-              >
+              <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
                 <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.85)" />
               </marker>
             </defs>
@@ -2032,9 +2023,42 @@ function BattleInner() {
             ))}
           </svg>
 
-          {/* ✅ AVATARS INSIDE THE MAP CIRCLES + NICKNAMES */}
-          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} />
-          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} />
+          {/* ✅ left-top progress/info block (separated from enemy avatar) */}
+          <div className="corner-info top">
+            <div className="h1">
+              РАУНД{" "}
+              <b className="tabular-nums">
+                {roundN}/{roundCount}
+              </b>
+            </div>
+            <div className="line">
+              Победитель раунда:{" "}
+              <b>{!roundWinner ? "—" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</b>
+            </div>
+            <div className="line">
+              Активный юнит: <b>{activeInstance ? safeSliceId(activeInstance) : "—"}</b>
+            </div>
+          </div>
+
+          {/* ✅ AVATARS INSIDE THE MAP CIRCLES + HP/Score bubbles under them */}
+          <MapPortrait
+            where="top"
+            tone="enemy"
+            name={enemyName}
+            avatar={enemyAvatar}
+            hp={30}
+            score={scored ? topScore : null}
+            isHit={topHit}
+          />
+          <MapPortrait
+            where="bottom"
+            tone="you"
+            name={youName}
+            avatar={youAvatar}
+            hp={30}
+            score={scored ? bottomScore : null}
+            isHit={bottomHit}
+          />
 
           {roundBanner.visible && (
             <div
@@ -2050,27 +2074,7 @@ function BattleInner() {
           )}
 
           <div className="lane">
-            <div className="playerbar">
-              <div className="player-left">
-                <div className="avatar">
-                  <img alt="enemy" src={enemyAvatar} />
-                </div>
-                <div className="nameblock">
-                  <div className="label">ENEMY</div>
-                  <div className="name">{enemyName}</div>
-                </div>
-              </div>
-
-              <div className="player-right">
-                <div className="hp">
-                  HP <b className="tabular-nums">30</b>
-                </div>
-                <div className={["score", topHit ? "is-hit" : ""].join(" ")}>
-                  {scored ? (topScore == null ? "…" : topScore) : "…"}
-                </div>
-              </div>
-            </div>
-
+            {/* ✅ Enemy cards (no translucent row panel) */}
             <div className="row row-top">
               <div className="slots">
                 {topSlots.map((s, i) => (
@@ -2090,20 +2094,7 @@ function BattleInner() {
               </div>
             </div>
 
-            <div className="ui-card p-4" style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
-              <div className="ui-subtitle">Раунд {roundN}</div>
-              <div className="mt-2 text-sm ui-subtle">
-                Победитель раунда:{" "}
-                <span className="font-extrabold">
-                  {!roundWinner ? "…" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}
-                </span>
-              </div>
-              <div className="mt-2 text-[12px] ui-subtle">
-                Активный юнит:{" "}
-                <span className="font-semibold">{activeInstance ? safeSliceId(activeInstance) : "—"}</span>
-              </div>
-            </div>
-
+            {/* ✅ Your cards (no translucent row panel) */}
             <div className="row row-bottom">
               <div className="slots">
                 {bottomSlots.map((s, i) => (
@@ -2123,29 +2114,19 @@ function BattleInner() {
               </div>
             </div>
 
-            <div className="playerbar">
-              <div className="player-left">
-                <div className="avatar">
-                  <img alt="you" src={youAvatar} />
-                </div>
-                <div className="nameblock">
-                  <div className="label">YOU</div>
-                  <div className="name">{youName}</div>
-                </div>
-              </div>
-
-              <div className="player-right">
-                <div className="hp">
-                  HP <b className="tabular-nums">30</b>
-                </div>
-                <div className={["score", bottomHit ? "is-hit" : ""].join(" ")}>
-                  {scored ? (bottomScore == null ? "…" : bottomScore) : "…"}
-                </div>
-              </div>
-            </div>
-
             {!playing && t >= durationSec && (
-              <div className="ui-card p-5" style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
+              <div
+                className="ui-card p-5"
+                style={{
+                  position: "absolute",
+                  left: 14,
+                  right: 14,
+                  bottom: 14,
+                  background: "rgba(0,0,0,0.32)",
+                  backdropFilter: "blur(10px)",
+                  zIndex: 6,
+                }}
+              >
                 <div className="ui-subtitle">Результат матча</div>
                 <div className="mt-2 text-sm ui-subtle">{finalWinnerLabel}</div>
 
