@@ -277,7 +277,6 @@ function BattleInner() {
   const [match, setMatch] = useState<MatchRow | null>(null);
   const [errText, setErrText] = useState<string | null>(null);
 
-  // ✅ profiles for labels/avatars
   const [profiles, setProfiles] = useState<Record<string, PlayerProfile>>({});
 
   const logObj = useMemo(() => {
@@ -339,8 +338,11 @@ function BattleInner() {
   const [roundWinner, setRoundWinner] = useState<string | null>(null);
 
   const [revealTick, setRevealTick] = useState(0);
+  const [p1Hit, setP1Hit] = useState(false);
+  const [p2Hit, setP2Hit] = useState(false);
 
   const prevRevealSigRef = useRef<string>("");
+  const prevScoreRef = useRef<{ p1: number | null; p2: number | null }>({ p1: null, p2: null });
 
   const [roundBanner, setRoundBanner] = useState<{
     visible: boolean;
@@ -355,7 +357,6 @@ function BattleInner() {
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
-  // refs for drawing attack lines (SVG overlay)
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
   const [layoutTick, setLayoutTick] = useState(0);
@@ -402,7 +403,6 @@ function BattleInner() {
     };
   }, [matchId]);
 
-  // ✅ load player profiles for nick + avatar
   useEffect(() => {
     if (!match?.p1_user_id || !match?.p2_user_id) return;
 
@@ -431,7 +431,7 @@ function BattleInner() {
         }
         setProfiles(map);
       } catch {
-        // ignore (fallbacks will work)
+        // ignore
       }
     })();
 
@@ -553,10 +553,7 @@ function BattleInner() {
           if (u) {
             if (Number.isFinite(shield)) u.shield = Math.max(0, Number(shield));
             else
-              u.shield = Math.max(
-                0,
-                u.shield + Math.max(0, Math.floor(amount)) * (e.type === "shield_hit" ? -1 : 1)
-              );
+              u.shield = Math.max(0, u.shield + Math.max(0, Math.floor(amount)) * (e.type === "shield_hit" ? -1 : 1));
           }
         }
       } else if (e.type === "debuff_applied") {
@@ -604,14 +601,22 @@ function BattleInner() {
     const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
 
     if (revealSig !== prevRevealSigRef.current) {
-      const hasSomething =
-        (cf1?.length || 0) > 0 ||
-        (cf2?.length || 0) > 0 ||
-        (c1?.length || 0) > 0 ||
-        (c2?.length || 0) > 0;
+      const hasSomething = (cf1?.length || 0) > 0 || (cf2?.length || 0) > 0 || (c1?.length || 0) > 0 || (c2?.length || 0) > 0;
       if (hasSomething) setRevealTick((x) => x + 1);
       prevRevealSigRef.current = revealSig;
     }
+
+    const prevS1 = prevScoreRef.current.p1;
+    const prevS2 = prevScoreRef.current.p2;
+    if (s1 != null && prevS1 != null && s1 !== prevS1) {
+      setP1Hit(true);
+      window.setTimeout(() => setP1Hit(false), 220);
+    }
+    if (s2 != null && prevS2 != null && s2 !== prevS2) {
+      setP2Hit(true);
+      window.setTimeout(() => setP2Hit(false), 220);
+    }
+    prevScoreRef.current = { p1: s1, p2: s2 };
 
     setRoundN(rr);
     setP1Cards(c1);
@@ -755,6 +760,12 @@ function BattleInner() {
 
   const topCards = enemySide === "p1" ? p1Cards : p2Cards;
   const bottomCards = youSide === "p1" ? p1Cards : p2Cards;
+
+  const topScore = enemySide === "p1" ? p1Score : p2Score;
+  const bottomScore = youSide === "p1" ? p1Score : p2Score;
+
+  const topHit = enemySide === "p1" ? p1Hit : p2Hit;
+  const bottomHit = youSide === "p1" ? p1Hit : p2Hit;
 
   const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   const youUserId = youSide === "p1" ? match?.p1_user_id : match?.p2_user_id;
@@ -924,13 +935,7 @@ function BattleInner() {
     tone: "enemy" | "you";
   }) {
     return (
-      <div
-        className={[
-          "map-portrait",
-          where === "top" ? "is-top" : "is-bottom",
-          tone === "enemy" ? "tone-enemy" : "tone-you",
-        ].join(" ")}
-      >
+      <div className={["map-portrait", where === "top" ? "is-top" : "is-bottom", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}>
         <div className="map-portrait-ring">
           <div className="map-portrait-img">
             <img src={avatar} alt={tone} />
@@ -1086,8 +1091,7 @@ function BattleInner() {
                     </div>
                   )}
                   <div className="bb-hptext">
-                    <span className="tabular-nums">{unit.hp}</span> /{" "}
-                    <span className="tabular-nums">{unit.maxHp}</span>
+                    <span className="tabular-nums">{unit.hp}</span> / <span className="tabular-nums">{unit.maxHp}</span>
                     {unit.shield > 0 ? (
                       <span className="bb-shieldnum">
                         {" "}
@@ -1396,7 +1400,7 @@ function BattleInner() {
           mix-blend-mode: screen;
         }
 
-        /* ✅ FIX: don't force z-index:1 on ALL arena children (was breaking portrait z-index) */
+        /* don't force z-index on all children */
         .arena > .lane,
         .arena > .atk-overlay {
           position: relative;
@@ -1440,7 +1444,7 @@ function BattleInner() {
           marker-end: url(#atkArrow);
         }
 
-        /* ✅ portraits inside the map circles */
+        /* portraits inside the map circles */
         .map-portrait {
           position: absolute;
           left: 50%;
@@ -1451,9 +1455,7 @@ function BattleInner() {
           gap: 8px;
           filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
         }
-        /* ✅ FIX: higher specificity so it always wins */
         .arena .map-portrait { z-index: 6; }
-
         .map-portrait.is-top { top: 18px; }
         .map-portrait.is-bottom { bottom: 18px; }
 
@@ -1514,46 +1516,97 @@ function BattleInner() {
           pointer-events: none;
           z-index: 7;
         }
-        /* ✅ keep banner above portraits */
         .arena .round-banner { z-index: 7; }
 
-        .round-banner::before {
-          content: "";
-          position: absolute;
-          inset: -18px;
-          border-radius: 22px;
-          background: radial-gradient(closest-side, rgba(255,255,255,0.22), transparent 70%);
-          opacity: 0;
-          animation: bannerGlow 520ms ease-out both;
+        /* ✅ MOVE enemy block down into center band */
+        .lane {
+          display: grid;
+          gap: 14px;
+          padding-top: 110px;
+          padding-bottom: 88px;
         }
-        .round-banner .title {
-          font-weight: 1000;
-          letter-spacing: 0.24em;
-          text-transform: uppercase;
-          font-size: 13px;
-          opacity: 0.9;
-        }
-        .round-banner .sub {
-          margin-top: 6px;
-          font-weight: 900;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-          font-size: 18px;
-        }
-        .round-banner.tone-p1 { border-color: rgba(88,240,255,0.28); }
-        .round-banner.tone-p1 .sub { text-shadow: 0 0 18px rgba(88,240,255,0.18); }
-        .round-banner.tone-p2 { border-color: rgba(184,92,255,0.28); }
-        .round-banner.tone-p2 .sub { text-shadow: 0 0 18px rgba(184,92,255,0.18); }
-        .round-banner.tone-draw { border-color: rgba(255,255,255,0.22); }
 
-        .lane { display: grid; gap: 14px; }
-
-        .row {
-          border-radius: 18px;
-          border: 1px solid rgba(255,255,255,0.12);
+        .playerbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 12px 12px;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 16px;
           background: rgba(0,0,0,0.22);
           backdrop-filter: blur(6px);
-          padding: 10px;
+        }
+
+        /* ✅ enemy smaller */
+        .playerbar--enemy {
+          transform: scale(0.92);
+          transform-origin: center top;
+          opacity: 0.95;
+        }
+
+        .player-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+        .avatar {
+          width: 38px;
+          height: 38px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(255,255,255,0.06);
+          overflow: hidden;
+          flex: 0 0 auto;
+        }
+        .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+        .nameblock { min-width: 0; }
+        .nameblock .label {
+          font-size: 10px;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          opacity: 0.75;
+        }
+        .nameblock .name {
+          margin-top: 2px;
+          font-weight: 900;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          font-size: 12px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .player-right { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+
+        .hp {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(255,255,255,0.06);
+          font-weight: 900;
+          letter-spacing: 0.08em;
+          font-variant-numeric: tabular-nums;
+          font-size: 11px;
+        }
+
+        .score {
+          font-weight: 900;
+          letter-spacing: 0.06em;
+          font-variant-numeric: tabular-nums;
+          font-size: 18px;
+        }
+        .score.is-hit { animation: popHit 220ms var(--ease-out) both; }
+
+        /* ✅ REMOVE big translucent panels under card rows */
+        .row {
+          border-radius: 18px;
+          border: none;
+          background: transparent;
+          backdrop-filter: none;
+          padding: 0;
           display: flex;
           justify-content: center;
         }
@@ -1565,6 +1618,10 @@ function BattleInner() {
           gap: 10px;
           max-width: 820px;
         }
+
+        /* enemy cards a bit smaller */
+        .row--enemy .bb-card { max-width: 132px; }
+        .row--enemy .slots { max-width: 760px; }
 
         .bb-card {
           width: 100%;
@@ -1790,6 +1847,7 @@ function BattleInner() {
         @media (max-width: 640px) {
           .slots { gap: 8px; }
           .bb-card { max-width: 110px; border-radius: 16px; }
+          .row--enemy .bb-card { max-width: 98px; }
           .bb-face { border-radius: 16px; }
           .bb-card-inner { border-radius: 16px; }
           .round-banner { top: 54%; }
@@ -1801,6 +1859,9 @@ function BattleInner() {
           .map-portrait.is-top { top: 14px; }
           .map-portrait.is-bottom { bottom: 14px; }
           .map-portrait-name { max-width: 180px; font-size: 10px; }
+
+          .lane { padding-top: 92px; padding-bottom: 70px; }
+          .playerbar--enemy { transform: scale(0.9); }
         }
           `,
         }}
@@ -1831,47 +1892,23 @@ function BattleInner() {
               </div>
 
               <div className="scrub-row">
-                <input
-                  type="range"
-                  min={0}
-                  max={durationSec}
-                  step={0.05}
-                  value={t}
-                  onChange={(e) => seek(Number(e.target.value))}
-                />
+                <input type="range" min={0} max={durationSec} step={0.05} value={t} onChange={(e) => seek(Number(e.target.value))} />
 
-                <button
-                  className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")}
-                  onClick={() => setRate(0.5)}
-                  type="button"
-                >
+                <button className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")} onClick={() => setRate(0.5)} type="button">
                   0.5x
                 </button>
-                <button
-                  className={["rate-pill", rate === 1 ? "is-on" : ""].join(" ")}
-                  onClick={() => setRate(1)}
-                  type="button"
-                >
+                <button className={["rate-pill", rate === 1 ? "is-on" : ""].join(" ")} onClick={() => setRate(1)} type="button">
                   1x
                 </button>
-                <button
-                  className={["rate-pill", rate === 2 ? "is-on" : ""].join(" ")}
-                  onClick={() => setRate(2)}
-                  type="button"
-                >
+                <button className={["rate-pill", rate === 2 ? "is-on" : ""].join(" ")} onClick={() => setRate(2)} type="button">
                   2x
                 </button>
               </div>
 
               <div className="hud-sub">
+                <span className="hud-pill">{phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}</span>
                 <span className="hud-pill">
-                  {phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}
-                </span>
-                <span className="hud-pill">
-                  Раунд{" "}
-                  <b className="tabular-nums">
-                    {roundN}/{roundCount}
-                  </b>
+                  Раунд <b className="tabular-nums">{roundN}/{roundCount}</b>
                 </span>
                 <span className="hud-pill">
                   Match <b className="tabular-nums">{String(match.id).slice(0, 8)}…</b>
@@ -1909,15 +1946,7 @@ function BattleInner() {
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
           <svg className="atk-overlay" width="100%" height="100%">
             <defs>
-              <marker
-                id="atkArrow"
-                markerWidth="10"
-                markerHeight="10"
-                refX="9"
-                refY="5"
-                orient="auto"
-                markerUnits="strokeWidth"
-              >
+              <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
                 <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.85)" />
               </marker>
             </defs>
@@ -1930,16 +1959,13 @@ function BattleInner() {
             ))}
           </svg>
 
-          {/* ✅ AVATARS INSIDE THE MAP CIRCLES + NICKNAMES */}
+          {/* AVATARS INSIDE THE MAP CIRCLES + NICKNAMES */}
           <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} />
           <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} />
           {roundBanner.visible && (
             <div
               key={roundBanner.tick}
-              className={[
-                "round-banner",
-                roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw",
-              ].join(" ")}
+              className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
             >
               <div className="title">ROUND END</div>
               <div className="sub">{roundBanner.text}</div>
@@ -1947,9 +1973,28 @@ function BattleInner() {
           )}
 
           <div className="lane">
-            {/* ✅ REMOVED: playerbar (was duplicating portrait + name) */}
+            <div className="playerbar playerbar--enemy">
+              <div className="player-left">
+                <div className="avatar">
+                  <img alt="enemy" src={enemyAvatar} />
+                </div>
+                <div className="nameblock">
+                  <div className="label">ENEMY</div>
+                  <div className="name">{enemyName}</div>
+                </div>
+              </div>
 
-            <div className="row row-top">
+              <div className="player-right">
+                <div className="hp">
+                  HP <b className="tabular-nums">30</b>
+                </div>
+                <div className={["score", topHit ? "is-hit" : ""].join(" ")}>
+                  {scored ? (topScore == null ? "…" : topScore) : "…"}
+                </div>
+              </div>
+            </div>
+
+            <div className="row row-top row--enemy">
               <div className="slots">
                 {topSlots.map((s, i) => (
                   <CardSlot
@@ -1972,18 +2017,10 @@ function BattleInner() {
               <div className="ui-subtitle">Раунд {roundN}</div>
               <div className="mt-2 text-sm ui-subtle">
                 Победитель раунда:{" "}
-                <span className="font-extrabold">
-                  {!roundWinner ? "…" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}
-                </span>
+                <span className="font-extrabold">{!roundWinner ? "…" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</span>
               </div>
               <div className="mt-2 text-[12px] ui-subtle">
                 Активный юнит: <span className="font-semibold">{activeInstance ? safeSliceId(activeInstance) : "—"}</span>
-              </div>
-              <div className="mt-2 text-[12px] ui-subtle">
-                Score:{" "}
-                <span className="font-semibold tabular-nums">
-                  {(enemySide === "p1" ? p1Score : p2Score) ?? "—"} : {(youSide === "p1" ? p1Score : p2Score) ?? "—"}
-                </span>
               </div>
             </div>
 
@@ -2006,7 +2043,26 @@ function BattleInner() {
               </div>
             </div>
 
-            {/* ✅ REMOVED: playerbar (was duplicating portrait + name) */}
+            <div className="playerbar">
+              <div className="player-left">
+                <div className="avatar">
+                  <img alt="you" src={youAvatar} />
+                </div>
+                <div className="nameblock">
+                  <div className="label">YOU</div>
+                  <div className="name">{youName}</div>
+                </div>
+              </div>
+
+              <div className="player-right">
+                <div className="hp">
+                  HP <b className="tabular-nums">30</b>
+                </div>
+                <div className={["score", bottomHit ? "is-hit" : ""].join(" ")}>
+                  {scored ? (bottomScore == null ? "…" : bottomScore) : "…"}
+                </div>
+              </div>
+            </div>
 
             {!playing && t >= durationSec && (
               <div className="ui-card p-5" style={{ background: "rgba(0,0,0,0.22)", backdropFilter: "blur(6px)" }}>
