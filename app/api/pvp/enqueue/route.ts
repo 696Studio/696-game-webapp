@@ -1,3 +1,4 @@
+// app/api/pvp/enqueue/route.ts
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -94,7 +95,6 @@ function normalizeTimelineV1(timeline: any[]): any[] {
       return {
         ...e,
         unit,
-        // keep legacy flat fields if present
         side: e.side ?? unit?.side,
         slot: e.slot ?? unit?.slot,
         instanceId: e.instanceId ?? unit?.instanceId,
@@ -102,7 +102,7 @@ function normalizeTimelineV1(timeline: any[]): any[] {
       };
     }
 
-    // turn_start -> unit
+    // turn_start / stunned -> unit
     if (type === "turn_start" || type === "stunned") {
       const unit = e.unit ?? flatRef;
       return {
@@ -126,7 +126,7 @@ function normalizeTimelineV1(timeline: any[]): any[] {
       };
     }
 
-    // debuff_tick / buff_applied -> target
+    // debuff_tick / debuff_applied / buff_applied -> target
     if (type === "debuff_tick" || type === "debuff_applied" || type === "buff_applied") {
       const target = e.target ?? flatRef ?? e.unit;
       return {
@@ -172,7 +172,7 @@ export async function POST(req: Request) {
     }
     const p1Power = calcDeckPower(p1Deck);
 
-    // 3) Atomic matchmaking via RPC (still SQL)
+    // 3) Atomic matchmaking via RPC
     const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc("pvp_join_and_match", {
       p_user_id: userRow.id,
       p_deck_power: p1Power,
@@ -180,10 +180,7 @@ export async function POST(req: Request) {
     });
 
     if (rpcErr) {
-      return NextResponse.json(
-        { error: `pvp_join_and_match failed: ${rpcErr.message}` },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: `pvp_join_and_match failed: ${rpcErr.message}` }, { status: 500 });
     }
 
     const payload = (rpcData ?? {}) as RpcPayload;
@@ -201,9 +198,21 @@ export async function POST(req: Request) {
     // 4) Enrich match: full simulation + expanded timeline
     if (opponentId) {
       const p2Deck = await loadDeckForSim(opponentId);
+      if (!p2Deck.length) {
+        // opponent has empty deck — weird, but don't hard-crash matchmaking
+        return NextResponse.json({
+          status: "matched",
+          matchId,
+          opponentId,
+          seed,
+          deckPower: p1Power,
+          warning: "Opponent deck is empty. Match created but log not persisted.",
+        });
+      }
+
       const p2Power = calcDeckPower(p2Deck);
 
-      const sim = simulateBestOf3(seed, p1Deck, p2Deck);
+      const sim = simulateBestOf3(seed, matchId, userRow.id, opponentId, p1Deck, p2Deck);
 
       const winner_user_id =
         sim.winner === "draw" ? null : sim.winner === "p1" ? userRow.id : opponentId;
@@ -220,6 +229,11 @@ export async function POST(req: Request) {
         seed,
         duration_sec: sim.duration_sec,
 
+        // helpful for debugging / analytics
+        p1_user_id: userRow.id,
+        p2_user_id: opponentId,
+        mode,
+
         p1: { deckPower: p1Power },
         p2: { deckPower: p2Power },
 
@@ -234,6 +248,10 @@ export async function POST(req: Request) {
         rounds: sim.rounds,
         timeline: timelineV1,
 
+        // ✅ unified contract (match/route.ts already uses match_winner)
+        match_winner: sim.winner,
+
+        // keep legacy for older clients
         winner: sim.winner,
       };
 
@@ -268,7 +286,7 @@ export async function POST(req: Request) {
 
 // ======================================================
 // Deck loader (PVP SCHEMA): pvp_decks / pvp_deck_cards / cards
-// cards содержит: id(text), rarity, base_power, image_url, (optional) hp, initiative, ability_id, ability_params, tags
+// cards: id(text), rarity, base_power, image_url, (optional) hp, initiative, ability_id, ability_params, tags
 // ======================================================
 
 function hashTo01(input: string): number {
@@ -278,7 +296,6 @@ function hashTo01(input: string): number {
 }
 
 function rarityRanges(rarity: SimCard["rarity"]) {
-  // ranges from your balance note
   if (rarity === "legendary") return { hp: [145, 210], init: [14, 20] };
   if (rarity === "epic") return { hp: [120, 175], init: [12, 18] };
   if (rarity === "rare") return { hp: [95, 140], init: [10, 16] };
@@ -315,16 +332,13 @@ async function loadDeckForSim(userId: string): Promise<SimCard[]> {
 
   const ids = rows.map((r) => String(r.card_id));
 
-  // --- Try EXTENDED cards select first. If columns don't exist -> fallback to BASE select.
   let cards: any[] = [];
   let extended = true;
 
   try {
     const { data, error } = await supabaseAdmin
       .from("cards")
-      .select(
-        "id, rarity, base_power, name_ru, name_en, image_url, hp, initiative, ability_id, ability_params, tags"
-      )
+      .select("id, rarity, base_power, name_ru, name_en, image_url, hp, initiative, ability_id, ability_params, tags")
       .in("id", ids);
 
     if (error) throw new Error(error.message);
@@ -352,7 +366,6 @@ async function loadDeckForSim(userId: string): Promise<SimCard[]> {
     const rarity = (String(c.rarity || "common").toLowerCase() as any) as SimCard["rarity"];
     const base_power = Number(c.base_power || 0);
 
-    // ✅ hp/init from DB if exists, else deterministic by rarity ranges
     let hp: number;
     let initiative: number;
 
@@ -416,10 +429,7 @@ function rand01(seed: string): number {
 function pick5(seed: string, expandedDeck: SimCard[], side: "p1" | "p2", round: number): SimCard[] {
   const keyed = expandedDeck.map((c, idx) => ({
     c,
-    k: crypto
-      .createHash("md5")
-      .update(`${seed}:r${round}:${side}:i${idx}:${c.id}`)
-      .digest("hex"),
+    k: crypto.createHash("md5").update(`${seed}:r${round}:${side}:i${idx}:${c.id}`).digest("hex"),
   }));
   keyed.sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : 0));
   return keyed.slice(0, 5).map((x) => x.c);
@@ -428,7 +438,7 @@ function pick5(seed: string, expandedDeck: SimCard[], side: "p1" | "p2", round: 
 // ======================================================
 // Simulation: Best-of-3, each round = 5v5 fight
 // ======================================================
-function simulateBestOf3(seed: string, p1Deck: SimCard[], p2Deck: SimCard[]) {
+function simulateBestOf3(seed: string, matchId: string, p1UserId: string, p2UserId: string, p1Deck: SimCard[], p2Deck: SimCard[]) {
   const timeline: any[] = [];
   const rounds: any[] = [];
 
@@ -485,7 +495,7 @@ function simulateBestOf3(seed: string, p1Deck: SimCard[], p2Deck: SimCard[]) {
       p2_cards_full: p2CardsFull,
     });
 
-    const state = initRoundState(seed, round, p1Cards, p2Cards);
+    const state = initRoundState(seed, matchId, round, p1UserId, p2UserId, p1Cards, p2Cards);
 
     for (const u of state.units) {
       timeline.push({
@@ -542,26 +552,23 @@ function simulateBestOf3(seed: string, p1Deck: SimCard[], p2Deck: SimCard[]) {
   return { winner: finalWinner, rounds, timeline: timeline.sort((a, b) => a.t - b.t), duration_sec };
 }
 
-function initRoundState(seed: string, round: number, p1Cards: SimCard[], p2Cards: SimCard[]) {
+function initRoundState(seed: string, matchId: string, round: number, p1UserId: string, p2UserId: string, p1Cards: SimCard[], p2Cards: SimCard[]) {
   const units: Unit[] = [];
 
   for (let i = 0; i < 5; i++) {
     const c1 = p1Cards[i];
     const c2 = p2Cards[i];
 
-    if (c1) units.push(makeUnit(seed, round, "p1", i, c1));
-    if (c2) units.push(makeUnit(seed, round, "p2", i, c2));
+    if (c1) units.push(makeUnit(matchId, round, p1UserId, "p1", i, c1));
+    if (c2) units.push(makeUnit(matchId, round, p2UserId, "p2", i, c2));
   }
 
   return { units };
 }
 
-function makeUnit(seed: string, round: number, side: "p1" | "p2", slot: number, card: SimCard): Unit {
-  const instanceId = `${side}:r${round}:s${slot}:${card.id}:${crypto
-    .createHash("md5")
-    .update(`${seed}:${round}:${side}:${slot}:${card.id}`)
-    .digest("hex")
-    .slice(0, 6)}`;
+// ✅ instanceId теперь 100% уникальный и стабильный (без slice)
+function makeUnit(matchId: string, round: number, userId: string, side: "p1" | "p2", slot: number, card: SimCard): Unit {
+  const instanceId = `${matchId}:${round}:${side}:${slot}:${userId}:${card.id}`;
 
   return {
     instanceId,
@@ -600,11 +607,7 @@ function simulateRoundTurns(seed: string, round: number, state: { units: Unit[] 
   const maxTurns = 16;
   let turns = 0;
 
-  while (
-    turns < maxTurns &&
-    aliveCount(state.units, "p1") > 0 &&
-    aliveCount(state.units, "p2") > 0
-  ) {
+  while (turns < maxTurns && aliveCount(state.units, "p1") > 0 && aliveCount(state.units, "p2") > 0) {
     for (const actor of order) {
       if (turns >= maxTurns) break;
       if (!actor.alive) continue;
@@ -707,14 +710,8 @@ function pickTarget(seed: string, round: number, actor: Unit, units: Unit[]): Un
   if (sameSlot) return sameSlot;
 
   pool.sort((a, b) => {
-    const ka = crypto
-      .createHash("md5")
-      .update(`${seed}:${round}:target:${actor.instanceId}:${a.instanceId}`)
-      .digest("hex");
-    const kb = crypto
-      .createHash("md5")
-      .update(`${seed}:${round}:target:${actor.instanceId}:${b.instanceId}`)
-      .digest("hex");
+    const ka = crypto.createHash("md5").update(`${seed}:${round}:target:${actor.instanceId}:${a.instanceId}`).digest("hex");
+    const kb = crypto.createHash("md5").update(`${seed}:${round}:target:${actor.instanceId}:${b.instanceId}`).digest("hex");
     return ka < kb ? -1 : ka > kb ? 1 : 0;
   });
 
@@ -800,9 +797,7 @@ function tickDots(ev: any[], u: Unit) {
 }
 
 /**
- * ✅ FIX (GENERIC, без any):
- * PickAllyLowestHp = <U extends UnitLike>(...) => U | null
- * Мы работаем напрямую по полям UnitLike, и возвращаем U (а не UnitLike).
+ * ✅ Pick ally lowest hp%
  */
 const pickAllyLowestHp: PickAllyLowestHp = <U extends UnitLike>(
   seed: string,
@@ -818,14 +813,8 @@ const pickAllyLowestHp: PickAllyLowestHp = <U extends UnitLike>(
     const bp = b.hp / Math.max(1, b.maxHp);
     if (ap !== bp) return ap - bp;
 
-    const ka = crypto
-      .createHash("md5")
-      .update(`${seed}:${round}:ally:${actor.instanceId}:${a.instanceId}`)
-      .digest("hex");
-    const kb = crypto
-      .createHash("md5")
-      .update(`${seed}:${round}:ally:${actor.instanceId}:${b.instanceId}`)
-      .digest("hex");
+    const ka = crypto.createHash("md5").update(`${seed}:${round}:ally:${actor.instanceId}:${a.instanceId}`).digest("hex");
+    const kb = crypto.createHash("md5").update(`${seed}:${round}:ally:${actor.instanceId}:${b.instanceId}`).digest("hex");
     return ka < kb ? -1 : ka > kb ? 1 : 0;
   });
 

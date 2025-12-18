@@ -143,6 +143,13 @@ type AttackFx = { t: number; fromId: string; toId: string };
 type SpawnFx = { t: number };
 type DamageFx = { t: number; amount: number; blocked?: boolean };
 
+type PlayerProfile = {
+  id: string;
+  username?: string | null;
+  first_name?: string | null;
+  avatar_url?: string | null;
+};
+
 function fmtTime(sec: number) {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
@@ -237,6 +244,21 @@ function readUnitRefFromEvent(e: any, key: "unit" | "target" | "from" | "to" = "
   return null;
 }
 
+function pickDisplayName(p?: PlayerProfile | null, fallbackId?: string | null) {
+  const u = (p?.username || "").trim();
+  const f = (p?.first_name || "").trim();
+  if (u) return u.startsWith("@") ? u : `@${u}`;
+  if (f) return f;
+  return safeSliceId(fallbackId);
+}
+
+function pickAvatarUrl(p?: PlayerProfile | null, seed?: string) {
+  const url = (p?.avatar_url || "").trim();
+  if (url) return url;
+  const s = (seed || p?.username || p?.id || "user").toString();
+  return `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${encodeURIComponent(s)}`;
+}
+
 function BattleInner() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -254,6 +276,9 @@ function BattleInner() {
 
   const [match, setMatch] = useState<MatchRow | null>(null);
   const [errText, setErrText] = useState<string | null>(null);
+
+  // ✅ profiles for labels/avatars
+  const [profiles, setProfiles] = useState<Record<string, PlayerProfile>>({});
 
   const logObj = useMemo(() => {
     const l = match?.log;
@@ -379,6 +404,44 @@ function BattleInner() {
       alive = false;
     };
   }, [matchId]);
+
+  // ✅ load player profiles for nick + avatar
+  useEffect(() => {
+    if (!match?.p1_user_id || !match?.p2_user_id) return;
+
+    let alive = true;
+    (async () => {
+      try {
+        const ids = [match.p1_user_id, match.p2_user_id].filter(Boolean);
+        const qs = new URLSearchParams();
+        qs.set("ids", ids.join(","));
+        const res = await fetch(`/api/pvp/users?${qs.toString()}`);
+        const data = await res.json();
+        if (!alive) return;
+
+        if (!res.ok) return;
+
+        const arr: PlayerProfile[] = Array.isArray(data?.users) ? data.users : Array.isArray(data) ? data : [];
+        const map: Record<string, PlayerProfile> = {};
+        for (const u of arr) {
+          if (!u?.id) continue;
+          map[String(u.id)] = {
+            id: String(u.id),
+            username: u.username ?? null,
+            first_name: u.first_name ?? null,
+            avatar_url: u.avatar_url ?? null,
+          };
+        }
+        setProfiles(map);
+      } catch {
+        // ignore (fallbacks will work)
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [match?.p1_user_id, match?.p2_user_id]);
 
   const youSide: "p1" | "p2" = useMemo(() => {
     if (!match) return "p1";
@@ -717,6 +780,15 @@ function BattleInner() {
   const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   const youUserId = youSide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
+  const enemyProfile = enemyUserId ? profiles[enemyUserId] : undefined;
+  const youProfile = youUserId ? profiles[youUserId] : undefined;
+
+  const enemyName = pickDisplayName(enemyProfile, enemyUserId || null);
+  const youName = pickDisplayName(youProfile, youUserId || null);
+
+  const enemyAvatar = pickAvatarUrl(enemyProfile, enemyProfile?.username || enemyUserId || "enemy");
+  const youAvatar = pickAvatarUrl(youProfile, youProfile?.username || youUserId || "you");
+
   const boardFxClass = useMemo(() => {
     if (!scored) return "";
     if (roundWinner === "draw") return "fx-draw";
@@ -842,7 +914,6 @@ function BattleInner() {
       const p2 = getCenterInArena(atk.toId);
       if (!p1 || !p2) continue;
 
-      // nice arc (perpendicular offset)
       const mx = (p1.x + p2.x) / 2;
       const my = (p1.y + p2.y) / 2;
       const dx = p2.x - p1.x;
@@ -851,7 +922,7 @@ function BattleInner() {
       const nx = -dy / len;
       const ny = dx / len;
 
-      const bend = clamp(len * 0.10, 14, 46);
+      const bend = clamp(len * 0.1, 14, 46);
       const cx = mx + nx * bend;
       const cy = my + ny * bend;
 
@@ -1189,7 +1260,6 @@ function BattleInner() {
           100% { opacity: 0; }
         }
 
-        /* attack overlay path animation */
         @keyframes atkPath {
           0%   { opacity: 0; stroke-dashoffset: 140; }
           18%  { opacity: 1; }
@@ -1332,7 +1402,6 @@ function BattleInner() {
         .arena.fx-draw .row-top,
         .arena.fx-draw .row-bottom { box-shadow: 0 0 0 1px rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.10); }
 
-        /* overlay svg */
         .atk-overlay {
           position: absolute;
           inset: 0;
@@ -1423,10 +1492,11 @@ function BattleInner() {
 
         .player-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
+        /* ✅ circle avatar */
         .avatar {
           width: 38px;
           height: 38px;
-          border-radius: 14px;
+          border-radius: 999px;
           border: 1px solid rgba(255,255,255,0.18);
           background: rgba(255,255,255,0.06);
           overflow: hidden;
@@ -1753,14 +1823,7 @@ function BattleInner() {
               </div>
 
               <div className="scrub-row">
-                <input
-                  type="range"
-                  min={0}
-                  max={durationSec}
-                  step={0.05}
-                  value={t}
-                  onChange={(e) => seek(Number(e.target.value))}
-                />
+                <input type="range" min={0} max={durationSec} step={0.05} value={t} onChange={(e) => seek(Number(e.target.value))} />
 
                 <button className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")} onClick={() => setRate(0.5)} type="button">
                   0.5x
@@ -1775,13 +1838,7 @@ function BattleInner() {
 
               <div className="hud-sub">
                 <span className="hud-pill">
-                  {phase === "start"
-                    ? "ROUND START"
-                    : phase === "reveal"
-                    ? "REVEAL"
-                    : phase === "score"
-                    ? "SCORE"
-                    : "ROUND END"}
+                  {phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}
                 </span>
                 <span className="hud-pill">
                   Раунд <b className="tabular-nums">{roundN}/{roundCount}</b>
@@ -1813,7 +1870,6 @@ function BattleInner() {
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
-          {/* SVG overlay for attacks */}
           <svg className="atk-overlay" width="100%" height="100%">
             <defs>
               <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
@@ -1846,11 +1902,11 @@ function BattleInner() {
             <div className="playerbar">
               <div className="player-left">
                 <div className="avatar">
-                  <img alt="enemy" src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${enemyUserId || "enemy"}`} />
+                  <img alt="enemy" src={enemyAvatar} />
                 </div>
                 <div className="nameblock">
                   <div className="label">ENEMY</div>
-                  <div className="name">{safeSliceId(enemyUserId)}</div>
+                  <div className="name">{enemyName}</div>
                 </div>
               </div>
 
@@ -1918,11 +1974,11 @@ function BattleInner() {
             <div className="playerbar">
               <div className="player-left">
                 <div className="avatar">
-                  <img alt="you" src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${youUserId || "you"}`} />
+                  <img alt="you" src={youAvatar} />
                 </div>
                 <div className="nameblock">
                   <div className="label">YOU</div>
-                  <div className="name">{safeSliceId(youUserId)}</div>
+                  <div className="name">{youName}</div>
                 </div>
               </div>
 
