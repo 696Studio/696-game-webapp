@@ -436,8 +436,27 @@ function BattleInner() {
   const laneRects = useMemo(() => {
     if (!arenaBox) return null;
 
-    const enemy = coverMapRect(0.08, 0.23, 0.92, 0.37, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-    const you   = coverMapRect(0.08, 0.57, 0.92, 0.71, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);    
+    const enemy = coverMapRect(
+      0.08,
+      0.16, // ⬆⬆⬆ сильно вверх
+      0.92,
+      0.30,
+      arenaBox.w,
+      arenaBox.h,
+      BOARD_IMG_W,
+      BOARD_IMG_H
+    );
+    
+    const you = coverMapRect(
+      0.08,
+      0.50, // ⬆ заметно вверх
+      0.92,
+      0.64,
+      arenaBox.w,
+      arenaBox.h,
+      BOARD_IMG_W,
+      BOARD_IMG_H
+    );    
 
     return { enemy, you };
   }, [arenaBox]);
