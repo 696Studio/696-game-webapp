@@ -1035,8 +1035,8 @@ function BattleInner() {
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
       where === "top"
-        ? Math.round(arenaBox.h * 0.060)   // ⬆️ ВЕРХНЮЮ СИЛЬНО ВВЕРХ
-        : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
+        ? -Math.round(arenaBox.h * 0.09)   // ⬆️ ВЕРХНЮЮ ПОДНИМАЕМ СИЛЬНО
+        : -Math.round(arenaBox.h * 0.02);  // ⬆️ НИЖНЮЮ ЧУТЬ ПОДНИМАЕМ        
     
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
     
