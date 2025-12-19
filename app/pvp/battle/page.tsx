@@ -267,14 +267,7 @@ function pickAvatarUrl(p?: PlayerProfile | null, seed?: string) {
 const BOARD_IMG_W = 1290;
 const BOARD_IMG_H = 2796;
 
-function coverMapPoint(
-  nx: number,
-  ny: number,
-  containerW: number,
-  containerH: number,
-  imgW: number,
-  imgH: number
-) {
+function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
   const drawnW = imgW * scale;
   const drawnH = imgH * scale;
@@ -434,11 +427,24 @@ function BattleInner() {
     return () => window.cancelAnimationFrame(id);
   }, [layoutTick]);
 
+  // ✅ FIX: laneRects hook MUST be above any early returns (hooks order)
+  const laneRects = useMemo(() => {
+    if (!arenaBox) return null;
+
+    // Enemy lane: x 8–92%, y 26–40%
+    const enemy = coverMapRect(0.08, 0.26, 0.92, 0.40, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+    // Player lane: x 8–92%, y 60–74%
+    const you = coverMapRect(0.08, 0.60, 0.92, 0.74, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+
+    return { enemy, you };
+  }, [arenaBox]);
+
   function seek(nextT: number) {
     const clamped = Math.max(0, Math.min(durationSec, Number(nextT) || 0));
     setT(clamped);
     startAtRef.current = null;
   }
+
   useEffect(() => {
     if (!matchId) {
       setErrText("matchId required");
@@ -670,11 +676,7 @@ function BattleInner() {
     const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
 
     if (revealSig !== prevRevealSigRef.current) {
-      const hasSomething =
-        (cf1?.length || 0) > 0 ||
-        (cf2?.length || 0) > 0 ||
-        (c1?.length || 0) > 0 ||
-        (c2?.length || 0) > 0;
+      const hasSomething = (cf1?.length || 0) > 0 || (cf2?.length || 0) > 0 || (c1?.length || 0) > 0 || (c2?.length || 0) > 0;
       if (hasSomething) setRevealTick((x) => x + 1);
       prevRevealSigRef.current = revealSig;
     }
@@ -706,7 +708,6 @@ function BattleInner() {
 
     setLayoutTick((x) => x + 1);
   }, [t, timeline]);
-
   useEffect(() => {
     if (!match) return;
 
@@ -1238,7 +1239,6 @@ function BattleInner() {
       </div>
     );
   }
-
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
@@ -1307,18 +1307,6 @@ function BattleInner() {
       </main>
     );
   }
-
-  // ✅ board-anchored lane rects (normalized to PNG)
-  const laneRects = useMemo(() => {
-    if (!arenaBox) return null;
-
-    // Enemy lane: x 8–92%, y 26–40%
-    const enemy = coverMapRect(0.08, 0.26, 0.92, 0.40, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-    // Player lane: x 8–92%, y 60–74%
-    const you = coverMapRect(0.08, 0.60, 0.92, 0.74, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-
-    return { enemy, you };
-  }, [arenaBox]);
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
@@ -1979,6 +1967,7 @@ function BattleInner() {
           `,
         }}
       />
+
       <div className="w-full max-w-5xl">
         <header className="board-topbar ui-card rounded-[var(--r-xl)] mb-4">
           <div className="board-hud">
@@ -2004,7 +1993,14 @@ function BattleInner() {
               </div>
 
               <div className="scrub-row">
-                <input type="range" min={0} max={durationSec} step={0.05} value={t} onChange={(e) => seek(Number(e.target.value))} />
+                <input
+                  type="range"
+                  min={0}
+                  max={durationSec}
+                  step={0.05}
+                  value={t}
+                  onChange={(e) => seek(Number(e.target.value))}
+                />
 
                 <button className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")} onClick={() => setRate(0.5)} type="button">
                   0.5x
