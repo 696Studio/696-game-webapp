@@ -1028,14 +1028,14 @@ function BattleInner() {
           : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
     
       // ✅ responsive portrait size based on arena width
-      const ring = clamp(Math.round(arenaBox.w * 0.15), 84, 132);
-      const img = Math.round(ring * 0.86);
+      const ring = clamp(Math.round(arenaBox.w * 0.125), 72, 118);
+      const img = Math.round(ring * 0.82);
     
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
-        where === "top"
-          ? Math.round(arenaBox.h * 0.018) // опускаем top
-          : -Math.round(arenaBox.h * 0.065); // поднимаем bottom
+      where === "top"
+        ? Math.round(arenaBox.h * 0.032)   // сильнее опускаем top
+        : -Math.round(arenaBox.h * 0.085); // сильнее поднимаем bottom    
     
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
     
