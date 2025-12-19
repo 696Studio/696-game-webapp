@@ -1029,7 +1029,7 @@ function BattleInner() {
     
       // ✅ responsive portrait size based on arena width
       const base = Math.min(arenaBox.w, arenaBox.h);
-      const ring = Math.round(base * 0.045);
+      const ring = Math.round(base * 0.028);
       const img = Math.round(ring * 0.72);    
     
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
@@ -1970,8 +1970,8 @@ function BattleInner() {
           .round-banner .sub { font-size: 16px; }
           .bb-bar { height: 6px; }
 
-          .map-portrait-ring { width: 108px; height: 108px; }
-          .map-portrait-img { width: 108px; height: 108px; }
+.map-portrait-ring { width: var(--ringSize); height: var(--ringSize); }
+.map-portrait-img { width: var(--imgSize); height: var(--imgSize); }
           .map-portrait-name { max-width: 180px; font-size: 10px; }
 
           .corner-info { max-width: min(220px, calc(100% - 20px)); }
