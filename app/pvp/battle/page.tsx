@@ -269,9 +269,9 @@ const BOARD_IMG_H = 2796;
 
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
-const TOP_RING_NY = 0.095; // was 0.11
+const TOP_RING_NY = 0.112;
 const BOT_RING_NX = 0.5;
-const BOT_RING_NY = 0.905; // was 0.89
+const BOT_RING_NY = 0.888; // was 0.89
 
 function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
@@ -1021,14 +1021,26 @@ function BattleInner() {
   }) {
     const pos = useMemo(() => {
       if (!arenaBox) return null;
-
+    
       const p =
         where === "top"
           ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
           : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-
-      return { left: p.x, top: p.y };
-    }, [arenaBox, where]);
+    
+      // ✅ responsive portrait size based on arena width
+      const ring = clamp(Math.round(arenaBox.w * 0.15), 84, 132);
+      const img = Math.round(ring * 0.86);
+    
+      // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
+      const yOffset =
+        where === "top"
+          ? Math.round(arenaBox.h * 0.018) // опускаем top
+          : -Math.round(arenaBox.h * 0.065); // поднимаем bottom
+    
+      const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
+    
+      return { left: p.x, top, ring, img };
+    }, [arenaBox, where]);  
 
     return (
       <div
