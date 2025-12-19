@@ -259,6 +259,58 @@ function pickAvatarUrl(p?: PlayerProfile | null, seed?: string) {
   return `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${encodeURIComponent(s)}`;
 }
 
+/**
+ * ✅ BOARD COORDS FIX (background-size: cover)
+ * Convert "normalized board coordinates" (0..1 over the original PNG)
+ * into pixel positions inside the arena element, respecting cover crop.
+ */
+const BOARD_IMG_W = 1290;
+const BOARD_IMG_H = 2796;
+
+function coverMapPoint(
+  nx: number,
+  ny: number,
+  containerW: number,
+  containerH: number,
+  imgW: number,
+  imgH: number
+) {
+  const scale = Math.max(containerW / imgW, containerH / imgH); // cover
+  const drawnW = imgW * scale;
+  const drawnH = imgH * scale;
+  const offsetX = (containerW - drawnW) / 2;
+  const offsetY = (containerH - drawnH) / 2;
+
+  return {
+    x: offsetX + nx * drawnW,
+    y: offsetY + ny * drawnH,
+    scale,
+    offsetX,
+    offsetY,
+    drawnW,
+    drawnH,
+  };
+}
+
+function coverMapRect(
+  nx1: number,
+  ny1: number,
+  nx2: number,
+  ny2: number,
+  containerW: number,
+  containerH: number,
+  imgW: number,
+  imgH: number
+) {
+  const p1 = coverMapPoint(nx1, ny1, containerW, containerH, imgW, imgH);
+  const p2 = coverMapPoint(nx2, ny2, containerW, containerH, imgW, imgH);
+  const left = Math.min(p1.x, p2.x);
+  const top = Math.min(p1.y, p2.y);
+  const width = Math.abs(p2.x - p1.x);
+  const height = Math.abs(p2.y - p1.y);
+  return { left, top, width, height };
+}
+
 function BattleInner() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -361,18 +413,32 @@ function BattleInner() {
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
   const [layoutTick, setLayoutTick] = useState(0);
 
+  const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
+
   useEffect(() => {
     const onResize = () => setLayoutTick((x) => x + 1);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  useEffect(() => {
+    const el = arenaRef.current;
+    if (!el) return;
+    // next frame ensures styles/layout applied
+    const id = window.requestAnimationFrame(() => {
+      const r = el.getBoundingClientRect();
+      const w = Math.max(1, Math.floor(r.width));
+      const h = Math.max(1, Math.floor(r.height));
+      setArenaBox({ w, h });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [layoutTick]);
+
   function seek(nextT: number) {
     const clamped = Math.max(0, Math.min(durationSec, Number(nextT) || 0));
     setT(clamped);
     startAtRef.current = null;
   }
-
   useEffect(() => {
     if (!matchId) {
       setErrText("matchId required");
@@ -947,13 +1013,34 @@ function BattleInner() {
     score: number | null;
     isHit: boolean;
   }) {
+    // ✅ board-anchored positions (in arena pixels), matching background cover-crop
+    const pos = useMemo(() => {
+      if (!arenaBox) return null;
+
+      // These are the "design intent" coordinates; tweak once if your PNG ring centers differ.
+      const topRing = { nx: 0.5, ny: 0.11 };
+      const botRing = { nx: 0.5, ny: 0.89 };
+
+      const p =
+        where === "top"
+          ? coverMapPoint(topRing.nx, topRing.ny, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
+          : coverMapPoint(botRing.nx, botRing.ny, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+
+      return { left: p.x, top: p.y };
+    }, [arenaBox, where]);
+
     return (
       <div
-        className={[
-          "map-portrait",
-          where === "top" ? "is-top" : "is-bottom",
-          tone === "enemy" ? "tone-enemy" : "tone-you",
-        ].join(" ")}
+        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
+        style={
+          pos
+            ? {
+                left: pos.left,
+                top: pos.top,
+                transform: "translate(-50%,-50%)",
+              }
+            : undefined
+        }
       >
         <div className="map-portrait-ring">
           <div className="map-portrait-img">
@@ -1121,8 +1208,7 @@ function BattleInner() {
                     </div>
                   )}
                   <div className="bb-hptext">
-                    <span className="tabular-nums">{unit.hp}</span> /{" "}
-                    <span className="tabular-nums">{unit.maxHp}</span>
+                    <span className="tabular-nums">{unit.hp}</span> / <span className="tabular-nums">{unit.maxHp}</span>
                     {unit.shield > 0 ? (
                       <span className="bb-shieldnum">
                         {" "}
@@ -1152,7 +1238,6 @@ function BattleInner() {
       </div>
     );
   }
-
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
@@ -1221,6 +1306,18 @@ function BattleInner() {
       </main>
     );
   }
+
+  // ✅ board-anchored lane rects (normalized to PNG)
+  const laneRects = useMemo(() => {
+    if (!arenaBox) return null;
+
+    // Enemy lane: x 8–92%, y 26–40%
+    const enemy = coverMapRect(0.08, 0.26, 0.92, 0.40, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+    // Player lane: x 8–92%, y 60–74%
+    const you = coverMapRect(0.08, 0.60, 0.92, 0.74, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+
+    return { enemy, you };
+  }, [arenaBox]);
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
@@ -1470,8 +1567,6 @@ function BattleInner() {
         /* portraits inside the map circles */
         .map-portrait {
           position: absolute;
-          left: 50%;
-          transform: translateX(-50%);
           pointer-events: none;
           display: grid;
           justify-items: center;
@@ -1480,11 +1575,6 @@ function BattleInner() {
         }
         .arena .map-portrait { z-index: 6; }
 
-        /* ✅ tune these two to perfectly match the board rings */
-        .map-portrait.is-top { top: 10px; }
-        .map-portrait.is-bottom { bottom: 10px; }
-
-        /* ✅ make avatar fill ring (no "smaller inside") */
         .map-portrait-ring {
           width: 124px;
           height: 124px;
@@ -1547,6 +1637,7 @@ function BattleInner() {
         .corner-info {
           position: absolute;
           left: 14px;
+          top: calc(env(safe-area-inset-top) + 14px);
           z-index: 6;
           padding: 12px 12px;
           border-radius: 14px;
@@ -1557,7 +1648,6 @@ function BattleInner() {
           box-shadow: 0 12px 40px rgba(0,0,0,0.28);
           pointer-events: none;
         }
-        .corner-info.top { top: 14px; transform: translateY(0); }
         .corner-info .h1 {
           font-weight: 1000;
           letter-spacing: 0.22em;
@@ -1626,7 +1716,6 @@ function BattleInner() {
           min-height: 720px;
         }
 
-        /* ✅ place card rows into the red zones (centered + higher) */
         .row {
           border-radius: 0;
           border: 0;
@@ -1635,19 +1724,12 @@ function BattleInner() {
           padding: 0;
           display: flex;
           justify-content: center;
-        }
-        .row-top {
           position: absolute;
           left: 0;
           right: 0;
-          top: 210px;
         }
-        .row-bottom {
-          position: absolute;
-          left: 0;
-          right: 0;
-          bottom: 170px;
-        }
+
+        /* rows are now driven by board coords via inline style */
 
         .slots {
           width: 100%;
@@ -1889,12 +1971,7 @@ function BattleInner() {
 
           .map-portrait-ring { width: 108px; height: 108px; }
           .map-portrait-img { width: 108px; height: 108px; }
-          .map-portrait.is-top { top: 8px; }
-          .map-portrait.is-bottom { bottom: 8px; }
           .map-portrait-name { max-width: 180px; font-size: 10px; }
-
-          .row-top { top: 190px; }
-          .row-bottom { bottom: 160px; }
 
           .corner-info { width: min(280px, calc(100% - 28px)); }
         }
@@ -1927,47 +2004,22 @@ function BattleInner() {
               </div>
 
               <div className="scrub-row">
-                <input
-                  type="range"
-                  min={0}
-                  max={durationSec}
-                  step={0.05}
-                  value={t}
-                  onChange={(e) => seek(Number(e.target.value))}
-                />
+                <input type="range" min={0} max={durationSec} step={0.05} value={t} onChange={(e) => seek(Number(e.target.value))} />
 
-                <button
-                  className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")}
-                  onClick={() => setRate(0.5)}
-                  type="button"
-                >
+                <button className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")} onClick={() => setRate(0.5)} type="button">
                   0.5x
                 </button>
-                <button
-                  className={["rate-pill", rate === 1 ? "is-on" : ""].join(" ")}
-                  onClick={() => setRate(1)}
-                  type="button"
-                >
+                <button className={["rate-pill", rate === 1 ? "is-on" : ""].join(" ")} onClick={() => setRate(1)} type="button">
                   1x
                 </button>
-                <button
-                  className={["rate-pill", rate === 2 ? "is-on" : ""].join(" ")}
-                  onClick={() => setRate(2)}
-                  type="button"
-                >
+                <button className={["rate-pill", rate === 2 ? "is-on" : ""].join(" ")} onClick={() => setRate(2)} type="button">
                   2x
                 </button>
               </div>
 
               <div className="hud-sub">
                 <span className="hud-pill">
-                  {phase === "start"
-                    ? "ROUND START"
-                    : phase === "reveal"
-                    ? "REVEAL"
-                    : phase === "score"
-                    ? "SCORE"
-                    : "ROUND END"}
+                  {phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}
                 </span>
                 <span className="hud-pill">
                   Раунд{" "}
@@ -2007,6 +2059,7 @@ function BattleInner() {
             </div>
           </div>
         </header>
+
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
           <svg className="atk-overlay" width="100%" height="100%">
             <defs>
@@ -2024,7 +2077,7 @@ function BattleInner() {
           </svg>
 
           {/* ✅ left-top progress/info block (separated from enemy avatar) */}
-          <div className="corner-info top">
+          <div className="corner-info">
             <div className="h1">
               РАУНД{" "}
               <b className="tabular-nums">
@@ -2040,25 +2093,9 @@ function BattleInner() {
             </div>
           </div>
 
-          {/* ✅ AVATARS INSIDE THE MAP CIRCLES + HP/Score bubbles under them */}
-          <MapPortrait
-            where="top"
-            tone="enemy"
-            name={enemyName}
-            avatar={enemyAvatar}
-            hp={30}
-            score={scored ? topScore : null}
-            isHit={topHit}
-          />
-          <MapPortrait
-            where="bottom"
-            tone="you"
-            name={youName}
-            avatar={youAvatar}
-            hp={30}
-            score={scored ? bottomScore : null}
-            isHit={bottomHit}
-          />
+          {/* ✅ AVATARS INSIDE THE MAP CIRCLES */}
+          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hp={30} score={scored ? topScore : null} isHit={topHit} />
+          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={30} score={scored ? bottomScore : null} isHit={bottomHit} />
 
           {roundBanner.visible && (
             <div
@@ -2074,8 +2111,19 @@ function BattleInner() {
           )}
 
           <div className="lane">
-            {/* ✅ Enemy cards (no translucent row panel) */}
-            <div className="row row-top">
+            {/* ✅ Enemy cards row — aligned to enemy lane rect */}
+            <div
+              className="row"
+              style={
+                laneRects
+                  ? {
+                      top: laneRects.enemy.top + laneRects.enemy.height * 0.1,
+                      left: laneRects.enemy.left,
+                      width: laneRects.enemy.width,
+                    }
+                  : undefined
+              }
+            >
               <div className="slots">
                 {topSlots.map((s, i) => (
                   <CardSlot
@@ -2094,8 +2142,19 @@ function BattleInner() {
               </div>
             </div>
 
-            {/* ✅ Your cards (no translucent row panel) */}
-            <div className="row row-bottom">
+            {/* ✅ Your cards row — aligned to player lane rect */}
+            <div
+              className="row"
+              style={
+                laneRects
+                  ? {
+                      top: laneRects.you.top + laneRects.you.height * 0.08,
+                      left: laneRects.you.left,
+                      width: laneRects.you.width,
+                    }
+                  : undefined
+              }
+            >
               <div className="slots">
                 {bottomSlots.map((s, i) => (
                   <CardSlot
