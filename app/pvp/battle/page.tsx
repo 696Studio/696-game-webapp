@@ -417,7 +417,6 @@ function BattleInner() {
   useEffect(() => {
     const el = arenaRef.current;
     if (!el) return;
-    // next frame ensures styles/layout applied
     const id = window.requestAnimationFrame(() => {
       const r = el.getBoundingClientRect();
       const w = Math.max(1, Math.floor(r.width));
@@ -431,9 +430,7 @@ function BattleInner() {
   const laneRects = useMemo(() => {
     if (!arenaBox) return null;
 
-    // Enemy lane: x 8–92%, y 26–40%
     const enemy = coverMapRect(0.08, 0.26, 0.92, 0.40, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-    // Player lane: x 8–92%, y 60–74%
     const you = coverMapRect(0.08, 0.60, 0.92, 0.74, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
 
     return { enemy, you };
@@ -676,7 +673,8 @@ function BattleInner() {
     const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
 
     if (revealSig !== prevRevealSigRef.current) {
-      const hasSomething = (cf1?.length || 0) > 0 || (cf2?.length || 0) > 0 || (c1?.length || 0) > 0 || (c2?.length || 0) > 0;
+      const hasSomething =
+        (cf1?.length || 0) > 0 || (cf2?.length || 0) > 0 || (c1?.length || 0) > 0 || (c2?.length || 0) > 0;
       if (hasSomething) setRevealTick((x) => x + 1);
       prevRevealSigRef.current = revealSig;
     }
@@ -708,6 +706,7 @@ function BattleInner() {
 
     setLayoutTick((x) => x + 1);
   }, [t, timeline]);
+
   useEffect(() => {
     if (!match) return;
 
@@ -1014,11 +1013,9 @@ function BattleInner() {
     score: number | null;
     isHit: boolean;
   }) {
-    // ✅ board-anchored positions (in arena pixels), matching background cover-crop
     const pos = useMemo(() => {
       if (!arenaBox) return null;
 
-      // These are the "design intent" coordinates; tweak once if your PNG ring centers differ.
       const topRing = { nx: 0.5, ny: 0.11 };
       const botRing = { nx: 0.5, ny: 0.89 };
 
@@ -1051,7 +1048,6 @@ function BattleInner() {
 
         <div className="map-portrait-name">{name}</div>
 
-        {/* HP + Score pills UNDER the circle (no big playerbars) */}
         <div className="map-pillrow">
           <div className="map-pill">
             HP <b className="tabular-nums">{hp}</b>
@@ -1209,7 +1205,8 @@ function BattleInner() {
                     </div>
                   )}
                   <div className="bb-hptext">
-                    <span className="tabular-nums">{unit.hp}</span> / <span className="tabular-nums">{unit.maxHp}</span>
+                    <span className="tabular-nums">{unit.hp}</span> /{" "}
+                    <span className="tabular-nums">{unit.maxHp}</span>
                     {unit.shield > 0 ? (
                       <span className="bb-shieldnum">
                         {" "}
@@ -1239,6 +1236,7 @@ function BattleInner() {
       </div>
     );
   }
+
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
@@ -1496,7 +1494,6 @@ function BattleInner() {
           background-position: center;
           background-repeat: no-repeat;
           filter: saturate(1.02) contrast(1.04);
-          transform: scale(1.02);
           opacity: 1;
         }
         .arena::after {
@@ -1514,7 +1511,6 @@ function BattleInner() {
           mix-blend-mode: screen;
         }
 
-        /* don't force z-index on all children */
         .arena > .lane,
         .arena > .atk-overlay {
           position: relative;
@@ -1553,7 +1549,6 @@ function BattleInner() {
           marker-end: url(#atkArrow);
         }
 
-        /* portraits inside the map circles */
         .map-portrait {
           position: absolute;
           pointer-events: none;
@@ -1622,7 +1617,6 @@ function BattleInner() {
         .map-pill--score { min-width: 70px; }
         .map-pill.is-hit { animation: popHit 220ms var(--ease-out) both; }
 
-        /* ✅ round/progress info blocks: separated from avatars */
         .corner-info {
           position: absolute;
           left: 14px;
@@ -1698,11 +1692,11 @@ function BattleInner() {
         .round-banner.tone-p2 .sub { text-shadow: 0 0 18px rgba(184,92,255,0.18); }
         .round-banner.tone-draw { border-color: rgba(255,255,255,0.22); }
 
+        /* ✅ IMPORTANT: make lane match arena size exactly (same coord space as coverMap) */
         .lane {
-          position: relative;
-          display: grid;
-          gap: 0;
-          min-height: 720px;
+          position: absolute;
+          inset: 0;
+          z-index: 3;
         }
 
         .row {
@@ -1714,11 +1708,7 @@ function BattleInner() {
           display: flex;
           justify-content: center;
           position: absolute;
-          left: 0;
-          right: 0;
         }
-
-        /* rows are now driven by board coords via inline style */
 
         .slots {
           width: 100%;
@@ -1993,14 +1983,7 @@ function BattleInner() {
               </div>
 
               <div className="scrub-row">
-                <input
-                  type="range"
-                  min={0}
-                  max={durationSec}
-                  step={0.05}
-                  value={t}
-                  onChange={(e) => seek(Number(e.target.value))}
-                />
+                <input type="range" min={0} max={durationSec} step={0.05} value={t} onChange={(e) => seek(Number(e.target.value))} />
 
                 <button className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")} onClick={() => setRate(0.5)} type="button">
                   0.5x
@@ -2072,7 +2055,6 @@ function BattleInner() {
             ))}
           </svg>
 
-          {/* ✅ left-top progress/info block (separated from enemy avatar) */}
           <div className="corner-info">
             <div className="h1">
               РАУНД{" "}
@@ -2081,15 +2063,13 @@ function BattleInner() {
               </b>
             </div>
             <div className="line">
-              Победитель раунда:{" "}
-              <b>{!roundWinner ? "—" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</b>
+              Победитель раунда: <b>{!roundWinner ? "—" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</b>
             </div>
             <div className="line">
               Активный юнит: <b>{activeInstance ? safeSliceId(activeInstance) : "—"}</b>
             </div>
           </div>
 
-          {/* ✅ AVATARS INSIDE THE MAP CIRCLES */}
           <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hp={30} score={scored ? topScore : null} isHit={topHit} />
           <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={30} score={scored ? bottomScore : null} isHit={bottomHit} />
 
@@ -2107,7 +2087,6 @@ function BattleInner() {
           )}
 
           <div className="lane">
-            {/* ✅ Enemy cards row — aligned to enemy lane rect */}
             <div
               className="row"
               style={
@@ -2138,7 +2117,6 @@ function BattleInner() {
               </div>
             </div>
 
-            {/* ✅ Your cards row — aligned to player lane rect */}
             <div
               className="row"
               style={
