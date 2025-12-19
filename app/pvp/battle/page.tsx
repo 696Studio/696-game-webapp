@@ -269,9 +269,9 @@ const BOARD_IMG_H = 2796;
 
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
-const TOP_RING_NY = 0.112;
+const TOP_RING_NY = 0.125;
 const BOT_RING_NX = 0.5;
-const BOT_RING_NY = 0.888; // was 0.89
+const BOT_RING_NY = 0.900; // was 0.89
 
 function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
@@ -1034,8 +1034,8 @@ function BattleInner() {
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
       where === "top"
-        ? Math.round(arenaBox.h * 0.032)   // сильнее опускаем top
-        : -Math.round(arenaBox.h * 0.085); // сильнее поднимаем bottom    
+        ? Math.round(arenaBox.h * 0.020)   // чуть-чуть вниз
+        : -Math.round(arenaBox.h * 0.045); // мягко вверх (без “гуляния”)      
     
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
     
