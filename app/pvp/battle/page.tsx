@@ -1029,8 +1029,8 @@ function BattleInner() {
     
       // ✅ responsive portrait size based on arena width
       const base = Math.min(arenaBox.w, arenaBox.h);
-      const ring = Math.round(base * 0.028);
-      const img = Math.round(ring * 0.72);    
+      const ring = Math.round(base * 0.045);
+      const img = Math.round(ring * 0.86);        
     
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
