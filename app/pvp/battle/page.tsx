@@ -1238,6 +1238,7 @@ function BattleInner() {
       </div>
     );
   }
+
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
@@ -1978,7 +1979,6 @@ function BattleInner() {
           `,
         }}
       />
-
       <div className="w-full max-w-5xl">
         <header className="board-topbar ui-card rounded-[var(--r-xl)] mb-4">
           <div className="board-hud">
