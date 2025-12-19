@@ -1047,13 +1047,15 @@ function BattleInner() {
         className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
         style={
           pos
-            ? {
+            ? ({
                 left: pos.left,
                 top: pos.top,
                 transform: "translate(-50%,-50%)",
-              }
+                ["--ringSize" as any]: `${pos.ring}px`,
+                ["--imgSize" as any]: `${pos.img}px`,
+              } as React.CSSProperties)
             : undefined
-        }
+        }        
       >
         <div className="map-portrait-ring">
           <div className="map-portrait-img">
@@ -1572,22 +1574,23 @@ function BattleInner() {
           filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
         }
         .arena .map-portrait { z-index: 6; }
+.map-portrait-ring {
+  width: var(--ringSize);
+  height: var(--ringSize);
+  border-radius: 999px;
+  background: transparent;
+  display: grid;
+  place-items: center;
+}
 
-        .map-portrait-ring {
-          width: 124px;
-          height: 124px;
-          border-radius: 999px;
-          background: transparent;
-          display: grid;
-          place-items: center;
-        }
-        .map-portrait-img {
-          width: 124px;
-          height: 124px;
-          border-radius: 999px;
-          overflow: hidden;
-          background: rgba(255,255,255,0.06);
-        }
+.map-portrait-img {
+  width: var(--imgSize);
+  height: var(--imgSize);
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.06);
+}
+
         .map-portrait-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
         .map-portrait-name {
