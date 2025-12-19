@@ -269,7 +269,7 @@ const BOARD_IMG_H = 2796;
 
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
-const TOP_RING_NY = 0.155;
+const TOP_RING_NY = 0.160;
 const BOT_RING_NX = 0.5;
 const BOT_RING_NY = 0.950; // was 0.89
 
@@ -1028,8 +1028,8 @@ function BattleInner() {
           : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
     
       // ✅ responsive portrait size based on arena width
-      const ring = clamp(Math.round(arenaBox.w * 0.068), 40, 68);
-      const img = Math.round(ring * 0.78);      
+      const ring = clamp(Math.round(arenaBox.w * 0.045), 30, 52);
+      const img = Math.round(ring * 0.76);      
     
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
