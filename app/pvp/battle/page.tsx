@@ -1028,8 +1028,9 @@ function BattleInner() {
           : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
     
       // ✅ responsive portrait size based on arena width
-      const ring = clamp(Math.round(arenaBox.w * 0.028), 22, 38);
-      const img = Math.round(ring * 0.74);      
+      const base = Math.min(arenaBox.w, arenaBox.h);
+      const ring = Math.round(base * 0.045);
+      const img = Math.round(ring * 0.72);    
     
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
