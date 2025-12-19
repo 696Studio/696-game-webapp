@@ -1029,8 +1029,8 @@ function BattleInner() {
     
       // ✅ responsive portrait size based on arena width
       const base = Math.min(arenaBox.w, arenaBox.h);
-      const ring = clamp(Math.round(base * 0.088), 88, 156);
-      const img  = Math.round(ring * 0.88);         
+      const ring = clamp(Math.round(base * 0.083), 84, 148);
+      const img  = Math.round(ring * 0.86);     
     
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
@@ -1592,7 +1592,14 @@ function BattleInner() {
   background: rgba(255,255,255,0.06);
 }
 
-        .map-portrait-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.map-portrait-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 999px;
+  display: block;
+}
 
         .map-portrait-name {
           max-width: 260px;
