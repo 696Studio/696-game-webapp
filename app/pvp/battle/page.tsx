@@ -261,11 +261,17 @@ function pickAvatarUrl(p?: PlayerProfile | null, seed?: string) {
 
 /**
  * ✅ BOARD COORDS FIX (background-size: cover)
- * Convert "normalized board coordinates" (0..1 over the original PNG)
- * into pixel positions inside the arena element, respecting cover crop.
+ * IMPORTANT: BOARD_IMG_W/H MUST MATCH your real /public/arena/board.png size.
+ * If they are wrong, everything will be shifted.
  */
 const BOARD_IMG_W = 1290;
 const BOARD_IMG_H = 2796;
+
+// Tweaks for your specific PNG (ring centers)
+const TOP_RING_NX = 0.5;
+const TOP_RING_NY = 0.095; // was 0.11
+const BOT_RING_NX = 0.5;
+const BOT_RING_NY = 0.905; // was 0.89
 
 function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
@@ -1016,13 +1022,10 @@ function BattleInner() {
     const pos = useMemo(() => {
       if (!arenaBox) return null;
 
-      const topRing = { nx: 0.5, ny: 0.11 };
-      const botRing = { nx: 0.5, ny: 0.89 };
-
       const p =
         where === "top"
-          ? coverMapPoint(topRing.nx, topRing.ny, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
-          : coverMapPoint(botRing.nx, botRing.ny, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+          ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
+          : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
 
       return { left: p.x, top: p.y };
     }, [arenaBox, where]);
@@ -1052,9 +1055,7 @@ function BattleInner() {
           <div className="map-pill">
             HP <b className="tabular-nums">{hp}</b>
           </div>
-          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-            {score == null ? "—" : score}
-          </div>
+          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>{score == null ? "—" : score}</div>
         </div>
       </div>
     );
@@ -1205,8 +1206,7 @@ function BattleInner() {
                     </div>
                   )}
                   <div className="bb-hptext">
-                    <span className="tabular-nums">{unit.hp}</span> /{" "}
-                    <span className="tabular-nums">{unit.maxHp}</span>
+                    <span className="tabular-nums">{unit.hp}</span> / <span className="tabular-nums">{unit.maxHp}</span>
                     {unit.shield > 0 ? (
                       <span className="bb-shieldnum">
                         {" "}
@@ -1478,9 +1478,10 @@ function BattleInner() {
 
         .hud-actions { display: flex; gap: 8px; align-items: center; }
 
+        /* ✅ IMPORTANT: no padding here, because background covers the full box */
         .arena {
           position: relative;
-          padding: 14px;
+          padding: 0;
           overflow: hidden;
           background: rgba(0,0,0,0.22);
           min-height: 720px;
@@ -1495,6 +1496,7 @@ function BattleInner() {
           background-repeat: no-repeat;
           filter: saturate(1.02) contrast(1.04);
           opacity: 1;
+          /* 🚫 no transform scale here, otherwise coverMap won't match */
         }
         .arena::after {
           content: "";
@@ -1617,31 +1619,33 @@ function BattleInner() {
         .map-pill--score { min-width: 70px; }
         .map-pill.is-hit { animation: popHit 220ms var(--ease-out) both; }
 
+        /* ✅ Make it SMALL and in the left corner, not overlapping enemy avatar */
         .corner-info {
           position: absolute;
-          left: 14px;
-          top: calc(env(safe-area-inset-top) + 14px);
-          z-index: 6;
-          padding: 12px 12px;
-          border-radius: 14px;
-          border: 1px solid rgba(255,255,255,0.16);
-          background: rgba(0,0,0,0.38);
+          left: 10px;
+          top: calc(env(safe-area-inset-top) + 10px);
+          z-index: 8;
+          padding: 8px 10px;
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: rgba(0,0,0,0.34);
           backdrop-filter: blur(10px);
-          width: min(320px, calc(100% - 28px));
-          box-shadow: 0 12px 40px rgba(0,0,0,0.28);
+          width: auto;
+          max-width: min(240px, calc(100% - 20px));
+          box-shadow: 0 12px 40px rgba(0,0,0,0.22);
           pointer-events: none;
         }
         .corner-info .h1 {
           font-weight: 1000;
-          letter-spacing: 0.22em;
+          letter-spacing: 0.18em;
           text-transform: uppercase;
-          font-size: 12px;
+          font-size: 11px;
           opacity: 0.92;
         }
         .corner-info .line {
-          margin-top: 8px;
-          font-size: 12px;
-          opacity: 0.88;
+          margin-top: 6px;
+          font-size: 11px;
+          opacity: 0.86;
         }
         .corner-info .line b { font-weight: 900; }
 
@@ -1692,13 +1696,14 @@ function BattleInner() {
         .round-banner.tone-p2 .sub { text-shadow: 0 0 18px rgba(184,92,255,0.18); }
         .round-banner.tone-draw { border-color: rgba(255,255,255,0.22); }
 
-        /* ✅ IMPORTANT: make lane match arena size exactly (same coord space as coverMap) */
         .lane {
-          position: absolute;
-          inset: 0;
-          z-index: 3;
+          position: relative;
+          display: grid;
+          gap: 0;
+          min-height: 720px;
         }
 
+        /* ✅ Row is now centered inside lane rect (top/left/width/height via inline styles) */
         .row {
           border-radius: 0;
           border: 0;
@@ -1707,6 +1712,7 @@ function BattleInner() {
           padding: 0;
           display: flex;
           justify-content: center;
+          align-items: center;
           position: absolute;
         }
 
@@ -1952,7 +1958,7 @@ function BattleInner() {
           .map-portrait-img { width: 108px; height: 108px; }
           .map-portrait-name { max-width: 180px; font-size: 10px; }
 
-          .corner-info { width: min(280px, calc(100% - 28px)); }
+          .corner-info { max-width: min(220px, calc(100% - 20px)); }
         }
           `,
         }}
@@ -1997,9 +2003,7 @@ function BattleInner() {
               </div>
 
               <div className="hud-sub">
-                <span className="hud-pill">
-                  {phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}
-                </span>
+                <span className="hud-pill">{phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}</span>
                 <span className="hud-pill">
                   Раунд{" "}
                   <b className="tabular-nums">
@@ -2063,10 +2067,7 @@ function BattleInner() {
               </b>
             </div>
             <div className="line">
-              Победитель раунда: <b>{!roundWinner ? "—" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</b>
-            </div>
-            <div className="line">
-              Активный юнит: <b>{activeInstance ? safeSliceId(activeInstance) : "—"}</b>
+              Победитель: <b>{!roundWinner ? "—" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</b>
             </div>
           </div>
 
@@ -2076,10 +2077,7 @@ function BattleInner() {
           {roundBanner.visible && (
             <div
               key={roundBanner.tick}
-              className={[
-                "round-banner",
-                roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw",
-              ].join(" ")}
+              className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
             >
               <div className="title">ROUND END</div>
               <div className="sub">{roundBanner.text}</div>
@@ -2092,9 +2090,10 @@ function BattleInner() {
               style={
                 laneRects
                   ? {
-                      top: laneRects.enemy.top + laneRects.enemy.height * 0.1,
+                      top: laneRects.enemy.top,
                       left: laneRects.enemy.left,
                       width: laneRects.enemy.width,
+                      height: laneRects.enemy.height,
                     }
                   : undefined
               }
@@ -2122,9 +2121,10 @@ function BattleInner() {
               style={
                 laneRects
                   ? {
-                      top: laneRects.you.top + laneRects.you.height * 0.08,
+                      top: laneRects.you.top,
                       left: laneRects.you.left,
                       width: laneRects.you.width,
+                      height: laneRects.you.height,
                     }
                   : undefined
               }
