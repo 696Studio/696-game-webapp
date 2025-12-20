@@ -267,7 +267,8 @@ function pickAvatarUrl(p?: PlayerProfile | null, seed?: string) {
 const BOARD_IMG_W = 1290;
 const BOARD_IMG_H = 2796;
 
-// Player HP model (derived from SCORE for now)
+
+const DEBUG_ARENA = true; // debug overlay for arena sizing
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -415,6 +416,33 @@ function BattleInner() {
 
   const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
 
+
+  const debugCover = useMemo(() => {
+    if (!arenaBox) return null;
+
+    const scale = Math.max(arenaBox.w / BOARD_IMG_W, arenaBox.h / BOARD_IMG_H);
+    const drawnW = BOARD_IMG_W * scale;
+    const drawnH = BOARD_IMG_H * scale;
+    const offsetX = (arenaBox.w - drawnW) / 2;
+    const offsetY = (arenaBox.h - drawnH) / 2;
+
+    const top = coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+    const bot = coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+
+    return {
+      arenaW: arenaBox.w,
+      arenaH: arenaBox.h,
+      scale,
+      drawnW,
+      drawnH,
+      offsetX,
+      offsetY,
+      topX: top.x,
+      topY: top.y,
+      botX: bot.x,
+      botY: bot.y,
+    };
+  }, [arenaBox]);
   useEffect(() => {
     const onResize = () => setLayoutTick((x) => x + 1);
     window.addEventListener("resize", onResize);
@@ -878,31 +906,6 @@ function BattleInner() {
   const enemyAvatar = pickAvatarUrl(enemyProfile, enemyProfile?.username || enemyUserId || "enemy");
   const youAvatar = pickAvatarUrl(youProfile, youProfile?.username || youUserId || "you");
 
-  // ✅ TEAM HP (under portraits): sum of current units HP / sum of their maxHp at current time `t`
-  const teamHp = useMemo(() => {
-    const calc = (slotMap: Record<number, UnitView | null> | null | undefined) => {
-      if (!slotMap) return { hp: 0, max: 0, pct: 100 };
-      let hp = 0;
-      let max = 0;
-      for (let i = 0; i < 5; i++) {
-        const u = slotMap[i];
-        if (!u) continue;
-        hp += Math.max(0, Number(u.hp) || 0);
-        max += Math.max(1, Number(u.maxHp) || 0);
-      }
-      const pct = max > 0 ? (hp / max) * 100 : 100;
-      return { hp, max, pct: clamp(pct, 0, 100) };
-    };
-
-    return {
-      p1: calc(p1UnitsBySlot),
-      p2: calc(p2UnitsBySlot),
-    };
-  }, [p1UnitsBySlot, p2UnitsBySlot]);
-
-  const topTeamHpPct = enemySide === "p1" ? teamHp.p1.pct : teamHp.p2.pct;
-  const bottomTeamHpPct = youSide === "p1" ? teamHp.p1.pct : teamHp.p2.pct;
-
   const boardFxClass = useMemo(() => {
     if (!scored) return "";
     if (roundWinner === "draw") return "fx-draw";
@@ -1052,7 +1055,7 @@ function BattleInner() {
     name,
     avatar,
     tone,
-    hpPct,
+    hp,
     score,
     isHit,
   }: {
@@ -1060,81 +1063,37 @@ function BattleInner() {
     name: string;
     avatar: string;
     tone: "enemy" | "you";
-    hpPct: number; // 0..100 (team / total HP)
+    hp: number;
     score: number | null;
     isHit: boolean;
   }) {
     const pos = useMemo(() => {
       if (!arenaBox) return null;
-
+    
       const p =
         where === "top"
           ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
           : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-
+    
       // ✅ responsive portrait size based on arena width
       const base = Math.min(arenaBox.w, arenaBox.h);
       const ring = clamp(Math.round(base * 0.083), 84, 148);
-      const img = Math.round(ring * 0.86);
-
+      const img  = Math.round(ring * 0.86);     
+    
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
-      const yOffset = 0; // ✅ keep portrait centered in the board ring
-
+      const yOffset =
+      where === "top"
+        ? Math.round(arenaBox.h * 0.003)   // ⬆️ ВЕРХНЮЮ СИЛЬНО ВВЕРХ
+        : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
+    
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
-
+    
       return { left: p.x, top, ring, img };
-    }, [arenaBox, where]);
-    const targetPct = useMemo(() => clamp(Number(hpPct) || 0, 0, 100), [hpPct]);
-    const [dispPct, setDispPct] = useState<number>(targetPct);
-    const dispRef = useRef<number>(targetPct);
-    const rafRef = useRef<number | null>(null);
-    const prevTargetRef = useRef<number>(targetPct);
-    const [hpHit, setHpHit] = useState(false);
-
-    useEffect(() => {
-      const to = targetPct;
-      const from = dispRef.current;
-      const prev = prevTargetRef.current;
-
-      // flash when HP decreases
-      if (to < prev - 0.1) {
-        setHpHit(true);
-        window.setTimeout(() => setHpHit(false), 180);
-      }
-      prevTargetRef.current = to;
-
-      if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
-
-      if (Math.abs(to - from) < 0.05) {
-        dispRef.current = to;
-        setDispPct(to);
-        return;
-      }
-
-      const start = performance.now();
-      const dur = 520; // ms
-      const easeOutCubic = (p: number) => 1 - Math.pow(1 - p, 3);
-
-      const step = (now: number) => {
-        const p = clamp((now - start) / dur, 0, 1);
-        const v = from + (to - from) * easeOutCubic(p);
-        dispRef.current = v;
-        setDispPct(v);
-        if (p < 1) rafRef.current = window.requestAnimationFrame(step);
-      };
-
-      rafRef.current = window.requestAnimationFrame(step);
-      return () => {
-        if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      };
-    }, [targetPct]);
-
-    const safePct = dispPct;
+    }, [arenaBox, where]);  
 
     return (
       <div
-        className={["map-portrait", where === "top" ? "map-portrait--top" : "map-portrait--bottom", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
+        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
         style={
           pos
             ? ({
@@ -1147,61 +1106,31 @@ function BattleInner() {
             : undefined
         }
       >
-        {where === "top" ? (
-          <>
-            <div className="map-pillrow">
-              <div
-                className="map-xp"
-                style={
-                  { ["--xp" as any]: `${clamp(hpPct, 0, 100)}%` } as React.CSSProperties
-                }
-              >
-                <div className="map-xp-fill" />
-                <div className="map-xp-knob" />
-              </div>
-
-              <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-                {score == null ? "—" : score}
-              </div>
-            </div>
-
-            <div className="map-portrait-ring">
-              <div className="map-portrait-img">
-                <img src={avatar} alt={tone} />
-              </div>
-            </div>
-
-            <div className="map-portrait-name">{name}</div>
-          </>
-        ) : (
-          <>
-            <div className="map-portrait-name">{name}</div>
-
-            <div className="map-portrait-ring">
-              <div className="map-portrait-img">
-                <img src={avatar} alt={tone} />
-              </div>
-            </div>
-
-            <div className="map-pillrow">
-              <div
-                className="map-xp"
-                style={
-                  { ["--xp" as any]: `${clamp(hpPct, 0, 100)}%` } as React.CSSProperties
-                }
-              >
-                <div className="map-xp-fill" />
-                <div className="map-xp-knob" />
-              </div>
-
-              <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-                {score == null ? "—" : score}
-              </div>
-            </div>
-          </>
-        )}
+        <div className="map-portrait-ring">
+          <div className="map-portrait-img">
+            <img src={avatar} alt={tone} />
+          </div>
+        </div>
+    
+        <div className="map-portrait-name">{name}</div>
+    
+        <div className="map-pillrow">
+          <div
+            className="map-xp"
+            style={
+              { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
+            }
+          >
+            <div className="map-xp-fill" />
+            <div className="map-xp-knob" />
+          </div>
+    
+          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+            {score == null ? "—" : score}
+          </div>
+        </div>
       </div>
-    );
+    );    
   }
 
   function CardSlot({
@@ -1750,31 +1679,6 @@ function BattleInner() {
           gap: 8px;
           align-items: center;
         }
-
-        /* --- Portrait HUD fine-tuning (responsive, pinned to ring) --- */
-        .map-portrait--top .map-pillrow {
-          transform: translate3d(22px, -14px, 0); /* higher + right */
-        }
-        .map-portrait--bottom .map-pillrow {
-          transform: translate3d(22px, -6px, 0); /* a bit higher + right */
-        }
-        .map-portrait--bottom .map-portrait-name {
-          transform: translate3d(0, -6px, 0); /* nickname slightly higher */
-        }
-
-        .map-hpmini {
-          padding: 6px 8px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.16);
-          background: rgba(0,0,0,0.18);
-          backdrop-filter: blur(10px);
-          font-weight: 900;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-          font-variant-numeric: tabular-nums;
-          font-size: 10px;
-          opacity: 0.9;
-        }
         .map-pill {
           display: inline-flex;
           align-items: center;
@@ -1800,7 +1704,6 @@ function BattleInner() {
 /* Fortnite-style XP bar (safe) */
 .map-xp {
   --xp: 0%;                 /* set 0%..100% from inline style */
-  --hp: 100;                /* numeric 0..100 for hue mapping */
   --pad: 7px;               /* knob radius (14px / 2) */
 
   position: relative;
@@ -1822,20 +1725,19 @@ function BattleInner() {
   height: 100%;
   width: var(--xp);
   border-radius: 999px;
-
-  /* ✅ HP color: green (100) -> yellow (50) -> red (0) */
   background: linear-gradient(
     90deg,
-    hsl(calc(var(--hp) * 1.2 * 1deg) 92% 40%) 0%,
-    hsl(calc(var(--hp) * 1.2 * 1deg) 96% 55%) 100%
+    #3fe8ff 0%,
+    #6cf3ff 40%,
+    #bafcff 70%,
+    #ffffff 100%
   );
-
   box-shadow:
-    0 0 12px hsla(calc(var(--hp) * 1.2 * 1deg), 95%, 60%, 0.55),
-    inset 0 0 6px rgba(255,255,255,0.35);
-
-  transition: width 0ms linear;
+    0 0 12px rgba(120,240,255,0.80),
+    inset 0 0 6px rgba(255,255,255,0.40);
+  transition: width 260ms ease-out;
 }
+
 /* Inner highlight (above fill) */
 .map-xp::after {
   content: "";
@@ -1865,16 +1767,8 @@ function BattleInner() {
   border-radius: 999px;
   background: #ffffff;
   box-shadow:
-    0 0 10px hsla(calc(var(--hp) * 1.2 * 1deg), 95%, 60%, 0.75),
+    0 0 10px rgba(120,240,255,0.90),
     0 2px 8px rgba(0,0,0,0.45);
-}
-
-.map-xp.is-hit {
-  animation: popHit 220ms var(--ease-out) both;
-}
-.map-xp.is-hit .map-xp-fill {
-  filter: brightness(1.18);
-}
 }
 
         /* ✅ Make it SMALL and in the left corner, not overlapping enemy avatar */
@@ -2218,6 +2112,45 @@ function BattleInner() {
 
           .corner-info { max-width: min(220px, calc(100% - 20px)); }
         }
+        /* DEBUG overlay */
+        .dbg-panel {
+          position: absolute;
+          left: 10px;
+          top: calc(env(safe-area-inset-top) + 54px);
+          z-index: 50;
+          padding: 8px 10px;
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.16);
+          background: rgba(0,0,0,0.42);
+          backdrop-filter: blur(10px);
+          font-size: 11px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          pointer-events: none;
+          max-width: min(320px, calc(100% - 20px));
+        }
+        .dbg-panel b { font-weight: 900; }
+        .dbg-cross {
+          position: absolute;
+          width: 18px;
+          height: 18px;
+          transform: translate(-50%, -50%);
+          z-index: 45;
+          pointer-events: none;
+        }
+        .dbg-cross::before,
+        .dbg-cross::after {
+          content: "";
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          background: rgba(255,255,255,0.95);
+          box-shadow: 0 0 10px rgba(255,255,255,0.25);
+          transform: translate(-50%, -50%);
+        }
+        .dbg-cross::before { width: 18px; height: 2px; }
+        .dbg-cross::after { width: 2px; height: 18px; }
+
           `,
         }}
       />
@@ -2302,6 +2235,31 @@ function BattleInner() {
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
+          {DEBUG_ARENA && debugCover && (
+            <>
+              <div className="dbg-panel">
+                <div>
+                  <b>ARENA</b> W:{debugCover.arenaW}px H:{debugCover.arenaH}px
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  <b>IMG</b> scale:{debugCover.scale.toFixed(4)}
+                  <br />
+                  offX:{Math.round(debugCover.offsetX)} offY:{Math.round(debugCover.offsetY)}
+                  <br />
+                  drawn:{Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  <b>TOP</b> x:{Math.round(debugCover.topX)} y:{Math.round(debugCover.topY)}
+                  <br />
+                  <b>BOT</b> x:{Math.round(debugCover.botX)} y:{Math.round(debugCover.botY)}
+                </div>
+              </div>
+
+              <div className="dbg-cross" style={{ left: debugCover.topX, top: debugCover.topY }} />
+              <div className="dbg-cross" style={{ left: debugCover.botX, top: debugCover.botY }} />
+            </>
+          )}
+
           <svg className="atk-overlay" width="100%" height="100%">
             <defs>
               <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
@@ -2329,8 +2287,8 @@ function BattleInner() {
             </div>
           </div>
 
-          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hpPct={topTeamHpPct} score={scored ? topScore : null} isHit={topHit} />
-          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hpPct={bottomTeamHpPct} score={scored ? bottomScore : null} isHit={bottomHit} />
+          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hp={30} score={scored ? topScore : null} isHit={topHit} />
+          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={30} score={scored ? bottomScore : null} isHit={bottomHit} />
 
           {roundBanner.visible && (
             <div
