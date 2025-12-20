@@ -1087,8 +1087,53 @@ function BattleInner() {
 
       return { left: p.x, top, ring, img };
     }, [arenaBox, where]);
+    const targetPct = useMemo(() => clamp(Number(hpPct) || 0, 0, 100), [hpPct]);
+    const [dispPct, setDispPct] = useState<number>(targetPct);
+    const dispRef = useRef<number>(targetPct);
+    const rafRef = useRef<number | null>(null);
+    const prevTargetRef = useRef<number>(targetPct);
+    const [hpHit, setHpHit] = useState(false);
 
-    const safePct = useMemo(() => clamp(Number(hpPct) || 0, 0, 100), [hpPct]);
+    useEffect(() => {
+      const to = targetPct;
+      const from = dispRef.current;
+      const prev = prevTargetRef.current;
+
+      // flash when HP decreases
+      if (to < prev - 0.1) {
+        setHpHit(true);
+        window.setTimeout(() => setHpHit(false), 180);
+      }
+      prevTargetRef.current = to;
+
+      if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
+
+      if (Math.abs(to - from) < 0.05) {
+        dispRef.current = to;
+        setDispPct(to);
+        return;
+      }
+
+      const start = performance.now();
+      const dur = 520; // ms
+      const easeOutCubic = (p: number) => 1 - Math.pow(1 - p, 3);
+
+      const step = (now: number) => {
+        const p = clamp((now - start) / dur, 0, 1);
+        const v = from + (to - from) * easeOutCubic(p);
+        dispRef.current = v;
+        setDispPct(v);
+        if (p < 1) rafRef.current = window.requestAnimationFrame(step);
+      };
+
+      rafRef.current = window.requestAnimationFrame(step);
+      return () => {
+        if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      };
+    }, [targetPct]);
+
+    const safePct = dispPct;
 
     return (
       <div
@@ -1115,7 +1160,7 @@ function BattleInner() {
 
         <div className="map-pillrow">
           <div
-            className="map-xp"
+            className={["map-xp", hpHit ? "is-hit" : ""].join(" ")}
             style={
               {
                 ["--xp" as any]: `${safePct}%`,
@@ -1759,7 +1804,7 @@ function BattleInner() {
     0 0 12px hsla(calc(var(--hp) * 1.2 * 1deg), 95%, 60%, 0.55),
     inset 0 0 6px rgba(255,255,255,0.35);
 
-  transition: width 260ms ease-out;
+  transition: width 0ms linear;
 }
 /* Inner highlight (above fill) */
 .map-xp::after {
@@ -1792,6 +1837,13 @@ function BattleInner() {
   box-shadow:
     0 0 10px hsla(calc(var(--hp) * 1.2 * 1deg), 95%, 60%, 0.75),
     0 2px 8px rgba(0,0,0,0.45);
+}
+
+.map-xp.is-hit {
+  animation: popHit 220ms var(--ease-out) both;
+}
+.map-xp.is-hit .map-xp-fill {
+  filter: brightness(1.18);
 }
 }
 
