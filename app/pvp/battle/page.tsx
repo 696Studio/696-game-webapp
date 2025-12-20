@@ -1078,10 +1078,7 @@ function BattleInner() {
       const img = Math.round(ring * 0.86);
 
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
-      const yOffset =
-        where === "top"
-          ? Math.round(arenaBox.h * 0.003) // ⬆️ top slightly
-          : -Math.round(arenaBox.h * 0.036); // ⬆️ bottom a bit up
+      const yOffset = 0; // ✅ keep portrait centered in the board ring
 
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
 
@@ -1137,7 +1134,7 @@ function BattleInner() {
 
     return (
       <div
-        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
+        className={["map-portrait", where === "top" ? "map-portrait--top" : "map-portrait--bottom", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
         style={
           pos
             ? ({
@@ -1156,7 +1153,7 @@ function BattleInner() {
               <div
                 className="map-xp"
                 style={
-                  { ["--xp" as any]: `${safePct}%`, ["--hp" as any]: `${safePct}` } as React.CSSProperties
+                  { ["--xp" as any]: `${clamp(hpPct, 0, 100)}%` } as React.CSSProperties
                 }
               >
                 <div className="map-xp-fill" />
@@ -1190,7 +1187,7 @@ function BattleInner() {
               <div
                 className="map-xp"
                 style={
-                  { ["--xp" as any]: `${safePct}%`, ["--hp" as any]: `${safePct}` } as React.CSSProperties
+                  { ["--xp" as any]: `${clamp(hpPct, 0, 100)}%` } as React.CSSProperties
                 }
               >
                 <div className="map-xp-fill" />
@@ -1752,6 +1749,17 @@ function BattleInner() {
           display: flex;
           gap: 8px;
           align-items: center;
+        }
+
+        /* --- Portrait HUD fine-tuning (responsive, pinned to ring) --- */
+        .map-portrait--top .map-pillrow {
+          transform: translate3d(22px, -14px, 0); /* higher + right */
+        }
+        .map-portrait--bottom .map-pillrow {
+          transform: translate3d(22px, -6px, 0); /* a bit higher + right */
+        }
+        .map-portrait--bottom .map-portrait-name {
+          transform: translate3d(0, -6px, 0); /* nickname slightly higher */
         }
 
         .map-hpmini {
