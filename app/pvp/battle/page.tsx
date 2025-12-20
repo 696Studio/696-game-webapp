@@ -1075,24 +1075,33 @@ function BattleInner() {
                 ["--imgSize" as any]: `${pos.img}px`,
               } as React.CSSProperties)
             : undefined
-        }        
+        }
       >
         <div className="map-portrait-ring">
           <div className="map-portrait-img">
             <img src={avatar} alt={tone} />
           </div>
         </div>
-
+    
         <div className="map-portrait-name">{name}</div>
-
+    
         <div className="map-pillrow">
-          <div className="map-pill">
-            HP <b className="tabular-nums">{hp}</b>
+          <div
+            className="map-xp"
+            style={
+              { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
+            }
+          >
+            <div className="map-xp-fill" />
+            <div className="map-xp-knob" />
           </div>
-          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>{score == null ? "—" : score}</div>
+    
+          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+            {score == null ? "—" : score}
+          </div>
         </div>
       </div>
-    );
+    );    
   }
 
   function CardSlot({
