@@ -850,7 +850,7 @@ function BattleInner() {
     [p2CardsFull, p2Cards, p2UnitsBySlot]
   );
 
-  const topSlots = enemySide === "p1" ? p1Slots : p2Slots;
+  const topSlots = enemySide === "p1" ? p1Slots : p2Slots; 
   const bottomSlots = youSide === "p1" ? p1Slots : p2Slots;
 
   const topCardsFull = enemySide === "p1" ? p1CardsFull : p2CardsFull;
