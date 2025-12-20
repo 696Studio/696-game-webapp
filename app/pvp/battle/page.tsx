@@ -268,8 +268,6 @@ const BOARD_IMG_W = 1290;
 const BOARD_IMG_H = 2796;
 
 // Player HP model (derived from SCORE for now)
-const MAX_PLAYER_HP = 30;
-
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -904,21 +902,6 @@ function BattleInner() {
 
   const topTeamHpPct = enemySide === "p1" ? teamHp.p1.pct : teamHp.p2.pct;
   const bottomTeamHpPct = youSide === "p1" ? teamHp.p1.pct : teamHp.p2.pct;
-
-  // ✅ Player HP bar (requested): treat opponent SCORE as damage dealt to this side.
-  // Top portrait shows ENEMY, so its HP decreases when your (bottom) score increases.
-  const topHpPct = useMemo(() => {
-    const dmg = Number(bottomScore ?? 0);
-    const hp = clamp(MAX_PLAYER_HP - dmg, 0, MAX_PLAYER_HP);
-    return clamp((hp / MAX_PLAYER_HP) * 100, 0, 100);
-  }, [bottomScore]);
-
-  // Bottom portrait shows YOU, so its HP decreases when enemy (top) score increases.
-  const bottomHpPct = useMemo(() => {
-    const dmg = Number(topScore ?? 0);
-    const hp = clamp(MAX_PLAYER_HP - dmg, 0, MAX_PLAYER_HP);
-    return clamp((hp / MAX_PLAYER_HP) * 100, 0, 100);
-  }, [topScore]);
 
   const boardFxClass = useMemo(() => {
     if (!scored) return "";
@@ -2264,8 +2247,8 @@ function BattleInner() {
             </div>
           </div>
 
-          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hpPct={topHpPct} score={scored ? topScore : null} isHit={topHit} />
-          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hpPct={bottomHpPct} score={scored ? bottomScore : null} isHit={bottomHit} />
+          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hpPct={topTeamHpPct} score={scored ? topScore : null} isHit={topHit} />
+          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hpPct={bottomTeamHpPct} score={scored ? bottomScore : null} isHit={bottomHit} />
 
           {roundBanner.visible && (
             <div
