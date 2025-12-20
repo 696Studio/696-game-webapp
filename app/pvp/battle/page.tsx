@@ -438,9 +438,9 @@ function BattleInner() {
 
     const enemy = coverMapRect(
       0.08,
-      0.11, // ⬆⬆⬆ ЕЩЁ ВЫШЕ (было 0.16)
+      0.14, // ⬇ верхнюю ЧУТЬ ниже
       0.92,
-      0.25,
+      0.28,
       arenaBox.w,
       arenaBox.h,
       BOARD_IMG_W,
@@ -449,9 +449,9 @@ function BattleInner() {
     
     const you = coverMapRect(
       0.08,
-      0.46, // ⬆ выше чем было 0.50
+      0.38, // ⬆⬆⬆ нижнюю СИЛЬНО выше
       0.92,
-      0.60,
+      0.52,
       arenaBox.w,
       arenaBox.h,
       BOARD_IMG_W,
