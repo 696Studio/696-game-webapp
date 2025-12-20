@@ -1150,37 +1150,59 @@ function BattleInner() {
             : undefined
         }
       >
-        <div className="map-portrait-ring">
-          <div className="map-portrait-img">
-            <img src={avatar} alt={tone} />
-          </div>
-        </div>
+        {where === "top" ? (
+          <>
+            <div className="map-pillrow">
+              <div
+                className="map-xp"
+                style={
+                  { ["--xp" as any]: `${safePct}%`, ["--hp" as any]: `${safePct}` } as React.CSSProperties
+                }
+              >
+                <div className="map-xp-fill" />
+                <div className="map-xp-knob" />
+              </div>
 
-        <div className="map-portrait-name">{name}</div>
+              <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+                {score == null ? "—" : score}
+              </div>
+            </div>
 
-        <div className="map-pillrow">
-          <div
-            className={["map-xp", hpHit ? "is-hit" : ""].join(" ")}
-            style={
-              {
-                ["--xp" as any]: `${safePct}%`,
-                ["--hp" as any]: `${safePct}`,
-              } as React.CSSProperties
-            }
-            aria-label="HP"
-          >
-            <div className="map-xp-fill" />
-            <div className="map-xp-knob" />
-          </div>
+            <div className="map-portrait-ring">
+              <div className="map-portrait-img">
+                <img src={avatar} alt={tone} />
+              </div>
+            </div>
 
-          <div className="map-hpmini">
-            <span className="tabular-nums">{Math.round(safePct)}</span>%
-          </div>
+            <div className="map-portrait-name">{name}</div>
+          </>
+        ) : (
+          <>
+            <div className="map-portrait-name">{name}</div>
 
-          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-            {score == null ? "—" : score}
-          </div>
-        </div>
+            <div className="map-portrait-ring">
+              <div className="map-portrait-img">
+                <img src={avatar} alt={tone} />
+              </div>
+            </div>
+
+            <div className="map-pillrow">
+              <div
+                className="map-xp"
+                style={
+                  { ["--xp" as any]: `${safePct}%`, ["--hp" as any]: `${safePct}` } as React.CSSProperties
+                }
+              >
+                <div className="map-xp-fill" />
+                <div className="map-xp-knob" />
+              </div>
+
+              <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+                {score == null ? "—" : score}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     );
   }
