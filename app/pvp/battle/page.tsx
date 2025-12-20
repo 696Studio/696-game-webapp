@@ -267,6 +267,9 @@ function pickAvatarUrl(p?: PlayerProfile | null, seed?: string) {
 const BOARD_IMG_W = 1290;
 const BOARD_IMG_H = 2796;
 
+// Player HP model (derived from SCORE for now)
+const MAX_PLAYER_HP = 30;
+
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -877,6 +880,46 @@ function BattleInner() {
   const enemyAvatar = pickAvatarUrl(enemyProfile, enemyProfile?.username || enemyUserId || "enemy");
   const youAvatar = pickAvatarUrl(youProfile, youProfile?.username || youUserId || "you");
 
+  // ✅ TEAM HP (under portraits): sum of current units HP / sum of their maxHp at current time `t`
+  const teamHp = useMemo(() => {
+    const calc = (slotMap: Record<number, UnitView | null> | null | undefined) => {
+      if (!slotMap) return { hp: 0, max: 0, pct: 100 };
+      let hp = 0;
+      let max = 0;
+      for (let i = 0; i < 5; i++) {
+        const u = slotMap[i];
+        if (!u) continue;
+        hp += Math.max(0, Number(u.hp) || 0);
+        max += Math.max(1, Number(u.maxHp) || 0);
+      }
+      const pct = max > 0 ? (hp / max) * 100 : 100;
+      return { hp, max, pct: clamp(pct, 0, 100) };
+    };
+
+    return {
+      p1: calc(p1UnitsBySlot),
+      p2: calc(p2UnitsBySlot),
+    };
+  }, [p1UnitsBySlot, p2UnitsBySlot]);
+
+  const topTeamHpPct = enemySide === "p1" ? teamHp.p1.pct : teamHp.p2.pct;
+  const bottomTeamHpPct = youSide === "p1" ? teamHp.p1.pct : teamHp.p2.pct;
+
+  // ✅ Player HP bar (requested): treat opponent SCORE as damage dealt to this side.
+  // Top portrait shows ENEMY, so its HP decreases when your (bottom) score increases.
+  const topHpPct = useMemo(() => {
+    const dmg = Number(bottomScore ?? 0);
+    const hp = clamp(MAX_PLAYER_HP - dmg, 0, MAX_PLAYER_HP);
+    return clamp((hp / MAX_PLAYER_HP) * 100, 0, 100);
+  }, [bottomScore]);
+
+  // Bottom portrait shows YOU, so its HP decreases when enemy (top) score increases.
+  const bottomHpPct = useMemo(() => {
+    const dmg = Number(topScore ?? 0);
+    const hp = clamp(MAX_PLAYER_HP - dmg, 0, MAX_PLAYER_HP);
+    return clamp((hp / MAX_PLAYER_HP) * 100, 0, 100);
+  }, [topScore]);
+
   const boardFxClass = useMemo(() => {
     if (!scored) return "";
     if (roundWinner === "draw") return "fx-draw";
@@ -1026,7 +1069,7 @@ function BattleInner() {
     name,
     avatar,
     tone,
-    hp,
+    hpPct,
     score,
     isHit,
   }: {
@@ -1034,33 +1077,35 @@ function BattleInner() {
     name: string;
     avatar: string;
     tone: "enemy" | "you";
-    hp: number;
+    hpPct: number; // 0..100 (team / total HP)
     score: number | null;
     isHit: boolean;
   }) {
     const pos = useMemo(() => {
       if (!arenaBox) return null;
-    
+
       const p =
         where === "top"
           ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
           : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-    
+
       // ✅ responsive portrait size based on arena width
       const base = Math.min(arenaBox.w, arenaBox.h);
       const ring = clamp(Math.round(base * 0.083), 84, 148);
-      const img  = Math.round(ring * 0.86);     
-    
+      const img = Math.round(ring * 0.86);
+
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
-      where === "top"
-        ? Math.round(arenaBox.h * 0.003)   // ⬆️ ВЕРХНЮЮ СИЛЬНО ВВЕРХ
-        : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
-    
+        where === "top"
+          ? Math.round(arenaBox.h * 0.003) // ⬆️ top slightly
+          : -Math.round(arenaBox.h * 0.036); // ⬆️ bottom a bit up
+
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
-    
+
       return { left: p.x, top, ring, img };
-    }, [arenaBox, where]);  
+    }, [arenaBox, where]);
+
+    const safePct = useMemo(() => clamp(Number(hpPct) || 0, 0, 100), [hpPct]);
 
     return (
       <div
@@ -1082,26 +1127,34 @@ function BattleInner() {
             <img src={avatar} alt={tone} />
           </div>
         </div>
-    
+
         <div className="map-portrait-name">{name}</div>
-    
+
         <div className="map-pillrow">
           <div
             className="map-xp"
             style={
-              { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
+              {
+                ["--xp" as any]: `${safePct}%`,
+                ["--hp" as any]: `${safePct}`,
+              } as React.CSSProperties
             }
+            aria-label="HP"
           >
             <div className="map-xp-fill" />
             <div className="map-xp-knob" />
           </div>
-    
+
+          <div className="map-hpmini">
+            <span className="tabular-nums">{Math.round(safePct)}</span>%
+          </div>
+
           <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
             {score == null ? "—" : score}
           </div>
         </div>
       </div>
-    );    
+    );
   }
 
   function CardSlot({
@@ -1650,6 +1703,20 @@ function BattleInner() {
           gap: 8px;
           align-items: center;
         }
+
+        .map-hpmini {
+          padding: 6px 8px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.16);
+          background: rgba(0,0,0,0.18);
+          backdrop-filter: blur(10px);
+          font-weight: 900;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          font-variant-numeric: tabular-nums;
+          font-size: 10px;
+          opacity: 0.9;
+        }
         .map-pill {
           display: inline-flex;
           align-items: center;
@@ -1675,6 +1742,7 @@ function BattleInner() {
 /* Fortnite-style XP bar (safe) */
 .map-xp {
   --xp: 0%;                 /* set 0%..100% from inline style */
+  --hp: 100;                /* numeric 0..100 for hue mapping */
   --pad: 7px;               /* knob radius (14px / 2) */
 
   position: relative;
@@ -1696,19 +1764,20 @@ function BattleInner() {
   height: 100%;
   width: var(--xp);
   border-radius: 999px;
+
+  /* ✅ HP color: green (100) -> yellow (50) -> red (0) */
   background: linear-gradient(
     90deg,
-    #3fe8ff 0%,
-    #6cf3ff 40%,
-    #bafcff 70%,
-    #ffffff 100%
+    hsl(calc(var(--hp) * 1.2 * 1deg) 92% 40%) 0%,
+    hsl(calc(var(--hp) * 1.2 * 1deg) 96% 55%) 100%
   );
+
   box-shadow:
-    0 0 12px rgba(120,240,255,0.80),
-    inset 0 0 6px rgba(255,255,255,0.40);
+    0 0 12px hsla(calc(var(--hp) * 1.2 * 1deg), 95%, 60%, 0.55),
+    inset 0 0 6px rgba(255,255,255,0.35);
+
   transition: width 260ms ease-out;
 }
-
 /* Inner highlight (above fill) */
 .map-xp::after {
   content: "";
@@ -1738,8 +1807,9 @@ function BattleInner() {
   border-radius: 999px;
   background: #ffffff;
   box-shadow:
-    0 0 10px rgba(120,240,255,0.90),
+    0 0 10px hsla(calc(var(--hp) * 1.2 * 1deg), 95%, 60%, 0.75),
     0 2px 8px rgba(0,0,0,0.45);
+}
 }
 
         /* ✅ Make it SMALL and in the left corner, not overlapping enemy avatar */
@@ -2194,8 +2264,8 @@ function BattleInner() {
             </div>
           </div>
 
-          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hp={30} score={scored ? topScore : null} isHit={topHit} />
-          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={30} score={scored ? bottomScore : null} isHit={bottomHit} />
+          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hpPct={topHpPct} score={scored ? topScore : null} isHit={topHit} />
+          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hpPct={bottomHpPct} score={scored ? bottomScore : null} isHit={bottomHit} />
 
           {roundBanner.visible && (
             <div
