@@ -1660,6 +1660,78 @@ function BattleInner() {
         }
         .map-pill--score { min-width: 70px; }
         .map-pill.is-hit { animation: popHit 220ms var(--ease-out) both; }
+/* -----------------------------
+   Fortnite-style XP bar
+------------------------------ */
+/* Fortnite-style XP bar (safe) */
+.map-xp {
+  --xp: 0%;                 /* set 0%..100% from inline style */
+  --pad: 7px;               /* knob radius (14px / 2) */
+
+  position: relative;
+  width: 120px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.22);
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 6px rgba(0,0,0,0.40),
+    0 4px 14px rgba(0,0,0,0.35);
+}
+
+/* Fill (under highlight) */
+.map-xp-fill {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  width: var(--xp);
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    #3fe8ff 0%,
+    #6cf3ff 40%,
+    #bafcff 70%,
+    #ffffff 100%
+  );
+  box-shadow:
+    0 0 12px rgba(120,240,255,0.80),
+    inset 0 0 6px rgba(255,255,255,0.40);
+  transition: width 260ms ease-out;
+}
+
+/* Inner highlight (above fill) */
+.map-xp::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: 999px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.24),
+    rgba(255,255,255,0.06) 35%,
+    transparent 75%
+  );
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+/* Knob (never goes outside) */
+.map-xp-knob {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: clamp(var(--pad), var(--xp), calc(100% - var(--pad)));
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow:
+    0 0 10px rgba(120,240,255,0.90),
+    0 2px 8px rgba(0,0,0,0.45);
+}
 
         /* ✅ Make it SMALL and in the left corner, not overlapping enemy avatar */
         .corner-info {
