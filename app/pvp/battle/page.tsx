@@ -882,6 +882,25 @@ function BattleInner() {
   const topSlots = enemySide === "p1" ? p1Slots : p2Slots; 
   const bottomSlots = youSide === "p1" ? p1Slots : p2Slots;
 
+  const calcTeamHpPct = useMemo(() => {
+    return (slotsArr: Array<{ unit: UnitView | null }>) => {
+      let sumHp = 0;
+      let sumMax = 0;
+      for (const s of slotsArr) {
+        const u = s?.unit;
+        if (!u) continue;
+        sumMax += Math.max(1, Number(u.maxHp) || 1);
+        if (u.alive) sumHp += Math.max(0, Number(u.hp) || 0);
+      }
+      if (sumMax <= 0) return 100;
+      return clamp((sumHp / sumMax) * 100, 0, 100);
+    };
+  }, []);
+
+  const topTeamHpPct = useMemo(() => calcTeamHpPct(topSlots as any), [calcTeamHpPct, topSlots]);
+  const bottomTeamHpPct = useMemo(() => calcTeamHpPct(bottomSlots as any), [calcTeamHpPct, bottomSlots]);
+
+
   const topCardsFull = enemySide === "p1" ? p1CardsFull : p2CardsFull;
   const bottomCardsFull = youSide === "p1" ? p1CardsFull : p2CardsFull;
 
@@ -1050,12 +1069,12 @@ function BattleInner() {
     return <span className="bb-tag">{label}</span>;
   }
 
-  function MapPortrait({
+    function MapPortrait({
     where,
     name,
     avatar,
     tone,
-    hp,
+    hpPct,
     score,
     isHit,
   }: {
@@ -1063,37 +1082,40 @@ function BattleInner() {
     name: string;
     avatar: string;
     tone: "enemy" | "you";
-    hp: number;
+    hpPct: number; // 0..100 TeamHP percent
     score: number | null;
     isHit: boolean;
   }) {
     const pos = useMemo(() => {
       if (!arenaBox) return null;
-    
+
       const p =
         where === "top"
           ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
           : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-    
-      // ✅ responsive portrait size based on arena width
+
+      // responsive portrait size based on arena
       const base = Math.min(arenaBox.w, arenaBox.h);
       const ring = clamp(Math.round(base * 0.083), 84, 148);
-      const img  = Math.round(ring * 0.86);     
-    
-      // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
-      const yOffset =
-      where === "top"
-        ? Math.round(arenaBox.h * 0.003)   // ⬆️ ВЕРХНЮЮ СИЛЬНО ВВЕРХ
-        : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
-    
+      const img = Math.round(ring * 0.86);
+
+      // small offsets to account for Telegram overlays; keep within arena bounds
+      const yOffset = where === "top" ? Math.round(arenaBox.h * 0.003) : -Math.round(arenaBox.h * 0.036);
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
-    
+
       return { left: p.x, top, ring, img };
-    }, [arenaBox, where]);  
+    }, [arenaBox, where]);
+
+    const hp = clamp(Number(hpPct) || 0, 0, 100);
+    const hpTone = hp > 66 ? "good" : hp > 33 ? "warn" : "bad";
 
     return (
       <div
-        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
+        className={[
+          "map-portrait",
+          where === "top" ? "is-top" : "is-bottom",
+          tone === "enemy" ? "tone-enemy" : "tone-you",
+        ].join(" ")}
         style={
           pos
             ? ({
@@ -1106,33 +1128,34 @@ function BattleInner() {
             : undefined
         }
       >
+        {/* TOP: bar above avatar, name below. BOTTOM: name above, bar below (mirror). */}
+        {where === "bottom" && <div className="map-portrait-name">{name}</div>}
+
         <div className="map-portrait-ring">
           <div className="map-portrait-img">
             <img src={avatar} alt={tone} />
           </div>
         </div>
-    
-        <div className="map-portrait-name">{name}</div>
-    
-        <div className="map-pillrow">
+
+        {where === "top" && <div className="map-portrait-name">{name}</div>}
+
+        <div className={["map-pillrow", where === "top" ? "row-top" : "row-bottom"].join(" ")}>
           <div
-            className="map-xp"
-            style={
-              { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
-            }
+            className={["map-teamhp", `hp-${hpTone}`].join(" ")}
+            style={{ ["--hp" as any]: `${hp}%` } as React.CSSProperties}
+            aria-label="Team HP"
           >
-            <div className="map-xp-fill" />
-            <div className="map-xp-knob" />
+            <div className="map-teamhp-fill" />
+            <div className="map-teamhp-knob" />
           </div>
-    
+
           <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
             {score == null ? "—" : score}
           </div>
         </div>
       </div>
-    );    
+    );
   }
-
   function CardSlot({
     card,
     fallbackId,
@@ -1699,15 +1722,19 @@ function BattleInner() {
         .map-pill--score { min-width: 70px; }
         .map-pill.is-hit { animation: popHit 220ms var(--ease-out) both; }
 /* -----------------------------
-   Fortnite-style XP bar
+   TEAM HP bar (green → yellow → red)
 ------------------------------ */
-/* Fortnite-style XP bar (safe) */
-.map-xp {
-  --xp: 0%;                 /* set 0%..100% from inline style */
-  --pad: 7px;               /* knob radius (14px / 2) */
+.map-pillrow.row-top,
+.map-pillrow.row-bottom {
+  transform: translateX(10px); /* slight right shift like reference */
+}
+
+.map-teamhp {
+  --hp: 100%;
+  --pad: 7px;
 
   position: relative;
-  width: 120px;
+  width: 132px;
   height: 10px;
   border-radius: 999px;
   background: rgba(255,255,255,0.10);
@@ -1718,28 +1745,34 @@ function BattleInner() {
     0 4px 14px rgba(0,0,0,0.35);
 }
 
-/* Fill (under highlight) */
-.map-xp-fill {
+.map-teamhp-fill {
   position: relative;
   z-index: 1;
   height: 100%;
-  width: var(--xp);
+  width: var(--hp);
   border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    #3fe8ff 0%,
-    #6cf3ff 40%,
-    #bafcff 70%,
-    #ffffff 100%
-  );
   box-shadow:
-    0 0 12px rgba(120,240,255,0.80),
-    inset 0 0 6px rgba(255,255,255,0.40);
+    0 0 12px rgba(255,255,255,0.22),
+    inset 0 0 6px rgba(255,255,255,0.20);
   transition: width 260ms ease-out;
 }
 
-/* Inner highlight (above fill) */
-.map-xp::after {
+/* tones */
+.map-teamhp.hp-good .map-teamhp-fill {
+  background: linear-gradient(90deg, rgba(70,255,160,0.85) 0%, rgba(120,255,190,0.95) 55%, rgba(255,255,255,0.95) 100%);
+  box-shadow: 0 0 12px rgba(70,255,160,0.45), inset 0 0 6px rgba(255,255,255,0.25);
+}
+.map-teamhp.hp-warn .map-teamhp-fill {
+  background: linear-gradient(90deg, rgba(255,210,70,0.90) 0%, rgba(255,230,120,0.98) 55%, rgba(255,255,255,0.95) 100%);
+  box-shadow: 0 0 12px rgba(255,210,70,0.45), inset 0 0 6px rgba(255,255,255,0.25);
+}
+.map-teamhp.hp-bad .map-teamhp-fill {
+  background: linear-gradient(90deg, rgba(255,70,90,0.90) 0%, rgba(255,120,140,0.98) 55%, rgba(255,255,255,0.95) 100%);
+  box-shadow: 0 0 12px rgba(255,70,90,0.40), inset 0 0 6px rgba(255,255,255,0.25);
+}
+
+/* Inner highlight */
+.map-teamhp::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1755,19 +1788,19 @@ function BattleInner() {
   opacity: 0.85;
 }
 
-/* Knob (never goes outside) */
-.map-xp-knob {
+/* Knob (never outside) */
+.map-teamhp-knob {
   position: absolute;
   z-index: 3;
   top: 50%;
-  left: clamp(var(--pad), var(--xp), calc(100% - var(--pad)));
+  left: clamp(var(--pad), var(--hp), calc(100% - var(--pad)));
   transform: translate(-50%, -50%);
   width: 14px;
   height: 14px;
   border-radius: 999px;
   background: #ffffff;
   box-shadow:
-    0 0 10px rgba(120,240,255,0.90),
+    0 0 10px rgba(255,255,255,0.35),
     0 2px 8px rgba(0,0,0,0.45);
 }
 
@@ -2287,8 +2320,8 @@ function BattleInner() {
             </div>
           </div>
 
-          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hp={30} score={scored ? topScore : null} isHit={topHit} />
-          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={30} score={scored ? bottomScore : null} isHit={bottomHit} />
+          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hpPct={topTeamHpPct} score={scored ? topScore : null} isHit={topHit} />
+          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hpPct={bottomTeamHpPct} score={scored ? bottomScore : null} isHit={bottomHit} />
 
           {roundBanner.visible && (
             <div
