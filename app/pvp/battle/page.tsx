@@ -1318,7 +1318,7 @@ function BattleInner() {
           {/* Bottom Avatar Ring (ONLY moved by Y target) */}
           <div
             className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you", "is-bottom"].join(" ")}
-            style={{ left: pos.left, top: BOTTOM_AVATAR_Y, transform: "translate(-50%,-50%)", ...vars }}
+            style={{ left: pos.left, top: pos.top, transform: "translate(-50%,-50%)", ...vars }}
           >
             <div className="map-portrait-ring">
               <div className="map-portrait-img">
