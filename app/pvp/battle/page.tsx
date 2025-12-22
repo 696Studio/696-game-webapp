@@ -273,9 +273,7 @@ const DEBUG_ARENA = true; // debug overlay for arena sizing
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
 const BOT_RING_NX = 0.5;
-// Bottom ring center on the board PNG (normalized).
-// 0.95 pushes the anchor too low (avatar ends up BELOW the ring on many screens).
-const BOT_RING_NY = 0.89;
+const BOT_RING_NY = 0.950; // was 0.89
 
 function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
@@ -1065,38 +1063,37 @@ function BattleInner() {
     name: string;
     avatar: string;
     tone: "enemy" | "you";
-    /** Team HP percent 0..100 */
     hp: number;
     score: number | null;
     isHit: boolean;
   }) {
     const pos = useMemo(() => {
       if (!arenaBox) return null;
-
+    
       const p =
         where === "top"
           ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
           : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-
-      // responsive portrait size based on arena
+    
+      // ✅ responsive portrait size based on arena width
       const base = Math.min(arenaBox.w, arenaBox.h);
       const ring = clamp(Math.round(base * 0.083), 84, 148);
-      const img = Math.round(ring * 0.86);
+      const img  = Math.round(ring * 0.86);     
+    
+      // Anchor the portrait block to the painted ring center.
+      // We do NOT move the anchor to compensate for Telegram UI; instead we nudge ONLY the avatar inside the ring.
+      const top = clamp(p.y, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
 
-      // IMPORTANT: keep ring CENTER strictly on PNG ring center.
-      return { left: p.x, top: p.y, ring, img };
-    }, [arenaBox, where]);
+      // Avatar visual nudge so it sits perfectly inside the board ring (top & bottom).
+      // This does NOT move the TeamHP/XP bar.
+      const avatarNudgeY = clamp(Math.round(ring * 0.14), 10, 18);
 
-    const pct = clamp(Number(hp) || 0, 0, 100);
-    const hpTone = pct > 66 ? "good" : pct > 33 ? "warn" : "bad";
+      return { left: p.x, top, ring, img, avatarNudgeY };
+    }, [arenaBox, where]);  
 
     return (
       <div
-        className={[
-          "map-portrait",
-          where === "top" ? "is-top" : "is-bottom",
-          tone === "enemy" ? "tone-enemy" : "tone-you",
-        ].join(" ")}
+        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
         style={
           pos
             ? ({
@@ -1109,32 +1106,38 @@ function BattleInner() {
             : undefined
         }
       >
-        {/* Ring is anchored at (0,0) which is the PNG ring center */}
-        <div className="map-portrait-ring">
+	        <div
+	          className="map-portrait-ring"
+	          style={
+	            pos
+	              ? ({ transform: `translateY(-${pos.avatarNudgeY}px)` } as React.CSSProperties)
+	              : undefined
+	          }
+	        >
           <div className="map-portrait-img">
             <img src={avatar} alt={tone} />
           </div>
         </div>
-
-        {/* Mirrored layout: TOP => name+bar BELOW ring; BOTTOM => name+bar ABOVE ring */}
+    
         <div className="map-portrait-name">{name}</div>
-
-        <div className={"map-pillrow"}>
+    
+        <div className="map-pillrow">
           <div
-            className={["map-teamhp", `hp-${hpTone}`].join(" ")}
-            style={{ ["--hp" as any]: `${pct}%` } as React.CSSProperties}
-            aria-label="Team HP"
+            className="map-xp"
+            style={
+              { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
+            }
           >
-            <div className="map-teamhp-fill" />
-            <div className="map-teamhp-knob" />
+            <div className="map-xp-fill" />
+            <div className="map-xp-knob" />
           </div>
-
+    
           <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
             {score == null ? "—" : score}
           </div>
         </div>
       </div>
-    );
+    );    
   }
 
   function CardSlot({
@@ -1627,31 +1630,23 @@ function BattleInner() {
           marker-end: url(#atkArrow);
         }
 
-        /*
-          Portrait anchor: the wrapper is positioned EXACTLY on the PNG ring center.
-          IMPORTANT: do NOT use grid/stack on the wrapper, otherwise the ring will drift.
-        */
         .map-portrait {
           position: absolute;
-          width: 0;
-          height: 0;
           pointer-events: none;
+          display: grid;
+          justify-items: center;
+          gap: 8px;
           filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
         }
         .arena .map-portrait { z-index: 6; }
-
-        .map-portrait-ring {
-          position: absolute;
-          left: 0;
-          top: 0;
-          transform: translate(-50%, -50%);
-          width: var(--ringSize);
-          height: var(--ringSize);
-          border-radius: 999px;
-          background: transparent;
-          display: grid;
-          place-items: center;
-        }
+.map-portrait-ring {
+  width: var(--ringSize);
+  height: var(--ringSize);
+  border-radius: 999px;
+  background: transparent;
+  display: grid;
+  place-items: center;
+}
 
 .map-portrait-img {
   width: var(--imgSize);
@@ -1671,8 +1666,6 @@ function BattleInner() {
 }
 
         .map-portrait-name {
-          position: absolute;
-          left: 0;
           max-width: 260px;
           padding: 6px 10px;
           border-radius: 999px;
@@ -1688,34 +1681,11 @@ function BattleInner() {
           text-overflow: ellipsis;
         }
 
-        /* mirrored name placement */
-        .map-portrait.is-top .map-portrait-name {
-          top: calc(var(--ringSize) * 0.5 + 8px);
-          transform: translate(-50%, 0);
-        }
-        .map-portrait.is-bottom .map-portrait-name {
-          top: calc(-1 * (var(--ringSize) * 0.5 + 8px));
-          transform: translate(-50%, -100%);
-        }
-
-        /* pillrow placement (Team HP + score) */
         .map-pillrow {
-          position: absolute;
-          left: 0;
           display: flex;
           gap: 8px;
           align-items: center;
-          transform: translate(-50%, 0);
         }
-        .map-portrait.is-top .map-pillrow {
-          top: calc(var(--ringSize) * 0.5 + 44px);
-          transform: translate(calc(-50% + 10px), 0); /* a bit to the right */
-        }
-        .map-portrait.is-bottom .map-pillrow {
-          top: calc(-1 * (var(--ringSize) * 0.5 + 44px));
-          transform: translate(calc(-50% + 10px), -100%); /* a bit to the right */
-        }
-
         .map-pill {
           display: inline-flex;
           align-items: center;
@@ -1736,14 +1706,15 @@ function BattleInner() {
         .map-pill--score { min-width: 70px; }
         .map-pill.is-hit { animation: popHit 220ms var(--ease-out) both; }
 /* -----------------------------
-   Team HP bar (green → yellow → red)
+   Fortnite-style XP bar
 ------------------------------ */
-.map-teamhp {
-  --hp: 0%;
-  --pad: 7px;
+/* Fortnite-style XP bar (safe) */
+.map-xp {
+  --xp: 0%;                 /* set 0%..100% from inline style */
+  --pad: 7px;               /* knob radius (14px / 2) */
 
   position: relative;
-  width: 128px;
+  width: 120px;
   height: 10px;
   border-radius: 999px;
   background: rgba(255,255,255,0.10);
@@ -1753,47 +1724,58 @@ function BattleInner() {
     inset 0 0 6px rgba(0,0,0,0.40),
     0 4px 14px rgba(0,0,0,0.35);
 }
-.map-teamhp-fill {
+
+/* Fill (under highlight) */
+.map-xp-fill {
   position: relative;
   z-index: 1;
   height: 100%;
-  width: var(--hp);
+  width: var(--xp);
   border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    #3fe8ff 0%,
+    #6cf3ff 40%,
+    #bafcff 70%,
+    #ffffff 100%
+  );
+  box-shadow:
+    0 0 12px rgba(120,240,255,0.80),
+    inset 0 0 6px rgba(255,255,255,0.40);
   transition: width 260ms ease-out;
 }
-.map-teamhp.hp-good .map-teamhp-fill {
-  background: linear-gradient(90deg, #3dff7a 0%, #b9ffcf 55%, #ffffff 100%);
-  box-shadow: 0 0 12px rgba(80,255,150,0.70), inset 0 0 6px rgba(255,255,255,0.35);
-}
-.map-teamhp.hp-warn .map-teamhp-fill {
-  background: linear-gradient(90deg, #ffe36a 0%, #fff2b7 60%, #ffffff 100%);
-  box-shadow: 0 0 12px rgba(255,220,90,0.65), inset 0 0 6px rgba(255,255,255,0.30);
-}
-.map-teamhp.hp-bad .map-teamhp-fill {
-  background: linear-gradient(90deg, #ff4d4d 0%, #ffb6b6 60%, #ffffff 100%);
-  box-shadow: 0 0 12px rgba(255,80,80,0.70), inset 0 0 6px rgba(255,255,255,0.28);
-}
-.map-teamhp::after {
+
+/* Inner highlight (above fill) */
+.map-xp::after {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 2;
   border-radius: 999px;
-  background: linear-gradient(to bottom, rgba(255,255,255,0.22), rgba(255,255,255,0.06) 35%, transparent 75%);
+  background: linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.24),
+    rgba(255,255,255,0.06) 35%,
+    transparent 75%
+  );
   pointer-events: none;
   opacity: 0.85;
 }
-.map-teamhp-knob {
+
+/* Knob (never goes outside) */
+.map-xp-knob {
   position: absolute;
   z-index: 3;
   top: 50%;
-  left: clamp(var(--pad), var(--hp), calc(100% - var(--pad)));
+  left: clamp(var(--pad), var(--xp), calc(100% - var(--pad)));
   transform: translate(-50%, -50%);
   width: 14px;
   height: 14px;
   border-radius: 999px;
   background: #ffffff;
-  box-shadow: 0 0 10px rgba(255,255,255,0.55), 0 2px 8px rgba(0,0,0,0.45);
+  box-shadow:
+    0 0 10px rgba(120,240,255,0.90),
+    0 2px 8px rgba(0,0,0,0.45);
 }
 
         /* ✅ Make it SMALL and in the left corner, not overlapping enemy avatar */
