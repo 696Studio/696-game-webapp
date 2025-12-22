@@ -1278,8 +1278,8 @@ function BattleInner() {
     // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
     // Top player must stay untouched.
     const BOTTOM_AVATAR_Y = 785; // avatar ring center
-    const BOTTOM_HP_Y = 654; // TeamHP bar row
-    const BOTTOM_NAME_Y = 698; // nickname
+    const BOTTOM_HP_Y = 644; // TeamHP bar row
+    const BOTTOM_NAME_Y = 688; // nickname
 
     const pos = useMemo(() => {
       if (!arenaBox) return null;
