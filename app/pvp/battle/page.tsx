@@ -445,6 +445,96 @@ function BattleInner() {
       botY: bot.y,
     };
   }, [arenaBox]);
+
+
+function DebugGrid() {
+  if (!DEBUG_GRID || !debugCover) return null;
+
+  const w = debugCover.arenaW;
+  const h = debugCover.arenaH;
+  const steps = 10;
+  const mono =
+    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+
+  const nodes: React.ReactNode[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = t * w;
+    const y = t * h;
+
+    const isMajor = i % 5 === 0;
+    const strokeOpacity = isMajor ? 0.55 : 0.22;
+    const strokeWidth = isMajor ? 2 : 1;
+
+    nodes.push(
+      <line
+        key={`vx-${i}`}
+        x1={x}
+        y1={0}
+        x2={x}
+        y2={h}
+        stroke="white"
+        strokeOpacity={strokeOpacity}
+        strokeWidth={strokeWidth}
+      />,
+    );
+    nodes.push(
+      <line
+        key={`hy-${i}`}
+        x1={0}
+        y1={y}
+        x2={w}
+        y2={y}
+        stroke="white"
+        strokeOpacity={strokeOpacity}
+        strokeWidth={strokeWidth}
+      />,
+    );
+
+    if (isMajor) {
+      const label = `${Math.round(t * 100)}%`;
+      nodes.push(
+        <text
+          key={`tx-${i}`}
+          x={x + 4}
+          y={14}
+          fill="white"
+          opacity={0.85}
+          fontSize={11}
+          fontFamily={mono}
+        >
+          {label}
+        </text>,
+      );
+      nodes.push(
+        <text
+          key={`ty-${i}`}
+          x={4}
+          y={Math.max(12, y - 4)}
+          fill="white"
+          opacity={0.85}
+          fontSize={11}
+          fontFamily={mono}
+        >
+          {label}
+        </text>,
+      );
+    }
+  }
+
+  return (
+    <svg
+      className="dbg-grid"
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+    >
+      {nodes}
+    </svg>
+  );
+}
+
   useEffect(() => {
     const onResize = () => setLayoutTick((x) => x + 1);
     window.addEventListener("resize", onResize);
@@ -2166,20 +2256,14 @@ function BattleInner() {
           .corner-info { max-width: min(220px, calc(100% - 20px)); }
         }
         /* DEBUG overlay */
-        .dbg-grid {
-          position: absolute;
-          inset: 0;
-          z-index: 5;
-          pointer-events: none;
-          opacity: 0.22;
-          background-image:
-            linear-gradient(to right, rgba(255,255,255,0.18) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(255,255,255,0.18) 1px, transparent 1px),
-            linear-gradient(to right, rgba(255,255,255,0.32) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(255,255,255,0.32) 1px, transparent 1px);
-          background-size: 32px 32px, 32px 32px, 160px 160px, 160px 160px;
-          mix-blend-mode: overlay;
-        }
+        
+.dbg-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.35;
+}
 
         .dbg-panel {
           position: absolute;
@@ -2303,7 +2387,7 @@ function BattleInner() {
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
-          {DEBUG_GRID && <div className="dbg-grid" />}
+          {DEBUG_GRID && <DebugGrid />}
           {DEBUG_ARENA && debugCover && (
             <>
               <div className="dbg-panel">
