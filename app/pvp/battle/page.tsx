@@ -1089,7 +1089,7 @@ function BattleInner() {
       // IMPORTANT: DO NOT move the ring center (that would break coords) and DO NOT touch TeamHP/XP bar.
       // bottom avatar needs to go a bit UP, top avatar a bit DOWN (per your reference).
       const n = clamp(Math.round(ring * 0.06), 4, 10);
-      const avatarNudgeY = where === "bottom" ? Math.round(n * 0.35) : Math.round(n * 0.7);
+      const avatarNudgeY = where === "bottom" ? -Math.round(n * 1.25) : Math.round(n * 0.7);
 
       return { left: p.x, top, ring, img, avatarNudgeY };
     }, [arenaBox, where]);  
@@ -1142,7 +1142,10 @@ function BattleInner() {
           </>
         ) : (
           <>
-            <div className="map-pillrow">
+            <div
+              className="map-pillrow"
+              style={pos ? ({ transform: `translateY(-${Math.round(pos.ring * 0.22)}px)` } as React.CSSProperties) : undefined}
+            >
                       <div
                         className="map-xp"
                         style={
