@@ -1274,6 +1274,13 @@ function BattleInner() {
     isHit: boolean;
   }) {
     const isBottom = where === "bottom";
+
+    // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
+    // Top player must stay untouched.
+    const BOTTOM_AVATAR_Y = 785; // avatar ring center
+    const BOTTOM_HP_Y = 654; // TeamHP bar row
+    const BOTTOM_NAME_Y = 698; // nickname
+
     const pos = useMemo(() => {
       if (!arenaBox) return null;
     
@@ -1298,9 +1305,61 @@ function BattleInner() {
       return { left: p.x, top, ring, img };
     }, [arenaBox, where]);  
 
+    // ✅ IMPORTANT: top HUD stays as-is. Bottom HUD is placed by hard Y targets.
+    if (isBottom) {
+      if (!pos) return null;
+
+      const vars = {
+        ["--ringSize" as any]: `${pos.ring}px`,
+        ["--imgSize" as any]: `${pos.img}px`,
+      } as React.CSSProperties;
+
+      return (
+        <>
+          {/* Bottom Avatar Ring (ONLY moved by Y target) */}
+          <div
+            className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you", "is-bottom"].join(" ")}
+            style={{ left: pos.left, top: BOTTOM_AVATAR_Y, transform: "translate(-50%,-50%)", ...vars }}
+          >
+            <div className="map-portrait-ring">
+              <div className="map-portrait-img">
+                <img src={avatar} alt={tone} />
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Name */}
+          <div
+            className="map-portrait-name"
+            style={{ position: "absolute", left: pos.left, top: BOTTOM_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+          >
+            {name}
+          </div>
+
+          {/* Bottom TeamHP + Score Row */}
+          <div
+            className="map-pillrow"
+            style={{ position: "absolute", left: pos.left, top: BOTTOM_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+          >
+            <div
+              className="map-xp"
+              style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties}
+            >
+              <div className="map-xp-fill" />
+              <div className="map-xp-knob" />
+            </div>
+
+            <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+              {score == null ? "—" : score}
+            </div>
+          </div>
+        </>
+      );
+    }
+
     return (
       <div
-        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you", isBottom ? "is-bottom" : ""].join(" ")}
+        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
         style={
           pos
             ? ({
@@ -1313,64 +1372,32 @@ function BattleInner() {
             : undefined
         }
       >
-        {isBottom ? (
-          // Bottom player HUD must be a vertical mirror of the top one:
-          // XP/Score row above the name, name above the ring.
-          <>
-            <div className="map-pillrow">
-              <div
-                className="map-xp"
-                style={
-                  { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
-                }
-              >
-                <div className="map-xp-fill" />
-                <div className="map-xp-knob" />
-              </div>
+        {/* Top player stays exactly as-is. */}
+        <>
+          <div className="map-portrait-ring">
+            <div className="map-portrait-img">
+              <img src={avatar} alt={tone} />
+            </div>
+          </div>
 
-              <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-                {score == null ? "—" : score}
-              </div>
+          <div className="map-portrait-name">{name}</div>
+
+          <div className="map-pillrow">
+            <div
+              className="map-xp"
+              style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties}
+            >
+              <div className="map-xp-fill" />
+              <div className="map-xp-knob" />
             </div>
 
-            <div className="map-portrait-name">{name}</div>
-
-            <div className="map-portrait-ring">
-              <div className="map-portrait-img">
-                <img src={avatar} alt={tone} />
-              </div>
+            <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+              {score == null ? "—" : score}
             </div>
-          </>
-        ) : (
-          // Top player stays exactly as-is.
-          <>
-            <div className="map-portrait-ring">
-              <div className="map-portrait-img">
-                <img src={avatar} alt={tone} />
-              </div>
-            </div>
-
-            <div className="map-portrait-name">{name}</div>
-
-            <div className="map-pillrow">
-              <div
-                className="map-xp"
-                style={
-                  { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
-                }
-              >
-                <div className="map-xp-fill" />
-                <div className="map-xp-knob" />
-              </div>
-
-              <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-                {score == null ? "—" : score}
-              </div>
-            </div>
-          </>
-        )}
+          </div>
+        </>
       </div>
-    );    
+    );
   }
 
   function CardSlot({
