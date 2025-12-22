@@ -1277,10 +1277,7 @@ function BattleInner() {
 
     // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
     // Top player must stay untouched.
-    const TOP_NAME_Y = 174; // A 40%
-const TOP_HP_Y = 218; // A 50%
-
-const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
+    const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
     const BOTTOM_HP_Y = 644; // TeamHP bar row
     const BOTTOM_NAME_Y = 678; // nickname
 
@@ -1334,7 +1331,7 @@ const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
           {/* Bottom Name */}
           <div
             className="map-portrait-name"
-            style={{ position: "absolute", left: pos.left, top: TOP_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+            style={{ position: "absolute", left: pos.left, top: BOTTOM_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
           >
             {name}
           </div>
@@ -1342,7 +1339,7 @@ const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
           {/* Bottom TeamHP + Score Row */}
           <div
             className="map-pillrow"
-            style={{ position: "absolute", left: pos.left, top: TOP_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+            style={{ position: "absolute", left: pos.left, top: BOTTOM_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
           >
             <div
               className="map-xp"
@@ -1742,7 +1739,7 @@ const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
         }
 
         .scrub-row {
-          margin-top: TOP_NAME_Ypx;
+          margin-top: 10px;
           display: flex;
           gap: 10px;
           align-items: center;
@@ -1797,7 +1794,7 @@ const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
         }
 
         .hud-sub {
-          margin-top: TOP_HP_Ypx;
+          margin-top: 6px;
           display: flex;
           gap: 8px;
           flex-wrap: wrap;
