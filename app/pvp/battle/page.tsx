@@ -1089,7 +1089,7 @@ function BattleInner() {
       // IMPORTANT: DO NOT move the ring center (that would break coords) and DO NOT touch TeamHP/XP bar.
       // bottom avatar needs to go a bit UP, top avatar a bit DOWN (per your reference).
       const n = clamp(Math.round(ring * 0.06), 4, 10);
-      const avatarNudgeY = where === "bottom" ? -n : Math.round(n * 0.7);
+      const avatarNudgeY = where === "bottom" ? Math.round(n * 0.35) : Math.round(n * 0.7);
 
       return { left: p.x, top, ring, img, avatarNudgeY };
     }, [arenaBox, where]);  
@@ -1110,29 +1110,68 @@ function BattleInner() {
             : undefined
         }
       >
-	        <div className="map-portrait-ring">
-          <div className="map-portrait-img">
-            <img src={avatar} alt={tone} />
-          </div>
-        </div>
-    
-        <div className="map-portrait-name">{name}</div>
-    
-        <div className="map-pillrow">
-          <div
-            className="map-xp"
-            style={
-              { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
-            }
-          >
-            <div className="map-xp-fill" />
-            <div className="map-xp-knob" />
-          </div>
-    
-          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-            {score == null ? "—" : score}
-          </div>
-        </div>
+        {where === "top" ? (
+          <>
+            <div className="map-portrait-ring">
+                      <div className="map-portrait-img">
+                        <img src={avatar} alt={tone} />
+                      </div>
+                    </div>
+
+
+
+            <div className="map-portrait-name">{name}</div>
+
+
+
+            <div className="map-pillrow">
+                      <div
+                        className="map-xp"
+                        style={
+                          { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
+                        }
+                      >
+                        <div className="map-xp-fill" />
+                        <div className="map-xp-knob" />
+                      </div>
+
+                      <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+                        {score == null ? "—" : score}
+                      </div>
+                    </div>
+          </>
+        ) : (
+          <>
+            <div className="map-pillrow">
+                      <div
+                        className="map-xp"
+                        style={
+                          { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
+                        }
+                      >
+                        <div className="map-xp-fill" />
+                        <div className="map-xp-knob" />
+                      </div>
+
+                      <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+                        {score == null ? "—" : score}
+                      </div>
+                    </div>
+
+            <div className="map-portrait-name">{name}</div>
+
+
+
+            <div className="map-portrait-ring">
+                      <div className="map-portrait-img">
+                        <img src={avatar} alt={tone} />
+                      </div>
+                    </div>
+
+
+          </>
+        )}
+
       </div>
     );    
   }
