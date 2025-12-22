@@ -1221,12 +1221,12 @@ function DebugGrid() {
       // TOP is already perfect in your screenshots — keep it stable.
       // BOTTOM must go noticeably UP to sit inside the painted ring.
       // (We only change bottom. Top remains identical.)
-      const avatarNudgeY = where === "bottom" ? -Math.round(n * 14) : Math.round(n * 0.7);
+      const avatarNudgeY = where === "bottom" ? -Math.round(n * 3) : Math.round(n * 0.7);
 
       // Bottom HUD should be a clean mirror of the top around the bottom portrait.
       // Move bottom name + bar UP (more negative Y). TOP stays untouched.
-      const bottomPillShift = -Math.round(ring * 0.68);
-      const bottomNameShift = -Math.round(ring * 0.34);
+      const bottomPillShift = -Math.round(ring * 0.78);
+      const bottomNameShift = -Math.round(ring * 0.44);
 
       return { left: p.x, top, ring, img, avatarNudgeY, bottomPillShift, bottomNameShift };
     }, [arenaBox, where]);  
