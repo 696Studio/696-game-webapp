@@ -273,7 +273,7 @@ const DEBUG_ARENA = true; // debug overlay for arena sizing
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
 const BOT_RING_NX = 0.5;
-const BOT_RING_NY = 0.95;
+const BOT_RING_NY = 0.950; // was 0.89
 
 function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
@@ -882,25 +882,6 @@ function BattleInner() {
   const topSlots = enemySide === "p1" ? p1Slots : p2Slots; 
   const bottomSlots = youSide === "p1" ? p1Slots : p2Slots;
 
-  const calcTeamHpPct = useMemo(() => {
-    return (slotsArr: Array<{ unit: UnitView | null }>) => {
-      let sumHp = 0;
-      let sumMax = 0;
-      for (const s of slotsArr) {
-        const u = s?.unit;
-        if (!u) continue;
-        sumMax += Math.max(1, Number(u.maxHp) || 1);
-        if (u.alive) sumHp += Math.max(0, Number(u.hp) || 0);
-      }
-      if (sumMax <= 0) return 100;
-      return clamp((sumHp / sumMax) * 100, 0, 100);
-    };
-  }, []);
-
-  const topTeamHpPct = useMemo(() => calcTeamHpPct(topSlots as any), [calcTeamHpPct, topSlots]);
-  const bottomTeamHpPct = useMemo(() => calcTeamHpPct(bottomSlots as any), [calcTeamHpPct, bottomSlots]);
-
-
   const topCardsFull = enemySide === "p1" ? p1CardsFull : p2CardsFull;
   const bottomCardsFull = youSide === "p1" ? p1CardsFull : p2CardsFull;
 
@@ -1069,12 +1050,12 @@ function BattleInner() {
     return <span className="bb-tag">{label}</span>;
   }
 
-    function MapPortrait({
+  function MapPortrait({
     where,
     name,
     avatar,
     tone,
-    hpPct,
+    hp,
     score,
     isHit,
   }: {
@@ -1082,7 +1063,8 @@ function BattleInner() {
     name: string;
     avatar: string;
     tone: "enemy" | "you";
-    hpPct: number; // 0..100 TeamHP percent
+    /** Team HP percent 0..100 */
+    hp: number;
     score: number | null;
     isHit: boolean;
   }) {
@@ -1096,18 +1078,15 @@ function BattleInner() {
 
       // responsive portrait size based on arena
       const base = Math.min(arenaBox.w, arenaBox.h);
-      const ring = clamp(Math.round(base * 0.083), 72, 148);
+      const ring = clamp(Math.round(base * 0.083), 84, 148);
       const img = Math.round(ring * 0.86);
 
-      // Keep portrait CENTER locked to ring center from coverMap.
-      // Only HUD elements are offset/mirrored via CSS, not the portrait itself.
-      const cy = clamp(p.y, ring / 2 + 6, arenaBox.h - ring / 2 - 6);
-
-      return { left: p.x, top: cy, ring, img };
+      // IMPORTANT: keep ring CENTER strictly on PNG ring center.
+      return { left: p.x, top: p.y, ring, img };
     }, [arenaBox, where]);
 
-    const hp = clamp(Number(hpPct) || 0, 0, 100);
-    const hpTone = hp > 66 ? "good" : hp > 33 ? "warn" : "bad";
+    const pct = clamp(Number(hp) || 0, 0, 100);
+    const hpTone = pct > 66 ? "good" : pct > 33 ? "warn" : "bad";
 
     return (
       <div
@@ -1128,62 +1107,34 @@ function BattleInner() {
             : undefined
         }
       >
-        {/* TOP: ring → name → HP bar. BOTTOM is mirrored: HP bar → name → ring. */}
-        {where === "bottom" && (
-          <>
-            <div className={["map-pillrow", "row-bottom"].join(" ")}>
-              <div
-                className={["map-teamhp", `hp-${hpTone}`].join(" ")}
-                style={{ ["--hp" as any]: `${hp}%` } as React.CSSProperties}
-                aria-label="Team HP"
-              >
-                <div className="map-teamhp-fill" />
-                <div className="map-teamhp-knob" />
-              </div>
+        {/* Ring is anchored at (0,0) which is the PNG ring center */}
+        <div className="map-portrait-ring">
+          <div className="map-portrait-img">
+            <img src={avatar} alt={tone} />
+          </div>
+        </div>
 
-              <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-                {score == null ? "—" : score}
-              </div>
-            </div>
+        {/* Mirrored layout: TOP => name+bar BELOW ring; BOTTOM => name+bar ABOVE ring */}
+        <div className="map-portrait-name">{name}</div>
 
-            <div className="map-portrait-name">{name}</div>
+        <div className={"map-pillrow"}>
+          <div
+            className={["map-teamhp", `hp-${hpTone}`].join(" ")}
+            style={{ ["--hp" as any]: `${pct}%` } as React.CSSProperties}
+            aria-label="Team HP"
+          >
+            <div className="map-teamhp-fill" />
+            <div className="map-teamhp-knob" />
+          </div>
 
-            <div className="map-portrait-ring">
-              <div className="map-portrait-img">
-                <img src={avatar} alt={tone} />
-              </div>
-            </div>
-          </>
-        )}
-
-        {where === "top" && (
-          <>
-            <div className="map-portrait-ring">
-              <div className="map-portrait-img">
-                <img src={avatar} alt={tone} />
-              </div>
-            </div>
-
-            <div className="map-portrait-name">{name}</div>
-
-            <div className={["map-pillrow", "row-top"].join(" ")}>
-              <div
-                className={["map-teamhp", `hp-${hpTone}`].join(" ")}
-                style={{ ["--hp" as any]: `${hp}%` } as React.CSSProperties}
-                aria-label="Team HP"
-              >
-                <div className="map-teamhp-fill" />
-                <div className="map-teamhp-knob" />
-              </div>
-
-              <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-                {score == null ? "—" : score}
-              </div>
-            </div>
-          </>
-        )}</div>
+          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+            {score == null ? "—" : score}
+          </div>
+        </div>
+      </div>
     );
   }
+
   function CardSlot({
     card,
     fallbackId,
@@ -1674,23 +1625,31 @@ function BattleInner() {
           marker-end: url(#atkArrow);
         }
 
+        /*
+          Portrait anchor: the wrapper is positioned EXACTLY on the PNG ring center.
+          IMPORTANT: do NOT use grid/stack on the wrapper, otherwise the ring will drift.
+        */
         .map-portrait {
           position: absolute;
+          width: 0;
+          height: 0;
           pointer-events: none;
-          display: grid;
-          justify-items: center;
-          gap: 8px;
           filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
         }
         .arena .map-portrait { z-index: 6; }
-.map-portrait-ring {
-  width: var(--ringSize);
-  height: var(--ringSize);
-  border-radius: 999px;
-  background: transparent;
-  display: grid;
-  place-items: center;
-}
+
+        .map-portrait-ring {
+          position: absolute;
+          left: 0;
+          top: 0;
+          transform: translate(-50%, -50%);
+          width: var(--ringSize);
+          height: var(--ringSize);
+          border-radius: 999px;
+          background: transparent;
+          display: grid;
+          place-items: center;
+        }
 
 .map-portrait-img {
   width: var(--imgSize);
@@ -1710,6 +1669,8 @@ function BattleInner() {
 }
 
         .map-portrait-name {
+          position: absolute;
+          left: 0;
           max-width: 260px;
           padding: 6px 10px;
           border-radius: 999px;
@@ -1725,14 +1686,34 @@ function BattleInner() {
           text-overflow: ellipsis;
         }
 
-        .map-portrait.is-top .map-portrait-name { transform: translateY(4px); }
-        .map-portrait.is-bottom .map-portrait-name { transform: translateY(-4px); }
+        /* mirrored name placement */
+        .map-portrait.is-top .map-portrait-name {
+          top: calc(var(--ringSize) * 0.5 + 8px);
+          transform: translate(-50%, 0);
+        }
+        .map-portrait.is-bottom .map-portrait-name {
+          top: calc(-1 * (var(--ringSize) * 0.5 + 8px));
+          transform: translate(-50%, -100%);
+        }
 
+        /* pillrow placement (Team HP + score) */
         .map-pillrow {
+          position: absolute;
+          left: 0;
           display: flex;
           gap: 8px;
           align-items: center;
+          transform: translate(-50%, 0);
         }
+        .map-portrait.is-top .map-pillrow {
+          top: calc(var(--ringSize) * 0.5 + 44px);
+          transform: translate(calc(-50% + 10px), 0); /* a bit to the right */
+        }
+        .map-portrait.is-bottom .map-pillrow {
+          top: calc(-1 * (var(--ringSize) * 0.5 + 44px));
+          transform: translate(calc(-50% + 10px), -100%); /* a bit to the right */
+        }
+
         .map-pill {
           display: inline-flex;
           align-items: center;
@@ -1753,21 +1734,14 @@ function BattleInner() {
         .map-pill--score { min-width: 70px; }
         .map-pill.is-hit { animation: popHit 220ms var(--ease-out) both; }
 /* -----------------------------
-   TEAM HP bar (green → yellow → red)
+   Team HP bar (green → yellow → red)
 ------------------------------ */
-.map-pillrow.row-top {
-  transform: translateX(10px) translateY(8px); /* top: bar slightly BELOW ring+name */
-}
-.map-pillrow.row-bottom {
-  transform: translateX(10px) translateY(-8px); /* bottom: bar slightly ABOVE name */
-}
-
 .map-teamhp {
-  --hp: 100%;
+  --hp: 0%;
   --pad: 7px;
 
   position: relative;
-  width: 132px;
+  width: 128px;
   height: 10px;
   border-radius: 999px;
   background: rgba(255,255,255,0.10);
@@ -1777,51 +1751,36 @@ function BattleInner() {
     inset 0 0 6px rgba(0,0,0,0.40),
     0 4px 14px rgba(0,0,0,0.35);
 }
-
 .map-teamhp-fill {
   position: relative;
   z-index: 1;
   height: 100%;
   width: var(--hp);
   border-radius: 999px;
-  box-shadow:
-    0 0 12px rgba(255,255,255,0.22),
-    inset 0 0 6px rgba(255,255,255,0.20);
   transition: width 260ms ease-out;
 }
-
-/* tones */
 .map-teamhp.hp-good .map-teamhp-fill {
-  background: linear-gradient(90deg, rgba(70,255,160,0.85) 0%, rgba(120,255,190,0.95) 55%, rgba(255,255,255,0.95) 100%);
-  box-shadow: 0 0 12px rgba(70,255,160,0.45), inset 0 0 6px rgba(255,255,255,0.25);
+  background: linear-gradient(90deg, #3dff7a 0%, #b9ffcf 55%, #ffffff 100%);
+  box-shadow: 0 0 12px rgba(80,255,150,0.70), inset 0 0 6px rgba(255,255,255,0.35);
 }
 .map-teamhp.hp-warn .map-teamhp-fill {
-  background: linear-gradient(90deg, rgba(255,210,70,0.90) 0%, rgba(255,230,120,0.98) 55%, rgba(255,255,255,0.95) 100%);
-  box-shadow: 0 0 12px rgba(255,210,70,0.45), inset 0 0 6px rgba(255,255,255,0.25);
+  background: linear-gradient(90deg, #ffe36a 0%, #fff2b7 60%, #ffffff 100%);
+  box-shadow: 0 0 12px rgba(255,220,90,0.65), inset 0 0 6px rgba(255,255,255,0.30);
 }
 .map-teamhp.hp-bad .map-teamhp-fill {
-  background: linear-gradient(90deg, rgba(255,70,90,0.90) 0%, rgba(255,120,140,0.98) 55%, rgba(255,255,255,0.95) 100%);
-  box-shadow: 0 0 12px rgba(255,70,90,0.40), inset 0 0 6px rgba(255,255,255,0.25);
+  background: linear-gradient(90deg, #ff4d4d 0%, #ffb6b6 60%, #ffffff 100%);
+  box-shadow: 0 0 12px rgba(255,80,80,0.70), inset 0 0 6px rgba(255,255,255,0.28);
 }
-
-/* Inner highlight */
 .map-teamhp::after {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 2;
   border-radius: 999px;
-  background: linear-gradient(
-    to bottom,
-    rgba(255,255,255,0.24),
-    rgba(255,255,255,0.06) 35%,
-    transparent 75%
-  );
+  background: linear-gradient(to bottom, rgba(255,255,255,0.22), rgba(255,255,255,0.06) 35%, transparent 75%);
   pointer-events: none;
   opacity: 0.85;
 }
-
-/* Knob (never outside) */
 .map-teamhp-knob {
   position: absolute;
   z-index: 3;
@@ -1832,9 +1791,7 @@ function BattleInner() {
   height: 14px;
   border-radius: 999px;
   background: #ffffff;
-  box-shadow:
-    0 0 10px rgba(255,255,255,0.35),
-    0 2px 8px rgba(0,0,0,0.45);
+  box-shadow: 0 0 10px rgba(255,255,255,0.55), 0 2px 8px rgba(0,0,0,0.45);
 }
 
         /* ✅ Make it SMALL and in the left corner, not overlapping enemy avatar */
@@ -2353,8 +2310,8 @@ function BattleInner() {
             </div>
           </div>
 
-          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hpPct={topTeamHpPct} score={scored ? topScore : null} isHit={topHit} />
-          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hpPct={bottomTeamHpPct} score={scored ? bottomScore : null} isHit={bottomHit} />
+          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hp={30} score={scored ? topScore : null} isHit={topHit} />
+          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={30} score={scored ? bottomScore : null} isHit={bottomHit} />
 
           {roundBanner.visible && (
             <div
