@@ -452,7 +452,10 @@ function DebugGrid() {
 
   const w = debugCover.arenaW;
   const h = debugCover.arenaH;
-  const steps = 10;
+  // Grid is used as a "tape measure" during layout. Keep it stable and highly readable.
+  // 20 steps => 5% increments; label every 10% with both % and px.
+  const steps = 20;
+  const majorEvery = 2; // 10%
   const mono =
     "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
 
@@ -462,7 +465,7 @@ function DebugGrid() {
     const x = t * w;
     const y = t * h;
 
-    const isMajor = i % 5 === 0;
+    const isMajor = i % majorEvery === 0;
     const strokeOpacity = isMajor ? 0.55 : 0.22;
     const strokeWidth = isMajor ? 2 : 1;
 
@@ -492,7 +495,13 @@ function DebugGrid() {
     );
 
     if (isMajor) {
-      const label = `${Math.round(t * 100)}%`;
+      const pct = Math.round(t * 100);
+      const xPx = Math.round(x);
+      const yPx = Math.round(y);
+
+      const labelX = `${pct}%  x:${xPx}`;
+      const labelY = `${pct}%  y:${yPx}`;
+
       nodes.push(
         <text
           key={`tx-${i}`}
@@ -503,7 +512,7 @@ function DebugGrid() {
           fontSize={11}
           fontFamily={mono}
         >
-          {label}
+          {labelX}
         </text>,
       );
       nodes.push(
@@ -516,7 +525,36 @@ function DebugGrid() {
           fontSize={11}
           fontFamily={mono}
         >
-          {label}
+          {labelY}
+        </text>,
+      );
+
+      // Mirror labels on bottom/right for faster reading on mobile screenshots.
+      nodes.push(
+        <text
+          key={`bx-${i}`}
+          x={x + 4}
+          y={h - 6}
+          fill="white"
+          opacity={0.85}
+          fontSize={11}
+          fontFamily={mono}
+        >
+          {labelX}
+        </text>,
+      );
+      nodes.push(
+        <text
+          key={`ry-${i}`}
+          x={w - 4}
+          y={Math.max(12, y - 4)}
+          fill="white"
+          opacity={0.85}
+          fontSize={11}
+          fontFamily={mono}
+          textAnchor="end"
+        >
+          {labelY}
         </text>,
       );
     }
