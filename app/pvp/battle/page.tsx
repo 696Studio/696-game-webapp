@@ -1257,99 +1257,121 @@ function BattleInner() {
   }
 
   function MapPortrait({
-  where,
-  name,
-  avatar,
-  tone,
-  hp,
-  score,
-  isHit,
-}: {
-  where: "top" | "bottom";
-  name: string;
-  avatar: string;
-  tone: "enemy" | "you";
-  hp: number;
-  score: number | null;
-  isHit: boolean;
-}) {
-  const pos = useMemo(() => {
-    if (!arenaBox) return null;
-
-    const p =
+    where,
+    name,
+    avatar,
+    tone,
+    hp,
+    score,
+    isHit,
+  }: {
+    where: "top" | "bottom";
+    name: string;
+    avatar: string;
+    tone: "enemy" | "you";
+    hp: number;
+    score: number | null;
+    isHit: boolean;
+  }) {
+    const isBottom = where === "bottom";
+    const pos = useMemo(() => {
+      if (!arenaBox) return null;
+    
+      const p =
+        where === "top"
+          ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
+          : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+    
+      // ✅ responsive portrait size based on arena width
+      const base = Math.min(arenaBox.w, arenaBox.h);
+      const ring = clamp(Math.round(base * 0.083), 84, 148);
+      const img  = Math.round(ring * 0.86);     
+    
+      // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
+      const yOffset =
       where === "top"
-        ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
-        : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+        ? Math.round(arenaBox.h * 0.003)   // ⬆️ ВЕРХНЮЮ СИЛЬНО ВВЕРХ
+        : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
+    
+      const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
+    
+      return { left: p.x, top, ring, img };
+    }, [arenaBox, where]);  
 
-    // ✅ responsive portrait size based on arena width
-    const base = Math.min(arenaBox.w, arenaBox.h);
-    const ring = clamp(Math.round(base * 0.083), 84, 148);
-    const img = Math.round(ring * 0.86);
+    return (
+      <div
+        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you", isBottom ? "is-bottom" : ""].join(" ")}
+        style={
+          pos
+            ? ({
+                left: pos.left,
+                top: pos.top,
+                transform: "translate(-50%,-50%)",
+                ["--ringSize" as any]: `${pos.ring}px`,
+                ["--imgSize" as any]: `${pos.img}px`,
+              } as React.CSSProperties)
+            : undefined
+        }
+      >
+        {isBottom ? (
+          // Bottom player HUD must be a vertical mirror of the top one:
+          // XP/Score row above the name, name above the ring.
+          <>
+            <div className="map-pillrow">
+              <div
+                className="map-xp"
+                style={
+                  { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
+                }
+              >
+                <div className="map-xp-fill" />
+                <div className="map-xp-knob" />
+              </div>
 
-    // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
-    const yOffset =
-      where === "top"
-        ? Math.round(arenaBox.h * 0.003) // ⬆️ ВЕРХНЮЮ СИЛЬНО ВВЕРХ
-        : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ
+              <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+                {score == null ? "—" : score}
+              </div>
+            </div>
 
-    const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
+            <div className="map-portrait-name">{name}</div>
 
-    // Mirror offsets relative to ring center (based on your debug screenshot)
-    // TOP: name ~ +50px, pillrow ~ +100px from ring center
-    // BOTTOM: mirrored => -50px / -100px
-    const NAME_DY = 50;
-    const PILL_DY = 100;
+            <div className="map-portrait-ring">
+              <div className="map-portrait-img">
+                <img src={avatar} alt={tone} />
+              </div>
+            </div>
+          </>
+        ) : (
+          // Top player stays exactly as-is.
+          <>
+            <div className="map-portrait-ring">
+              <div className="map-portrait-img">
+                <img src={avatar} alt={tone} />
+              </div>
+            </div>
 
-    return {
-      left: p.x,
-      top,
-      ring,
-      img,
-      nameDy: where === "top" ? NAME_DY : -NAME_DY,
-      pillDy: where === "top" ? PILL_DY : -PILL_DY,
-    };
-  }, [arenaBox, where]);
+            <div className="map-portrait-name">{name}</div>
 
-  return (
-    <div
-      className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
-      style={
-        pos
-          ? ({
-              left: pos.left,
-              top: pos.top,
-              transform: "translate(-50%,-50%)",
-              width: 0,
-              height: 0,
-              ["--ringSize" as any]: `${pos.ring}px`,
-              ["--imgSize" as any]: `${pos.img}px`,
-            } as React.CSSProperties)
-          : undefined
-      }
-    >
-      <div className="map-portrait-ring">
-        <div className="map-portrait-img">
-          <img src={avatar} alt={tone} />
-        </div>
+            <div className="map-pillrow">
+              <div
+                className="map-xp"
+                style={
+                  { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
+                }
+              >
+                <div className="map-xp-fill" />
+                <div className="map-xp-knob" />
+              </div>
+
+              <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+                {score == null ? "—" : score}
+              </div>
+            </div>
+          </>
+        )}
       </div>
-
-      <div className="map-portrait-name" style={pos ? ({ top: pos.nameDy } as React.CSSProperties) : undefined}>
-        {name}
-      </div>
-
-      <div className="map-pillrow" style={pos ? ({ top: pos.pillDy } as React.CSSProperties) : undefined}>
-        <div className="map-xp" style={({ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties)}>
-          <div className="map-xp-fill" />
-          <div className="map-xp-knob" />
-        </div>
-
-        <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-          {score == null ? "—" : score}
-        </div>
-      </div>
-    </div>
-  );
-}
+    );    
+  }
 
   function CardSlot({
     card,
@@ -1842,18 +1864,15 @@ function BattleInner() {
         }
 
         .map-portrait {
-  position: absolute;
-  pointer-events: none;
-  width: 0;
-  height: 0;
-  filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
-}
-.arena .map-portrait { z-index: 6; }
+          position: absolute;
+          pointer-events: none;
+          display: grid;
+          justify-items: center;
+          gap: 8px;
+          filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
+        }
+        .arena .map-portrait { z-index: 6; }
 .map-portrait-ring {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform: translate(-50%, -50%);
   width: var(--ringSize);
   height: var(--ringSize);
   border-radius: 999px;
@@ -1880,37 +1899,52 @@ function BattleInner() {
 }
 
         .map-portrait-name {
-  position: absolute;
-  left: 0;
-  transform: translate(-50%, -50%);
-  max-width: 260px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.18);
-  background: rgba(0,0,0,0.30);
-  backdrop-filter: blur(8px);
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+          max-width: 260px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(0,0,0,0.30);
+          backdrop-filter: blur(8px);
+          font-weight: 900;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          font-size: 11px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
 
-.map-pillrow {
-  position: absolute;
-  left: 0;
-  transform: translate(-50%, -50%);
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-/* Fortnite-style XP bar (container) */
+        .map-pillrow {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+        .map-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(0,0,0,0.26);
+          backdrop-filter: blur(10px);
+          font-weight: 900;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          font-variant-numeric: tabular-nums;
+          font-size: 11px;
+          min-width: 60px;
+          justify-content: center;
+        }
+        .map-pill--score { min-width: 70px; }
+        .map-pill.is-hit { animation: popHit 220ms var(--ease-out) both; }
+/* -----------------------------
+   Fortnite-style XP bar
+------------------------------ */
+/* Fortnite-style XP bar (safe) */
 .map-xp {
-  --xp: 0%;
-  --pad: 7px;
+  --xp: 0%;                 /* set 0%..100% from inline style */
+  --pad: 7px;               /* knob radius (14px / 2) */
 
   position: relative;
   width: 120px;
@@ -1923,7 +1957,6 @@ function BattleInner() {
     inset 0 0 6px rgba(0,0,0,0.40),
     0 4px 14px rgba(0,0,0,0.35);
 }
-
 
 /* Fill (under highlight) */
 .map-xp-fill {
