@@ -273,7 +273,8 @@ const DEBUG_ARENA = true; // debug overlay for arena sizing
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
 const BOT_RING_NX = 0.5;
-const BOT_RING_NY = 0.950; // was 0.89
+// Bottom ring center on the PNG (must match DEBUG cross). Keep stable.
+const BOT_RING_NY = 0.89;
 
 function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
@@ -1084,9 +1085,11 @@ function BattleInner() {
       // We do NOT move the anchor to compensate for Telegram UI; instead we nudge ONLY the avatar inside the ring.
       const top = clamp(p.y, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
 
-      // Avatar visual nudge so it sits perfectly inside the board ring (top & bottom).
-      // This does NOT move the TeamHP/XP bar.
-      const avatarNudgeY = clamp(Math.round(ring * 0.14), 10, 18);
+      // Avatar visual nudge inside the ring.
+      // IMPORTANT: DO NOT move the ring center (that would break coords) and DO NOT touch TeamHP/XP bar.
+      // bottom avatar needs to go a bit UP, top avatar a bit DOWN (per your reference).
+      const n = clamp(Math.round(ring * 0.06), 4, 10);
+      const avatarNudgeY = where === "bottom" ? -n : Math.round(n * 0.7);
 
       return { left: p.x, top, ring, img, avatarNudgeY };
     }, [arenaBox, where]);  
@@ -1102,18 +1105,12 @@ function BattleInner() {
                 transform: "translate(-50%,-50%)",
                 ["--ringSize" as any]: `${pos.ring}px`,
                 ["--imgSize" as any]: `${pos.img}px`,
+                ["--avatarNudgeY" as any]: `${pos.avatarNudgeY}px`,
               } as React.CSSProperties)
             : undefined
         }
       >
-	        <div
-	          className="map-portrait-ring"
-	          style={
-	            pos
-	              ? ({ transform: `translateY(-${pos.avatarNudgeY}px)` } as React.CSSProperties)
-	              : undefined
-	          }
-	        >
+	        <div className="map-portrait-ring">
           <div className="map-portrait-img">
             <img src={avatar} alt={tone} />
           </div>
@@ -1654,6 +1651,8 @@ function BattleInner() {
   border-radius: 999px;
   overflow: hidden;
   background: rgba(255,255,255,0.06);
+  /* Nudge ONLY the avatar inside the ring (does not affect TeamHP/XP bar). */
+  transform: translateY(var(--avatarNudgeY, 0px));
 }
 
 .map-portrait-img img {
