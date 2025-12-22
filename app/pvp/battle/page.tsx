@@ -1334,7 +1334,7 @@ const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
           {/* Bottom Name */}
           <div
             className="map-portrait-name"
-            style={{ position: "absolute", left: pos.left, top: BOTTOM_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+            style={{ position: "absolute", left: pos.left, top: TOP_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
           >
             {name}
           </div>
@@ -1342,7 +1342,7 @@ const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
           {/* Bottom TeamHP + Score Row */}
           <div
             className="map-pillrow"
-            style={{ position: "absolute", left: pos.left, top: BOTTOM_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+            style={{ position: "absolute", left: pos.left, top: TOP_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
           >
             <div
               className="map-xp"
