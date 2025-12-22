@@ -1184,7 +1184,7 @@ function DebugGrid() {
       // Avatar nudge inside the ring (DO NOT change ring center).
       // TOP is already perfect per your reference — keep it as-is.
       // BOTTOM needs to be moved UP a lot to sit inside the ring.
-      const avatarNudgeY = where === "bottom" ? -Math.round(ring * 0.18) : Math.round(n * 0.7);
+      const avatarNudgeY = where === "bottom" ? -Math.round(ring * 0.32) : Math.round(n * 0.7);
 
       return { left: p.x, top, ring, img, avatarNudgeY };
     }, [arenaBox, where]);  
@@ -1239,7 +1239,7 @@ function DebugGrid() {
           <>
             <div
               className="map-pillrow"
-              style={pos ? ({ transform: `translateY(-${Math.round(pos.ring * 0.30)}px)` } as React.CSSProperties) : undefined}
+              style={pos ? ({ transform: `translateY(-${Math.round(pos.ring * 0.38)}px)` } as React.CSSProperties) : undefined}
             >
                       <div
                         className="map-xp"
@@ -1579,7 +1579,7 @@ function DebugGrid() {
         }
         @keyframes dmgFlash {
           0%   { opacity: 0; }
-          20%  { opacity: 0.35; }
+          20%  { opacity: 0.55; }
           100% { opacity: 0; }
         }
         @keyframes dmgFloat {
@@ -2260,16 +2260,16 @@ function DebugGrid() {
 .dbg-grid {
   position: absolute;
   inset: 0;
-  z-index: 50;
+  z-index: 70;
   pointer-events: none;
-  opacity: 0.35;
+  opacity: 0.55;
 }
 
         .dbg-panel {
           position: absolute;
           left: 10px;
           top: calc(env(safe-area-inset-top) + 54px);
-          z-index: 50;
+          z-index: 70;
           padding: 8px 10px;
           border-radius: 12px;
           border: 1px solid rgba(255,255,255,0.16);
