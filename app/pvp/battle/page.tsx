@@ -269,6 +269,7 @@ const BOARD_IMG_H = 2796;
 
 
 const DEBUG_ARENA = true; // debug overlay for arena sizing
+const DEBUG_GRID = true; // dev grid overlay for easier positioning
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -1089,7 +1090,11 @@ function BattleInner() {
       // IMPORTANT: DO NOT move the ring center (that would break coords) and DO NOT touch TeamHP/XP bar.
       // bottom avatar needs to go a bit UP, top avatar a bit DOWN (per your reference).
       const n = clamp(Math.round(ring * 0.06), 4, 10);
-      const avatarNudgeY = where === "bottom" ? -Math.round(n * 1.25) : Math.round(n * 0.7);
+
+      // Avatar nudge inside the ring (DO NOT change ring center).
+      // TOP is already perfect per your reference — keep it as-is.
+      // BOTTOM needs to be moved UP a lot to sit inside the ring.
+      const avatarNudgeY = where === "bottom" ? -Math.round(ring * 0.18) : Math.round(n * 0.7);
 
       return { left: p.x, top, ring, img, avatarNudgeY };
     }, [arenaBox, where]);  
@@ -1144,7 +1149,7 @@ function BattleInner() {
           <>
             <div
               className="map-pillrow"
-              style={pos ? ({ transform: `translateY(-${Math.round(pos.ring * 0.22)}px)` } as React.CSSProperties) : undefined}
+              style={pos ? ({ transform: `translateY(-${Math.round(pos.ring * 0.30)}px)` } as React.CSSProperties) : undefined}
             >
                       <div
                         className="map-xp"
@@ -2161,6 +2166,21 @@ function BattleInner() {
           .corner-info { max-width: min(220px, calc(100% - 20px)); }
         }
         /* DEBUG overlay */
+        .dbg-grid {
+          position: absolute;
+          inset: 0;
+          z-index: 5;
+          pointer-events: none;
+          opacity: 0.22;
+          background-image:
+            linear-gradient(to right, rgba(255,255,255,0.18) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255,255,255,0.18) 1px, transparent 1px),
+            linear-gradient(to right, rgba(255,255,255,0.32) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255,255,255,0.32) 1px, transparent 1px);
+          background-size: 32px 32px, 32px 32px, 160px 160px, 160px 160px;
+          mix-blend-mode: overlay;
+        }
+
         .dbg-panel {
           position: absolute;
           left: 10px;
@@ -2283,6 +2303,7 @@ function BattleInner() {
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
+          {DEBUG_GRID && <div className="dbg-grid" />}
           {DEBUG_ARENA && debugCover && (
             <>
               <div className="dbg-panel">
