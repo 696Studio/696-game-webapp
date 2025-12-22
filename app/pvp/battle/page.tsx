@@ -1184,12 +1184,12 @@ function DebugGrid() {
       // Avatar nudge inside the ring (DO NOT change ring center).
       // TOP is already perfect per your reference — keep it as-is.
       // BOTTOM needs to be moved UP a lot to sit inside the ring.
-      const avatarNudgeY = where === "bottom" ? -Math.round(n * 6) : Math.round(n * 0.7);
+      const avatarNudgeY = where === "bottom" ? -Math.round(n * 10) : Math.round(n * 0.7);
 
       // Bottom HUD must be a clean mirror of the top one.
       // TOP is locked (do not touch). Bottom gets its own nudges.
-      const bottomPillShift = -Math.round(ring * 0.42);
-      const bottomNameShift = -Math.round(ring * 0.16);
+      const bottomPillShift = -Math.round(ring * 0.55);
+      const bottomNameShift = -Math.round(ring * 0.25);
 
       return { left: p.x, top, ring, img, avatarNudgeY, bottomPillShift, bottomNameShift };
     }, [arenaBox, where]);  
