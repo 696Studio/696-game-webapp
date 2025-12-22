@@ -1276,7 +1276,7 @@ function BattleInner() {
 
     // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
     // Top player must stay untouched.
-    const BOTTOM_AVATAR_Y = 785; // avatar ring center
+    const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up only)
     const BOTTOM_HP_Y = 644; // TeamHP bar row
     const BOTTOM_NAME_Y = 688; // nickname
 
@@ -1318,7 +1318,7 @@ function BattleInner() {
           {/* Bottom Avatar Ring (ONLY moved by Y target) */}
           <div
             className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you", "is-bottom"].join(" ")}
-            style={{ left: pos.left, top: pos.top, transform: "translate(-50%,-50%)", ...vars }}
+            style={{ left: pos.left, top: BOTTOM_AVATAR_Y, transform: "translate(-50%,-50%)", ...vars }}
           >
             <div className="map-portrait-ring">
               <div className="map-portrait-img">
