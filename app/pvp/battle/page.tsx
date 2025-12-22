@@ -1,11 +1,12 @@
-const TOP_NAME_Y = 174; // A 40%
-const TOP_HP_Y = 218; // A 50%
-
 "use client";
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
+
+
+const TOP_NAME_Y = 174; // A 40%
+const TOP_HP_Y = 218; // A 50%
 
 type MatchRow = {
   id: string;
@@ -1280,7 +1281,8 @@ function BattleInner() {
 
     // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
     // Top player must stay untouched.
-    const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
+
+const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
     const BOTTOM_HP_Y = 644; // TeamHP bar row
     const BOTTOM_NAME_Y = 678; // nickname
 
@@ -1742,7 +1744,7 @@ function BattleInner() {
         }
 
         .scrub-row {
-          margin-top: 10px;
+          margin-top: TOP_NAME_Ypx;
           display: flex;
           gap: 10px;
           align-items: center;
@@ -1797,7 +1799,7 @@ function BattleInner() {
         }
 
         .hud-sub {
-          margin-top: 6px;
+          margin-top: TOP_HP_Ypx;
           display: flex;
           gap: 8px;
           flex-wrap: wrap;
