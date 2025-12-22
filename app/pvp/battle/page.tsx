@@ -1174,7 +1174,8 @@ function DebugGrid() {
     
       // Anchor the portrait block to the painted ring center.
       // We do NOT move the anchor to compensate for Telegram UI; instead we nudge ONLY the avatar inside the ring.
-      const top = clamp(p.y, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
+      const anchorNudgeY = where === "bottom" ? -Math.round(ring * 0.18) : 0;
+      const top = clamp(p.y + anchorNudgeY, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
 
       // Avatar visual nudge inside the ring.
       // IMPORTANT: DO NOT move the ring center (that would break coords) and DO NOT touch TeamHP/XP bar.
@@ -1184,14 +1185,14 @@ function DebugGrid() {
       // Avatar nudge inside the ring (DO NOT change ring center).
       // TOP is already perfect per your reference — keep it as-is.
       // BOTTOM needs to be moved UP a lot to sit inside the ring.
-      const avatarNudgeY = where === "bottom" ? -Math.round(ring * 0.32) : Math.round(n * 0.7);
+      const avatarNudgeY = where === "bottom" ? -Math.round(n * 2) : Math.round(n * 0.7);
 
       return { left: p.x, top, ring, img, avatarNudgeY };
     }, [arenaBox, where]);  
 
     return (
       <div
-        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
+        className={["map-portrait", where === "bottom" ? "is-bottom" : "is-top", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
         style={
           pos
             ? ({
@@ -1239,7 +1240,7 @@ function DebugGrid() {
           <>
             <div
               className="map-pillrow"
-              style={pos ? ({ transform: `translateY(-${Math.round(pos.ring * 0.38)}px)` } as React.CSSProperties) : undefined}
+              style={pos ? ({ transform: `translateY(-${Math.round(pos.ring * 0.30)}px)` } as React.CSSProperties) : undefined}
             >
                       <div
                         className="map-xp"
@@ -1772,6 +1773,14 @@ function DebugGrid() {
           gap: 8px;
           filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
         }
+
+        .map-portrait.is-bottom {
+          gap: 6px;
+        }
+        .map-portrait.is-bottom .map-portrait-name {
+          transform: translateY(-4px);
+        }
+
         .arena .map-portrait { z-index: 6; }
 .map-portrait-ring {
   width: var(--ringSize);
