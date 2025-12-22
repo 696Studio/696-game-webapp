@@ -1068,94 +1068,106 @@ function BattleInner() {
   function TagPill({ label }: { label: string }) {
     return <span className="bb-tag">{label}</span>;
   }
-
     function MapPortrait({
-    where,
-    name,
-    avatar,
-    tone,
-    hpPct,
-    score,
-    isHit,
-  }: {
-    where: "top" | "bottom";
-    name: string;
-    avatar: string;
-    tone: "enemy" | "you";
-    hpPct: number; // 0..100 TeamHP percent
-    score: number | null;
-    isHit: boolean;
-  }) {
-    const pos = useMemo(() => {
-      if (!arenaBox) return null;
+      where,
+      name,
+      avatar,
+      tone,
+      hpPct,
+      score,
+      isHit,
+    }: {
+      where: "top" | "bottom";
+      name: string;
+      avatar: string;
+      tone: "enemy" | "you";
+      hpPct: number; // 0..100 TeamHP percent
+      score: number | null;
+      isHit: boolean;
+    }) {
+      const pos = useMemo(() => {
+        if (!arenaBox) return null;
 
-      const p =
-        where === "top"
-          ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
-          : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+        const p =
+          where === "top"
+            ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
+            : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
 
-      // responsive portrait size based on arena
-      const base = Math.min(arenaBox.w, arenaBox.h);
-      const ring = clamp(Math.round(base * 0.083), 84, 148);
-      const img = Math.round(ring * 0.86);
+        // Responsive portrait size based on arena
+        const base = Math.min(arenaBox.w, arenaBox.h);
+        const ring = clamp(Math.round(base * 0.083), 84, 148);
+        const img = Math.round(ring * 0.86);
 
-      // small offsets to account for Telegram overlays; keep within arena bounds
-      const yOffset = where === "top" ? Math.round(arenaBox.h * 0.003) : -Math.round(arenaBox.h * 0.036);
-      const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
+        // ❗️НЕ смещаем центр кольца. Смещения делаем только HUD-элементам вокруг.
+        const top = clamp(p.y, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
 
-      return { left: p.x, top, ring, img };
-    }, [arenaBox, where]);
+        return { left: p.x, top, ring, img };
+      }, [arenaBox, where]);
 
-    const hp = clamp(Number(hpPct) || 0, 0, 100);
-    const hpTone = hp > 66 ? "good" : hp > 33 ? "warn" : "bad";
+      const hp = clamp(Number(hpPct) || 0, 0, 100);
+      const hpTone = hp > 66 ? "good" : hp > 33 ? "warn" : "bad";
 
-    return (
-      <div
-        className={[
-          "map-portrait",
-          where === "top" ? "is-top" : "is-bottom",
-          tone === "enemy" ? "tone-enemy" : "tone-you",
-        ].join(" ")}
-        style={
-          pos
-            ? ({
-                left: pos.left,
-                top: pos.top,
-                transform: "translate(-50%,-50%)",
-                ["--ringSize" as any]: `${pos.ring}px`,
-                ["--imgSize" as any]: `${pos.img}px`,
-              } as React.CSSProperties)
-            : undefined
-        }
-      >
-        {/* TOP: bar above avatar, name below. BOTTOM: name above, bar below (mirror). */}
-        {where === "bottom" && <div className="map-portrait-name">{name}</div>}
+      return (
+        <div
+          className={[
+            "map-portrait",
+            where === "top" ? "is-top" : "is-bottom",
+            tone === "enemy" ? "tone-enemy" : "tone-you",
+          ].join(" ")}
+          style={
+            pos
+              ? ({
+                  left: pos.left,
+                  top: pos.top,
+                  transform: "translate(-50%,-50%)",
+                  ["--ringSize" as any]: `${pos.ring}px`,
+                  ["--imgSize" as any]: `${pos.img}px`,
+                } as React.CSSProperties)
+              : undefined
+          }
+        >
+          {/* HUD layout:
+              bottom: TeamHP row ABOVE (and a bit right), then name, then ring
+              top: ring, then name, then TeamHP row BELOW (mirror bottom)
+          */}
+          {where === "bottom" && (
+            <>
+              <div className={["map-pillrow", "row-bottom"].join(" ")}>
+                <div className={["map-teamhp", `hp-${hpTone}`].join(" ")} style={{ ["--hp" as any]: `${hp}%` } as React.CSSProperties} aria-label="Team HP">
+                  <div className="map-teamhp-fill" />
+                  <div className="map-teamhp-knob" />
+                </div>
 
-        <div className="map-portrait-ring">
-          <div className="map-portrait-img">
-            <img src={avatar} alt={tone} />
+                <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>{score == null ? "—" : score}</div>
+              </div>
+
+              <div className="map-portrait-name">{name}</div>
+            </>
+          )}
+
+          <div className="map-portrait-ring">
+            <div className="map-portrait-img">
+              <img src={avatar} alt={tone} />
+            </div>
           </div>
+
+          {where === "top" && (
+            <>
+              <div className="map-portrait-name">{name}</div>
+
+              <div className={["map-pillrow", "row-top"].join(" ")}>
+                <div className={["map-teamhp", `hp-${hpTone}`].join(" ")} style={{ ["--hp" as any]: `${hp}%` } as React.CSSProperties} aria-label="Team HP">
+                  <div className="map-teamhp-fill" />
+                  <div className="map-teamhp-knob" />
+                </div>
+
+                <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>{score == null ? "—" : score}</div>
+              </div>
+            </>
+          )}
         </div>
-
-        {where === "top" && <div className="map-portrait-name">{name}</div>}
-
-        <div className={["map-pillrow", where === "top" ? "row-top" : "row-bottom"].join(" ")}>
-          <div
-            className={["map-teamhp", `hp-${hpTone}`].join(" ")}
-            style={{ ["--hp" as any]: `${hp}%` } as React.CSSProperties}
-            aria-label="Team HP"
-          >
-            <div className="map-teamhp-fill" />
-            <div className="map-teamhp-knob" />
-          </div>
-
-          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-            {score == null ? "—" : score}
-          </div>
-        </div>
-      </div>
-    );
-  }
+      );
+    }
   function CardSlot({
     card,
     fallbackId,
@@ -1724,9 +1736,11 @@ function BattleInner() {
 /* -----------------------------
    TEAM HP bar (green → yellow → red)
 ------------------------------ */
-.map-pillrow.row-top,
 .map-pillrow.row-bottom {
-  transform: translateX(10px); /* slight right shift like reference */
+  transform: translateX(10px) translateY(-10px); /* bottom: bar above & a bit right */
+}
+.map-pillrow.row-top {
+  transform: translateX(10px) translateY(10px);  /* top: mirror (below) & a bit right */
 }
 
 .map-teamhp {
