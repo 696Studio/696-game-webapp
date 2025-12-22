@@ -269,11 +269,13 @@ const BOARD_IMG_H = 2796;
 
 
 const DEBUG_ARENA = true; // debug overlay for arena sizing
+const DEBUG_GRID = true; // dev grid overlay for easier positioning
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
 const BOT_RING_NX = 0.5;
-const BOT_RING_NY = 0.950; // was 0.89
+// Bottom ring center on the PNG (must match DEBUG cross). Keep stable.
+const BOT_RING_NY = 0.89;
 
 function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
@@ -443,6 +445,96 @@ function BattleInner() {
       botY: bot.y,
     };
   }, [arenaBox]);
+
+
+function DebugGrid() {
+  if (!DEBUG_GRID || !debugCover) return null;
+
+  const w = debugCover.arenaW;
+  const h = debugCover.arenaH;
+  const steps = 10;
+  const mono =
+    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+
+  const nodes: React.ReactNode[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = t * w;
+    const y = t * h;
+
+    const isMajor = i % 5 === 0;
+    const strokeOpacity = isMajor ? 0.55 : 0.22;
+    const strokeWidth = isMajor ? 2 : 1;
+
+    nodes.push(
+      <line
+        key={`vx-${i}`}
+        x1={x}
+        y1={0}
+        x2={x}
+        y2={h}
+        stroke="white"
+        strokeOpacity={strokeOpacity}
+        strokeWidth={strokeWidth}
+      />,
+    );
+    nodes.push(
+      <line
+        key={`hy-${i}`}
+        x1={0}
+        y1={y}
+        x2={w}
+        y2={y}
+        stroke="white"
+        strokeOpacity={strokeOpacity}
+        strokeWidth={strokeWidth}
+      />,
+    );
+
+    if (isMajor) {
+      const label = `${Math.round(t * 100)}%`;
+      nodes.push(
+        <text
+          key={`tx-${i}`}
+          x={x + 4}
+          y={14}
+          fill="white"
+          opacity={0.85}
+          fontSize={11}
+          fontFamily={mono}
+        >
+          {label}
+        </text>,
+      );
+      nodes.push(
+        <text
+          key={`ty-${i}`}
+          x={4}
+          y={Math.max(12, y - 4)}
+          fill="white"
+          opacity={0.85}
+          fontSize={11}
+          fontFamily={mono}
+        >
+          {label}
+        </text>,
+      );
+    }
+  }
+
+  return (
+    <svg
+      className="dbg-grid"
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+    >
+      {nodes}
+    </svg>
+  );
+}
+
   useEffect(() => {
     const onResize = () => setLayoutTick((x) => x + 1);
     window.addEventListener("resize", onResize);
@@ -1080,24 +1172,31 @@ function BattleInner() {
       const ring = clamp(Math.round(base * 0.083), 84, 148);
       const img  = Math.round(ring * 0.86);     
     
-      // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
-      // IMPORTANT:
-      // - TOP is already perfect (avatar + TeamHP/XP). Do NOT change the TOP.
-      // - Bottom must be lifted higher so the avatar sits inside the painted ring
-      //   and the HUD mirrors the top.
-      const yOffset =
-      where === "top"
-        ? Math.round(arenaBox.h * 0.003)   // keep TOP exactly as-is
-        : -Math.round(arenaBox.h * 0.070); // lift BOTTOM higher (only bottom changes)
-    
-      const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
-    
-      return { left: p.x, top, ring, img };
+      // Anchor the portrait block EXACTLY to the painted ring center.
+      // If we move this anchor, the avatar will drift out of the painted ring.
+      const top = clamp(p.y, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
+
+      // Avatar visual nudge inside the ring.
+      // IMPORTANT: DO NOT move the ring center (that would break coords) and DO NOT touch TeamHP/XP bar.
+      // bottom avatar needs to go a bit UP, top avatar a bit DOWN (per your reference).
+      const n = clamp(Math.round(ring * 0.06), 4, 10);
+
+      // Avatar nudge inside the ring (DO NOT change ring center).
+      // TOP is already perfect per your reference — keep it as-is.
+      // BOTTOM needs to be moved UP a lot to sit inside the ring.
+      const avatarNudgeY = where === "bottom" ? -Math.round(n * 6) : Math.round(n * 0.7);
+
+      // Bottom HUD must be a clean mirror of the top one.
+      // TOP is locked (do not touch). Bottom gets its own nudges.
+      const bottomPillShift = -Math.round(ring * 0.42);
+      const bottomNameShift = -Math.round(ring * 0.16);
+
+      return { left: p.x, top, ring, img, avatarNudgeY, bottomPillShift, bottomNameShift };
     }, [arenaBox, where]);  
 
     return (
       <div
-        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
+        className={["map-portrait", where === "bottom" ? "is-bottom" : "is-top", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
         style={
           pos
             ? ({
@@ -1106,33 +1205,75 @@ function BattleInner() {
                 transform: "translate(-50%,-50%)",
                 ["--ringSize" as any]: `${pos.ring}px`,
                 ["--imgSize" as any]: `${pos.img}px`,
+                ["--avatarNudgeY" as any]: `${pos.avatarNudgeY}px`,
+                ["--bottomPillShift" as any]: `${(pos as any).bottomPillShift ?? 0}px`,
+                ["--bottomNameShift" as any]: `${(pos as any).bottomNameShift ?? 0}px`,
               } as React.CSSProperties)
             : undefined
         }
       >
-        <div className="map-portrait-ring">
-          <div className="map-portrait-img">
-            <img src={avatar} alt={tone} />
-          </div>
-        </div>
-    
-        <div className="map-portrait-name">{name}</div>
-    
-        <div className="map-pillrow">
-          <div
-            className="map-xp"
-            style={
-              { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
-            }
-          >
-            <div className="map-xp-fill" />
-            <div className="map-xp-knob" />
-          </div>
-    
-          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-            {score == null ? "—" : score}
-          </div>
-        </div>
+        {where === "top" ? (
+          <>
+            <div className="map-portrait-ring">
+                      <div className="map-portrait-img">
+                        <img src={avatar} alt={tone} />
+                      </div>
+                    </div>
+
+
+
+            <div className="map-portrait-name">{name}</div>
+
+
+
+            <div className="map-pillrow">
+                      <div
+                        className="map-xp"
+                        style={
+                          { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
+                        }
+                      >
+                        <div className="map-xp-fill" />
+                        <div className="map-xp-knob" />
+                      </div>
+
+                      <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+                        {score == null ? "—" : score}
+                      </div>
+                    </div>
+          </>
+        ) : (
+          <>
+            <div className="map-pillrow map-pillrow--bottom">
+                      <div
+                        className="map-xp"
+                        style={
+                          { ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties
+                        }
+                      >
+                        <div className="map-xp-fill" />
+                        <div className="map-xp-knob" />
+                      </div>
+
+                      <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+                        {score == null ? "—" : score}
+                      </div>
+                    </div>
+
+            <div className="map-portrait-name map-portrait-name--bottom">{name}</div>
+
+
+
+            <div className="map-portrait-ring">
+                      <div className="map-portrait-img">
+                        <img src={avatar} alt={tone} />
+                      </div>
+                    </div>
+
+
+          </>
+        )}
+
       </div>
     );    
   }
@@ -1442,7 +1583,7 @@ function BattleInner() {
         }
         @keyframes dmgFlash {
           0%   { opacity: 0; }
-          20%  { opacity: 0.35; }
+          20%  { opacity: 0.55; }
           100% { opacity: 0; }
         }
         @keyframes dmgFloat {
@@ -1635,6 +1776,19 @@ function BattleInner() {
           gap: 8px;
           filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
         }
+
+        .map-portrait.is-bottom {
+          gap: 6px;
+        }
+        .map-portrait.is-bottom .map-portrait-name {
+          transform: translateY(var(--bottomNameShift, -4px));
+        }
+
+        /* Bottom TeamHP/XP bar row: mirror of the top, controlled via CSS var from coverMap coords */
+        .map-pillrow--bottom {
+          transform: translateY(var(--bottomPillShift, 0px));
+        }
+
         .arena .map-portrait { z-index: 6; }
 .map-portrait-ring {
   width: var(--ringSize);
@@ -1651,6 +1805,8 @@ function BattleInner() {
   border-radius: 999px;
   overflow: hidden;
   background: rgba(255,255,255,0.06);
+  /* Nudge ONLY the avatar inside the ring (does not affect TeamHP/XP bar). */
+  transform: translateY(var(--avatarNudgeY, 0px));
 }
 
 .map-portrait-img img {
@@ -2117,11 +2273,20 @@ function BattleInner() {
           .corner-info { max-width: min(220px, calc(100% - 20px)); }
         }
         /* DEBUG overlay */
+        
+.dbg-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+  opacity: 0.55;
+}
+
         .dbg-panel {
           position: absolute;
           left: 10px;
           top: calc(env(safe-area-inset-top) + 54px);
-          z-index: 50;
+          z-index: 70;
           padding: 8px 10px;
           border-radius: 12px;
           border: 1px solid rgba(255,255,255,0.16);
@@ -2239,6 +2404,7 @@ function BattleInner() {
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
+          {DEBUG_GRID && <DebugGrid />}
           {DEBUG_ARENA && debugCover && (
             <>
               <div className="dbg-panel">
