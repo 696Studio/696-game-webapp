@@ -1,3 +1,6 @@
+const TOP_NAME_Y = 174; // A 40%
+const TOP_HP_Y = 218; // A 50%
+
 "use client";
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -1331,7 +1334,7 @@ function BattleInner() {
           {/* Bottom Name */}
           <div
             className="map-portrait-name"
-            style={{ position: "absolute", left: pos.left, top: BOTTOM_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+            style={{ position: "absolute", left: pos.left, top: TOP_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
           >
             {name}
           </div>
@@ -1339,7 +1342,7 @@ function BattleInner() {
           {/* Bottom TeamHP + Score Row */}
           <div
             className="map-pillrow"
-            style={{ position: "absolute", left: pos.left, top: BOTTOM_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+            style={{ position: "absolute", left: pos.left, top: TOP_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
           >
             <div
               className="map-xp"
