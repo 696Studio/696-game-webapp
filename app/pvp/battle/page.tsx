@@ -273,7 +273,9 @@ const DEBUG_ARENA = true; // debug overlay for arena sizing
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
 const BOT_RING_NX = 0.5;
-const BOT_RING_NY = 0.950; // was 0.89
+// Bottom ring center on the board PNG (normalized).
+// 0.95 pushes the anchor too low (avatar ends up BELOW the ring on many screens).
+const BOT_RING_NY = 0.89;
 
 function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
