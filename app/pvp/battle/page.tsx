@@ -1177,19 +1177,18 @@ function DebugGrid() {
       const top = clamp(p.y, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
 
       // Avatar visual nudge inside the ring.
-      // IMPORTANT: DO NOT move the ring center (that would break coords) and DO NOT touch TeamHP/XP bar.
-      // bottom avatar needs to go a bit UP, top avatar a bit DOWN (per your reference).
+      // IMPORTANT: DO NOT move the ring center (coords anchor) and DO NOT touch TeamHP/XP bar logic.
       const n = clamp(Math.round(ring * 0.06), 4, 10);
 
-      // Avatar nudge inside the ring (DO NOT change ring center).
-      // TOP is already perfect per your reference — keep it as-is.
-      // BOTTOM needs to be moved UP a lot to sit inside the ring.
-      const avatarNudgeY = where === "bottom" ? -Math.round(n * 10) : Math.round(n * 0.7);
+      // TOP is already perfect in your screenshots — keep it stable.
+      // BOTTOM must go noticeably UP to sit inside the painted ring.
+      // (We only change bottom. Top remains identical.)
+      const avatarNudgeY = where === "bottom" ? -Math.round(n * 14) : Math.round(n * 0.7);
 
-      // Bottom HUD must be a clean mirror of the top one.
-      // TOP is locked (do not touch). Bottom gets its own nudges.
-      const bottomPillShift = -Math.round(ring * 0.55);
-      const bottomNameShift = -Math.round(ring * 0.25);
+      // Bottom HUD should be a clean mirror of the top around the bottom portrait.
+      // Move bottom name + bar UP (more negative Y). TOP stays untouched.
+      const bottomPillShift = -Math.round(ring * 0.68);
+      const bottomNameShift = -Math.round(ring * 0.34);
 
       return { left: p.x, top, ring, img, avatarNudgeY, bottomPillShift, bottomNameShift };
     }, [arenaBox, where]);  
