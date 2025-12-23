@@ -1,4 +1,5 @@
 "use client";
+
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
@@ -271,7 +272,7 @@ const DEBUG_ARENA = true; // debug overlay for arena sizing
 const DEBUG_GRID = true; // mirrored A/B measurement grid (dev only)
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
-const TOP_RING_NY = 0.150;
+const TOP_RING_NY = 0.165;
 const BOT_RING_NX = 0.5;
 const BOT_RING_NY = 0.950; // was 0.89
 
@@ -1099,7 +1100,32 @@ function BattleInner() {
   const topHit = enemySide === "p1" ? p1Hit : p2Hit;
   const bottomHit = youSide === "p1" ? p1Hit : p2Hit;
 
-  const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
+  
+  const teamHp = (unitsBySlot: Record<number, UnitView | null>) => {
+    let hp = 0;
+    let hpMax = 0;
+    for (const k in unitsBySlot) {
+      const u = unitsBySlot[Number(k)];
+      if (!u) continue;
+      hp += Math.max(0, Number(u.hp ?? 0));
+      hpMax += Math.max(0, Number(u.maxHp ?? 0));
+    }
+    // avoid division by zero
+    if (!Number.isFinite(hpMax) || hpMax <= 0) hpMax = 1;
+    if (!Number.isFinite(hp) || hp < 0) hp = 0;
+    if (hp > hpMax) hp = hpMax;
+    return { hp, hpMax };
+  };
+
+  const topTeam = useMemo(
+    () => teamHp(enemySide === "p1" ? p1UnitsBySlot : p2UnitsBySlot),
+    [enemySide, p1UnitsBySlot, p2UnitsBySlot],
+  );
+  const bottomTeam = useMemo(
+    () => teamHp(youSide === "p1" ? p1UnitsBySlot : p2UnitsBySlot),
+    [youSide, p1UnitsBySlot, p2UnitsBySlot],
+  );
+const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   const youUserId = youSide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   const enemyProfile = enemyUserId ? profiles[enemyUserId] : undefined;
@@ -1261,6 +1287,7 @@ function BattleInner() {
     avatar,
     tone,
     hp,
+    hpMax,
     score,
     isHit,
   }: {
@@ -1269,6 +1296,7 @@ function BattleInner() {
     avatar: string;
     tone: "enemy" | "you";
     hp: number;
+    hpMax: number;
     score: number | null;
     isHit: boolean;
   }) {
@@ -1276,9 +1304,9 @@ function BattleInner() {
 
     // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
     // Top player must stay untouched.
-    const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up only)
+    const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
     const BOTTOM_HP_Y = 644; // TeamHP bar row
-    const BOTTOM_NAME_Y = 688; // nickname
+    const BOTTOM_NAME_Y = 678; // nickname
 
     const pos = useMemo(() => {
       if (!arenaBox) return null;
@@ -1296,7 +1324,7 @@ function BattleInner() {
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
       where === "top"
-        ? -Math.round(arenaBox.h * 0.03)   // ⬆️ TOP AVATAR UP (only this moved)
+        ? Math.round(arenaBox.h * 0.003)   // ⬆️ ВЕРХНЮЮ СИЛЬНО ВВЕРХ
         : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
     
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
@@ -1342,7 +1370,7 @@ function BattleInner() {
           >
             <div
               className="map-xp"
-              style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties}
+              style={{ ["--xp" as any]: `${clamp((hp / Math.max(1, hpMax)) * 100, 0, 100)}%` } as React.CSSProperties}
             >
               <div className="map-xp-fill" />
               <div className="map-xp-knob" />
@@ -1357,57 +1385,31 @@ function BattleInner() {
     }
 
     return (
-      <>
-        <div
-          className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
-          style={
-            pos
-              ? ({
-                  left: pos.left,
-                  top: pos.top,
-                  transform: "translate(-50%,-50%)",
-                  ["--ringSize" as any]: `${pos.ring}px`,
-                  ["--imgSize" as any]: `${pos.img}px`,
-                } as React.CSSProperties)
-              : undefined
-          }
-        >
-          {/* Top avatar stays exactly as-is. */}
+      <div
+        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
+        style={
+          pos
+            ? ({
+                left: pos.left,
+                top: pos.top,
+                transform: "translate(-50%,-50%)",
+                ["--ringSize" as any]: `${pos.ring}px`,
+                ["--imgSize" as any]: `${pos.img}px`,
+              } as React.CSSProperties)
+            : undefined
+        }
+      >
+        {/* Top player stays exactly as-is. */}
+        <>
           <div className="map-portrait-ring">
             <div className="map-portrait-img">
               <img src={avatar} alt={tone} />
             </div>
           </div>
-        </div>
 
-        {pos ? (
-          <>
-            <div
-              className="map-portrait-name"
-              style={{
-                position: "absolute",
-                left: pos.left,
-                top: 182, // target: just under A 40% (y≈174)
-                transform: "translate(-50%,-50%)",
-                zIndex: 6,
-                pointerEvents: "none",
-              }}
-            >
-              {name}
-            </div>
+          <div className="map-portrait-name">{name}</div>
 
-            <div
-              className="map-pillrow"
-              style={{
-                position: "absolute",
-                left: pos.left,
-                top: 226, // target: just under A 50% (y≈218)
-                transform: "translate(-50%,-50%)",
-                zIndex: 6,
-                pointerEvents: "none",
-              }}
-            >
-
+          <div className="map-pillrow">
             <div
               className="map-xp"
               style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties}
@@ -1419,11 +1421,10 @@ function BattleInner() {
             <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
               {score == null ? "—" : score}
             </div>
-            </div>
-          </>
-        ) : null}
-      </>
-    );;
+          </div>
+        </>
+      </div>
+    );
   }
 
   function CardSlot({
@@ -2592,8 +2593,8 @@ function BattleInner() {
             </div>
           </div>
 
-          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hp={30} score={scored ? topScore : null} isHit={topHit} />
-          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={30} score={scored ? bottomScore : null} isHit={bottomHit} />
+          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hp={topTeam.hp} hpMax={topTeam.hpMax} score={scored ? topScore : null} isHit={topHit} />
+          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={bottomTeam.hp} hpMax={bottomTeam.hpMax} score={scored ? bottomScore : null} isHit={bottomHit} />
 
           {roundBanner.visible && (
             <div
