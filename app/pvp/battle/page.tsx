@@ -1,5 +1,4 @@
 "use client";
-
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
@@ -1277,7 +1276,7 @@ function BattleInner() {
 
     // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
     // Top player must stay untouched.
-    const BOTTOM_AVATAR_Y = 785; // avatar ring center
+    const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up only)
     const BOTTOM_HP_Y = 644; // TeamHP bar row
     const BOTTOM_NAME_Y = 688; // nickname
 
@@ -1739,7 +1738,7 @@ function BattleInner() {
         }
 
         .scrub-row {
-          margin-top: 220
+          margin-top: 10px;
           display: flex;
           gap: 10px;
           align-items: center;
