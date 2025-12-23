@@ -1387,7 +1387,7 @@ function BattleInner() {
               style={{
                 position: "absolute",
                 left: pos.left,
-                top: 190, // target: under A 40% (y≈174) — lowered
+                top: 182, // target: just under A 40% (y≈174)
                 transform: "translate(-50%,-50%)",
                 zIndex: 6,
                 pointerEvents: "none",
@@ -1401,7 +1401,7 @@ function BattleInner() {
               style={{
                 position: "absolute",
                 left: pos.left,
-                top: 232, // target: under A 50% (y≈218) — lowered
+                top: 226, // target: just under A 50% (y≈218)
                 transform: "translate(-50%,-50%)",
                 zIndex: 6,
                 pointerEvents: "none",
