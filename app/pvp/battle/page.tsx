@@ -1,4 +1,5 @@
 "use client";
+
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
@@ -1276,7 +1277,7 @@ function BattleInner() {
 
     // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
     // Top player must stay untouched.
-    const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up only)
+    const BOTTOM_AVATAR_Y = 785; // avatar ring center
     const BOTTOM_HP_Y = 644; // TeamHP bar row
     const BOTTOM_NAME_Y = 688; // nickname
 
@@ -1330,7 +1331,7 @@ function BattleInner() {
           {/* Bottom Name */}
           <div
             className="map-portrait-name"
-            style={{ position: "absolute", left: pos.left, top: 176, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+            style={{ position: "absolute", left: pos.left, top: BOTTOM_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
           >
             {name}
           </div>
@@ -1338,7 +1339,7 @@ function BattleInner() {
           {/* Bottom TeamHP + Score Row */}
           <div
             className="map-pillrow"
-            style={{ position: "absolute", left: pos.left, top: 220, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+            style={{ position: "absolute", left: pos.left, top: BOTTOM_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
           >
             <div
               className="map-xp"
@@ -1738,7 +1739,7 @@ function BattleInner() {
         }
 
         .scrub-row {
-          margin-top: 10px;
+          margin-top: 220
           display: flex;
           gap: 10px;
           align-items: center;
