@@ -271,7 +271,7 @@ const DEBUG_ARENA = true; // debug overlay for arena sizing
 const DEBUG_GRID = true; // mirrored A/B measurement grid (dev only)
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
-const TOP_RING_NY = 0.145;
+const TOP_RING_NY = 0.150;
 const BOT_RING_NX = 0.5;
 const BOT_RING_NY = 0.950; // was 0.89
 
