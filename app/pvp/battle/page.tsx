@@ -1296,7 +1296,7 @@ function BattleInner() {
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
       where === "top"
-        ? -Math.round(arenaBox.h * 0.02)   // ⬆️ TOP AVATAR UP (only this moved)
+        ? -Math.round(arenaBox.h * 0.03)   // ⬆️ TOP AVATAR UP (only this moved)
         : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
     
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
