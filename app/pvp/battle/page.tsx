@@ -1357,31 +1357,57 @@ function BattleInner() {
     }
 
     return (
-      <div
-        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
-        style={
-          pos
-            ? ({
-                left: pos.left,
-                top: pos.top,
-                transform: "translate(-50%,-50%)",
-                ["--ringSize" as any]: `${pos.ring}px`,
-                ["--imgSize" as any]: `${pos.img}px`,
-              } as React.CSSProperties)
-            : undefined
-        }
-      >
-        {/* Top player stays exactly as-is. */}
-        <>
+      <>
+        <div
+          className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
+          style={
+            pos
+              ? ({
+                  left: pos.left,
+                  top: pos.top,
+                  transform: "translate(-50%,-50%)",
+                  ["--ringSize" as any]: `${pos.ring}px`,
+                  ["--imgSize" as any]: `${pos.img}px`,
+                } as React.CSSProperties)
+              : undefined
+          }
+        >
+          {/* Top avatar stays exactly as-is. */}
           <div className="map-portrait-ring">
             <div className="map-portrait-img">
               <img src={avatar} alt={tone} />
             </div>
           </div>
+        </div>
 
-          <div className="map-portrait-name">{name}</div>
+        {pos ? (
+          <>
+            <div
+              className="map-portrait-name"
+              style={{
+                position: "absolute",
+                left: pos.left,
+                top: 176, // target: just under A 40% (y≈174)
+                transform: "translate(-50%,-50%)",
+                zIndex: 6,
+                pointerEvents: "none",
+              }}
+            >
+              {name}
+            </div>
 
-          <div className="map-pillrow">
+            <div
+              className="map-pillrow"
+              style={{
+                position: "absolute",
+                left: pos.left,
+                top: 220, // target: just under A 50% (y≈218)
+                transform: "translate(-50%,-50%)",
+                zIndex: 6,
+                pointerEvents: "none",
+              }}
+            >
+
             <div
               className="map-xp"
               style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties}
@@ -1393,10 +1419,11 @@ function BattleInner() {
             <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
               {score == null ? "—" : score}
             </div>
-          </div>
-        </>
-      </div>
-    );
+            </div>
+          </>
+        ) : null}
+      </>
+    );;
   }
 
   function CardSlot({
