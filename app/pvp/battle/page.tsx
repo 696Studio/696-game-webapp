@@ -1,4 +1,5 @@
 "use client";
+
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
@@ -1276,9 +1277,9 @@ function BattleInner() {
 
     // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
     // Top player must stay untouched.
-    const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up only)
-    const BOTTOM_HP_Y = 644; // TeamHP bar row
-    const BOTTOM_NAME_Y = 688; // nickname
+    const BOTTOM_AVATAR_Y = 785; // avatar ring center
+    const BOTTOM_HP_Y = 654; // TeamHP bar row
+    const BOTTOM_NAME_Y = 698; // nickname
 
     const pos = useMemo(() => {
       if (!arenaBox) return null;
@@ -1296,7 +1297,7 @@ function BattleInner() {
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
       where === "top"
-        ? Math.round(arenaBox.h * 0.003)   // ⬆️ ВЕРХНЮЮ СИЛЬНО ВВЕРХ
+        ? -Math.round(arenaBox.h * 0.02)// ⬆️ ВЕРХНЮЮ СИЛЬНО ВВЕРХ
         : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
     
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
@@ -1357,57 +1358,31 @@ function BattleInner() {
     }
 
     return (
-      <>
-        <div
-          className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
-          style={
-            pos
-              ? ({
-                  left: pos.left,
-                  top: pos.top,
-                  transform: "translate(-50%,-50%)",
-                  ["--ringSize" as any]: `${pos.ring}px`,
-                  ["--imgSize" as any]: `${pos.img}px`,
-                } as React.CSSProperties)
-              : undefined
-          }
-        >
-          {/* Top avatar stays exactly as-is. */}
+      <div
+        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
+        style={
+          pos
+            ? ({
+                left: pos.left,
+                top: pos.top,
+                transform: "translate(-50%,-50%)",
+                ["--ringSize" as any]: `${pos.ring}px`,
+                ["--imgSize" as any]: `${pos.img}px`,
+              } as React.CSSProperties)
+            : undefined
+        }
+      >
+        {/* Top player stays exactly as-is. */}
+        <>
           <div className="map-portrait-ring">
             <div className="map-portrait-img">
               <img src={avatar} alt={tone} />
             </div>
           </div>
-        </div>
 
-        {pos ? (
-          <>
-            <div
-              className="map-portrait-name"
-              style={{
-                position: "absolute",
-                left: pos.left,
-                top: 182, // target: just under A 40% (y≈174)
-                transform: "translate(-50%,-50%)",
-                zIndex: 6,
-                pointerEvents: "none",
-              }}
-            >
-              {name}
-            </div>
+          <div className="map-portrait-name">{name}</div>
 
-            <div
-              className="map-pillrow"
-              style={{
-                position: "absolute",
-                left: pos.left,
-                top: 226, // target: just under A 50% (y≈218)
-                transform: "translate(-50%,-50%)",
-                zIndex: 6,
-                pointerEvents: "none",
-              }}
-            >
-
+          <div className="map-pillrow">
             <div
               className="map-xp"
               style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties}
@@ -1419,11 +1394,10 @@ function BattleInner() {
             <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
               {score == null ? "—" : score}
             </div>
-            </div>
-          </>
-        ) : null}
-      </>
-    );;
+          </div>
+        </>
+      </div>
+    );
   }
 
   function CardSlot({
