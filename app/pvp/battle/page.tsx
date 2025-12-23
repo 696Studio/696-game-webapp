@@ -1330,7 +1330,7 @@ function BattleInner() {
           {/* Bottom Name */}
           <div
             className="map-portrait-name"
-            style={{ position: "absolute", left: pos.left, top: BOTTOM_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+            style={{ position: "absolute", left: pos.left, top: 176, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
           >
             {name}
           </div>
@@ -1338,7 +1338,7 @@ function BattleInner() {
           {/* Bottom TeamHP + Score Row */}
           <div
             className="map-pillrow"
-            style={{ position: "absolute", left: pos.left, top: BOTTOM_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+            style={{ position: "absolute", left: pos.left, top: 220, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
           >
             <div
               className="map-xp"
