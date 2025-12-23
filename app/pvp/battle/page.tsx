@@ -1370,7 +1370,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           >
             <div
               className="map-xp"
-              style={{ ["--xp" as any]: `${clamp((hp / Math.max(1, hpMax)) * 100, 0, 100)}%` } as React.CSSProperties}
+              style={{ ["--xp" as any]: `${clamp((hp / Math.max(1, hpMax)) * 100, 0, 100)}%`, ["--xpHue" as any]: `${Math.round(120 * clamp(hp / Math.max(1, hpMax), 0, 1))}` } as React.CSSProperties}
             >
               <div className="map-xp-fill" />
               <div className="map-xp-knob" />
@@ -1412,7 +1412,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           <div className="map-pillrow">
             <div
               className="map-xp"
-              style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%` } as React.CSSProperties}
+              style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%`, ["--xpHue" as any]: `${Math.round(120 * clamp(hp / 30, 0, 1))}` } as React.CSSProperties}
             >
               <div className="map-xp-fill" />
               <div className="map-xp-knob" />
@@ -1998,6 +1998,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 /* Fortnite-style XP bar (safe) */
 .map-xp {
   --xp: 0%;                 /* set 0%..100% from inline style */
+  --xpHue: 120;             /* 120=green → 0=red (set from inline style) */
   --pad: 7px;               /* knob radius (14px / 2) */
 
   position: relative;
@@ -2019,17 +2020,19 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   height: 100%;
   width: var(--xp);
   border-radius: 999px;
+
+  /* Smooth HP color: green (full) -> yellow -> red (low) */
   background: linear-gradient(
     90deg,
-    #3fe8ff 0%,
-    #6cf3ff 40%,
-    #bafcff 70%,
-    #ffffff 100%
+    hsl(var(--xpHue) 90% 40%) 0%,
+    hsl(var(--xpHue) 90% 55%) 100%
   );
+
   box-shadow:
-    0 0 12px rgba(120,240,255,0.80),
+    0 0 12px hsl(var(--xpHue) 90% 55% / 0.75),
     inset 0 0 6px rgba(255,255,255,0.40);
-  transition: width 260ms ease-out;
+
+  transition: width 260ms ease-out, background 260ms ease-out, box-shadow 260ms ease-out;
 }
 
 /* Inner highlight (above fill) */
