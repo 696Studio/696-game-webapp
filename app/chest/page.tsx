@@ -48,6 +48,19 @@ function unwrapCore(bootstrap: any): CoreBootstrap | null {
 const CHEST_COST_SHARDS = 50;
 const INVENTORY_PATH = "/inventory";
 
+const CARD_FRAME_SRC = "/cards/frame/frame_common.png";
+
+function resolveAssetUrl(url: string | null | undefined) {
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url) || url.startsWith("data:")) return url;
+  // migrate legacy paths
+  if (url.startsWith("/items/characters/")) return url.replace("/items/characters/", "/cards/art/characters/");
+  if (url.startsWith("/items/pets/")) return url.replace("/items/pets/", "/cards/art/pets/");
+  if (url.startsWith("items/characters/")) return "/" + url.replace("items/characters/", "cards/art/characters/");
+  if (url.startsWith("items/pets/")) return "/" + url.replace("items/pets/", "cards/art/pets/");
+  return url;
+}
+
 type Phase = "idle" | "opening" | "reveal";
 
 function normalizeRarity(rarity: string | null | undefined) {
@@ -97,25 +110,6 @@ function fxClassFor(fx: RarityFx) {
   if (fx === "rare") return "ui-fx ui-fx-rare";
   return "ui-fx ui-fx-common";
 }
-
-
-function normalizeDropImageUrl(url: string | null | undefined) {
-  if (!url) return null;
-
-  // Keep absolute URLs / Supabase public URLs intact
-  if (/^https?:\/\//i.test(url)) return url;
-
-  // Normalize leading slash
-  const u = url.startsWith("/") ? url : `/${url}`;
-
-  // Migration: items -> cards/art
-  if (u.startsWith("/items/characters/")) return u.replace("/items/characters/", "/cards/art/characters/");
-  if (u.startsWith("/items/pets/")) return u.replace("/items/pets/", "/cards/art/pets/");
-
-  return u;
-}
-
-const CARD_FRAME_URL = "/cards/frame/frame_common.png";
 
 export default function ChestPage() {
   const { telegramId, bootstrap, isTelegramEnv, loading, error, timedOut, refreshSession } =
@@ -942,7 +936,7 @@ export default function ChestPage() {
 
                 <div
                   className={[
-                    "mx-auto w-36 h-36 rounded-[1.2rem] border-2 overflow-hidden",
+                    "mx-auto w-36 h-36 relative rounded-[1.2rem] border-2 overflow-hidden",
                     "bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(0,0,0,0.18))]",
                     "shadow-[0_22px_76px_rgba(0,0,0,0.38)]",
                     rarityFxClass(drop.rarity),
@@ -952,25 +946,24 @@ export default function ChestPage() {
                     boxShadow: `0 0 0 2.3px color-mix(in srgb, ${glow} 41%, transparent), 0 22px 120px color-mix(in srgb, ${glow} 22%, transparent)`,
                   }}
                 >
-                  {normalizeDropImageUrl(drop.image_url) ? (
-                    <div className="relative w-full h-full">
+                  {drop.image_url ? (
+                    <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={normalizeDropImageUrl(drop.image_url) as string}
+                        src={resolveAssetUrl(drop.image_url)}
                         alt={drop.name}
-                        className="absolute inset-0 w-full h-full object-contain p-2"
+                        className="absolute"
+                        style={{ inset: "9%", width: "auto", height: "auto", maxWidth: "100%", maxHeight: "100%", objectFit: "cover" }}
                         draggable={false}
                       />
-                      {/* frame always on top */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={CARD_FRAME_URL}
+                        src={CARD_FRAME_SRC}
                         alt=""
-                        aria-hidden="true"
-                        className="absolute inset-0 w-full h-full object-contain"
+                        className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
                         draggable={false}
                       />
-                    </div>
+                    </>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <div className="text-[13px] ui-subtle">NO IMAGE</div>

@@ -1974,7 +1974,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 .map-portrait-img img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
   border-radius: 999px;
   display: block;
@@ -2252,12 +2252,12 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
         .bb-art {
           position: absolute;
-          inset: 0;
+          inset: 9%;
           z-index: 1;
           background-size: cover;
           background-position: center;
           filter: saturate(1.05) contrast(1.05);
-          transform: scale(1.02);
+          transform: none;
         }
         .bb-art--ph {
           background:
@@ -2273,7 +2273,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   z-index: 5;
   pointer-events: none;
 }

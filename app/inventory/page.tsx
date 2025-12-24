@@ -759,19 +759,20 @@ export default function InventoryPage() {
                         <>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                          src={imgSrc}
-                          alt={ui.item.name}
-                          className={`w-full h-full ${imgFit} transition-transform duration-150 group-hover:scale-[1.03] group-active:scale-[0.98] rounded-[var(--r-lg)]`}
-                          loading="lazy"
-                          draggable={false}
+                            src={imgSrc}
+                            alt={ui.item.name}
+                            className="absolute w-full h-full object-cover transition-transform duration-150 group-hover:scale-[1.03] group-active:scale-[0.98]"
+                            style={{ inset: "9%" }}
+                            loading="lazy"
+                            draggable={false}
                           />
 
                           {/* Frame overlay */}
                           <img
-                          src={CARD_FRAME_SRC}
-                          alt=""
-                          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-                          draggable={false}
+                            src={CARD_FRAME_SRC}
+                            alt=""
+                            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                            draggable={false}
                           />
                         </>
                       ) : (
@@ -891,21 +892,22 @@ export default function InventoryPage() {
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(140px_110px_at_50%_70%,rgba(0,0,0,0.00),rgba(0,0,0,0.44))]" />
               {resolveAssetUrl(selected.item.image_url) ? (
                 <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={resolveAssetUrl(selected.item.image_url)!}
-                  alt={selected.item.name}
-                  className="w-full h-full object-contain"
-                  draggable={false}
-                />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={resolveAssetUrl(selected.item.image_url)!}
+                    alt={selected.item.name}
+                    className="absolute w-full h-full object-cover"
+                    style={{ inset: "9%" }}
+                    draggable={false}
+                  />
 
-                {/* Frame overlay */}
-                <img
-                  src={CARD_FRAME_SRC}
-                  alt=""
-                  className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-                  draggable={false}
-                />
+                  {/* Frame overlay */}
+                  <img
+                    src={CARD_FRAME_SRC}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                    draggable={false}
+                  />
                 </>
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-black/10">
