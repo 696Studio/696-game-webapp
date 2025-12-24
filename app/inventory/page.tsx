@@ -761,8 +761,8 @@ export default function InventoryPage() {
                           <img
                             src={imgSrc}
                             alt={ui.item.name}
-                            className="absolute w-full h-full object-cover transition-transform duration-150 group-hover:scale-[1.03] group-active:scale-[0.98]"
-                            style={{ inset: "9%" }}
+                            className="absolute w-full h-full object-contain transition-transform duration-150 group-hover:scale-[1.03] group-active:scale-[0.98]"
+                            style={{ inset: "18%" }}
                             loading="lazy"
                             draggable={false}
                           />
@@ -896,8 +896,8 @@ export default function InventoryPage() {
                   <img
                     src={resolveAssetUrl(selected.item.image_url)!}
                     alt={selected.item.name}
-                    className="absolute w-full h-full object-cover"
-                    style={{ inset: "9%" }}
+                    className="absolute w-full h-full object-contain"
+                    style={{ inset: "18%" }}
                     draggable={false}
                   />
 

@@ -953,7 +953,7 @@ export default function ChestPage() {
                         src={resolveAssetUrl(drop.image_url)}
                         alt={drop.name}
                         className="absolute"
-                        style={{ inset: "9%", width: "auto", height: "auto", maxWidth: "100%", maxHeight: "100%", objectFit: "cover" }}
+                        style={{ inset: "18%", width: "auto", height: "auto", maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
                         draggable={false}
                       />
                       {/* eslint-disable-next-line @next/next/no-img-element */}

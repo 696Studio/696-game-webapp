@@ -2252,9 +2252,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
         .bb-art {
           position: absolute;
-          inset: 9%;
+          inset: 18%;
           z-index: 1;
-          background-size: cover;
+          background-size: contain;
+          background-repeat: no-repeat;
           background-position: center;
           filter: saturate(1.05) contrast(1.05);
           transform: none;
