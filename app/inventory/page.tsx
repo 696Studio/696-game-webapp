@@ -762,7 +762,7 @@ export default function InventoryPage() {
                             src={imgSrc}
                             alt={ui.item.name}
                             className="absolute w-full h-full object-contain transition-transform duration-150 group-hover:scale-[1.03] group-active:scale-[0.98]"
-                            style={{ inset: "22%", objectPosition: "center" }}
+                            style={{ inset: "28% 30%", objectPosition: "50% 50%", objectFit: "contain", transform: "translateX(-2%) scale(0.88)"}}
                             loading="lazy"
                             draggable={false}
                           />
@@ -897,7 +897,7 @@ export default function InventoryPage() {
                     src={resolveAssetUrl(selected.item.image_url)!}
                     alt={selected.item.name}
                     className="absolute w-full h-full object-contain"
-                    style={{ inset: "22%", objectPosition: "center" }}
+                    style={{ inset: "28% 30%", objectPosition: "50% 50%", objectFit: "contain", transform: "translateX(-2%) scale(0.88)"}}
                     draggable={false}
                   />
 
