@@ -1,26 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { useGameSessionContext } from "../context/GameSessionContext";
-import { Chest3D } from "../components/chest/Chest3D";
 
-type DropItem = {
+type InventoryItem = {
   id: string;
-  name: string;
-  rarity: string;
-  power_value: number;
-  image_url: string | null;
+  created_at?: string;
+  obtained_from?: string | null;
+  item: {
+    id: string;
+    name: string;
+    rarity: string;
+    type: string;
+    power_value: number;
+    image_url?: string | null;
+  };
 };
 
-type ChestResponse = {
-  drop?: DropItem;
-  newBalance?: {
-    soft_balance: number;
-    hard_balance: number;
-  };
-  totalPowerAfter?: number;
+type InventoryResponse = {
+  items?: InventoryItem[];
+  totalPower?: number;
   error?: string;
-  code?: string;
 };
 
 type CoreBootstrap = {
@@ -45,25 +46,11 @@ function unwrapCore(bootstrap: any): CoreBootstrap | null {
   return core as CoreBootstrap;
 }
 
-const CHEST_COST_SHARDS = 50;
-const INVENTORY_PATH = "/inventory";
+type RarityFilter = "all" | "common" | "rare" | "epic" | "legendary";
+type SortMode = "power_desc" | "power_asc" | "newest";
+type TypeFilter = "all" | "emblem" | "item" | "character" | "pet";
 
-const CARD_FRAME_SRC = "/cards/frame/frame_common.png";
-
-function resolveAssetUrl(url: string | null | undefined) {
-  if (!url) return "";
-  if (/^https?:\/\//i.test(url) || url.startsWith("data:")) return url;
-  // migrate legacy paths
-  if (url.startsWith("/items/characters/")) return url.replace("/items/characters/", "/cards/art/characters/");
-  if (url.startsWith("/items/pets/")) return url.replace("/items/pets/", "/cards/art/pets/");
-  if (url.startsWith("items/characters/")) return "/" + url.replace("items/characters/", "cards/art/characters/");
-  if (url.startsWith("items/pets/")) return "/" + url.replace("items/pets/", "cards/art/pets/");
-  return url;
-}
-
-type Phase = "idle" | "opening" | "reveal";
-
-function normalizeRarity(rarity: string | null | undefined) {
+function normalizeRarity(rarity: string | null | undefined): Exclude<RarityFilter, "all"> {
   const r = String(rarity || "").trim().toLowerCase();
   if (r === "common" || r === "rare" || r === "epic" || r === "legendary") return r;
   return "common";
@@ -81,202 +68,268 @@ function rarityFxClass(r: string | null | undefined) {
   return "ui-rarity-common";
 }
 
-type RarityFx = "none" | "rare" | "epic" | "legendary";
-function rarityFx(r: string | null | undefined): RarityFx {
+function rarityColorVar(r: string | null | undefined) {
   const rr = normalizeRarity(r);
-  if (rr === "legendary") return "legendary";
-  if (rr === "epic") return "epic";
-  if (rr === "rare") return "rare";
-  return "none";
-}
-
-function rarityBannerText(fx: RarityFx) {
-  if (fx === "legendary") return "LEGENDARY DROP";
-  if (fx === "epic") return "EPIC DROP";
-  if (fx === "rare") return "RARE DROP";
-  return "";
-}
-
-function fxColor(fx: RarityFx) {
-  if (fx === "legendary") return "var(--rarity-legendary)";
-  if (fx === "epic") return "var(--rarity-epic)";
-  if (fx === "rare") return "var(--rarity-rare)";
+  if (rr === "legendary") return "var(--rarity-legendary)";
+  if (rr === "epic") return "var(--rarity-epic)";
+  if (rr === "rare") return "var(--rarity-rare)";
   return "var(--rarity-common)";
 }
 
-function fxClassFor(fx: RarityFx) {
-  if (fx === "legendary") return "ui-fx ui-fx-legendary";
-  if (fx === "epic") return "ui-fx ui-fx-epic";
-  if (fx === "rare") return "ui-fx ui-fx-rare";
-  return "ui-fx ui-fx-common";
+function normalizeType(t: string | null | undefined): TypeFilter {
+  const x = String(t || "").trim().toLowerCase();
+  if (!x) return "item";
+  if (x === "emblem" || x === "emblems") return "emblem";
+  if (x === "item" || x === "items") return "item";
+  if (x === "character" || x === "characters" || x === "hero" || x === "heroes") return "character";
+  if (x === "pet" || x === "pets") return "pet";
+  return "item";
 }
 
-export default function ChestPage() {
-  const { telegramId, bootstrap, isTelegramEnv, loading, error, timedOut, refreshSession } =
-    useGameSessionContext() as any;
+const CARD_FRAME_SRC = "/cards/frame/frame_common.png";
+
+function resolveAssetUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+
+  // keep absolute urls as-is
+  if (/^https?:\/\//i.test(s) || s.startsWith("data:")) return s;
+
+  // normalize leading slash
+  const x = s.startsWith("/") ? s : `/${s}`;
+
+  // migrate old items paths -> new cards/art paths
+  // examples:
+  // /items/characters/char_1.png -> /cards/art/characters/char_1.png
+  // /items/pets/pet_1.png -> /cards/art/pets/pet_1.png
+  if (x.startsWith("/items/characters/")) return x.replace("/items/characters/", "/cards/art/characters/");
+  if (x.startsWith("/items/pets/")) return x.replace("/items/pets/", "/cards/art/pets/");
+
+  if (x.startsWith("/items/")) return x.replace("/items/", "/cards/art/");
+
+  return x;
+}
+
+function formatCompact(n: number) {
+  const x = Number.isFinite(n) ? n : 0;
+  if (x >= 1_000_000_000) return `${(x / 1_000_000_000).toFixed(1)}B`;
+  if (x >= 1_000_000) return `${(x / 1_000_000).toFixed(1)}M`;
+  if (x >= 10_000) return `${Math.round(x / 1000)}K`;
+  return `${x}`;
+}
+
+function formatDate(iso?: string) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const d = new Date(t);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+}
+
+const LS_LAST_DROP_ID = "696_last_drop_id";
+const LS_SEEN_IDS = "696_seen_item_ids";
+
+function safeReadJSON<T>(s: string | null, fallback: T): T {
+  try {
+    if (!s) return fallback;
+    return JSON.parse(s) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+export default function InventoryPage() {
+  const {
+    loading: sessionLoading,
+    error: sessionError,
+    telegramId,
+    bootstrap,
+    isTelegramEnv,
+    timedOut,
+    refreshSession,
+  } = useGameSessionContext() as any;
+
+  const core = useMemo(() => unwrapCore(bootstrap), [bootstrap]);
+  const hasCore = !!core;
+
+  const [inventory, setInventory] = useState<InventoryResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const [rarityFilter, setRarityFilter] = useState<RarityFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("power_desc");
+
+  const [selected, setSelected] = useState<InventoryItem | null>(null);
 
   const [showGate, setShowGate] = useState(false);
   useEffect(() => {
-    const t = window.setTimeout(() => setShowGate(true), 1200);
-    return () => window.clearTimeout(t);
+    const t = setTimeout(() => setShowGate(true), 900);
+    return () => clearTimeout(t);
   }, []);
 
-  const [overrideBootstrap, setOverrideBootstrap] = useState<any | null>(null);
+  // NEW system (local)
+  const [lastDropId, setLastDropId] = useState<string | null>(null);
+  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
 
-  const [result, setResult] = useState<ChestResponse | null>(null);
-  const [opening, setOpening] = useState(false);
+  useEffect(() => {
+    const ld = typeof window !== "undefined" ? window.localStorage.getItem(LS_LAST_DROP_ID) : null;
+    const seen = typeof window !== "undefined" ? window.localStorage.getItem(LS_SEEN_IDS) : null;
 
-  // ✅ anti double-open guard
-  const openingRef = useRef(false);
+    setLastDropId(ld);
+    const arr = safeReadJSON<string[]>(seen, []);
+    setSeenIds(new Set(arr.filter(Boolean)));
+  }, []);
 
-  const [refreshing, setRefreshing] = useState(false);
-
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [fxSeed, setFxSeed] = useState(0);
-  const revealTimerRef = useRef<number | null>(null);
-
-  // Reveal overlay short life timer (so it feels like impact)
-  const [revealOverlayOn, setRevealOverlayOn] = useState(false);
-  const revealOverlayTimerRef = useRef<number | null>(null);
-
-  const core = useMemo(
-    () => unwrapCore(overrideBootstrap || bootstrap),
-    [overrideBootstrap, bootstrap]
-  );
-  const hasCore = !!core;
-
-  const soft = core?.balance?.soft_balance ?? 0;
-  const hard = core?.balance?.hard_balance ?? 0;
-  const totalPower = core?.totalPower ?? 0;
-  const canAfford = soft >= CHEST_COST_SHARDS;
-
-  async function refreshBootstrap(effectiveTelegramId: string) {
-    setRefreshing(true);
+  const persistSeen = (next: Set<string>) => {
+    setSeenIds(new Set(next));
     try {
-      const res = await fetch("/api/bootstrap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telegramId: effectiveTelegramId }),
-      });
+      window.localStorage.setItem(LS_SEEN_IDS, JSON.stringify(Array.from(next)));
+    } catch {}
+  };
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Bootstrap refresh failed");
-      setOverrideBootstrap(data);
-    } finally {
-      setRefreshing(false);
+  const markSeen = (invId: string) => {
+    if (!invId) return;
+    const next = new Set(seenIds);
+    next.add(invId);
+    persistSeen(next);
+
+    if (lastDropId && invId === lastDropId) {
+      setLastDropId(null);
+      try {
+        window.localStorage.removeItem(LS_LAST_DROP_ID);
+      } catch {}
     }
-  }
+  };
 
   const handleResync = () => {
-    setOverrideBootstrap(null);
-    setResult(null);
-    setPhase("idle");
-    setRevealOverlayOn(false);
-    if (revealOverlayTimerRef.current) {
-      window.clearTimeout(revealOverlayTimerRef.current);
-      revealOverlayTimerRef.current = null;
-    }
+    setInventory(null);
+    setSelected(null);
     refreshSession?.();
   };
 
-  const triggerRevealOverlay = () => {
-    setRevealOverlayOn(true);
-    if (revealOverlayTimerRef.current) window.clearTimeout(revealOverlayTimerRef.current);
-    revealOverlayTimerRef.current = window.setTimeout(() => {
-      setRevealOverlayOn(false);
-      revealOverlayTimerRef.current = null;
-    }, 720);
-  };
-
-  async function openChestWithReveal() {
+  useEffect(() => {
     if (!telegramId) return;
 
-    if (openingRef.current) return;
-    openingRef.current = true;
+    let cancelled = false;
 
-    try {
-      if (!canAfford) {
-        setResult({ error: "Insufficient funds", code: "INSUFFICIENT_FUNDS" });
-        setPhase("reveal");
-        setFxSeed((s) => s + 1);
-        triggerRevealOverlay();
-        return;
+    async function loadInventory() {
+      try {
+        setLoading(true);
+        const res = await fetch(`/api/inventory?telegram_id=${encodeURIComponent(telegramId)}`);
+        const data: InventoryResponse = await res.json();
+        if (cancelled) return;
+        setInventory(data);
+      } catch (err) {
+        console.error("Inventory load error:", err);
+        if (!cancelled) setInventory({ error: "Request failed" });
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-
-      if (revealTimerRef.current) {
-        window.clearTimeout(revealTimerRef.current);
-        revealTimerRef.current = null;
-      }
-
-      setOpening(true);
-      setResult(null);
-      setPhase("opening");
-
-      const minRevealMs = phase === "reveal" ? 450 : 1200;
-
-      const animDone = new Promise<void>((resolve) => {
-        revealTimerRef.current = window.setTimeout(() => {
-          revealTimerRef.current = null;
-          resolve();
-        }, minRevealMs);
-      });
-
-      const fetchDone = (async () => {
-        try {
-          const res = await fetch("/api/chest/open", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              telegramId,
-              chestCode: "soft_basic",
-            }),
-          });
-
-          const data: ChestResponse = await res.json();
-          setResult(data);
-
-          if (!res.ok) return;
-          await refreshBootstrap(telegramId);
-        } catch (e) {
-          console.error(e);
-          setResult({ error: "Request failed" });
-        }
-      })();
-
-      await Promise.all([animDone, fetchDone]);
-
-      setOpening(false);
-      setPhase("reveal");
-      setFxSeed((s) => s + 1);
-      triggerRevealOverlay();
-    } finally {
-      openingRef.current = false;
     }
-  }
 
-  const handleOpenChest = async () => {
-    await openChestWithReveal();
-  };
+    loadInventory();
 
-  const handleOpenAgain = async () => {
-    setResult(null);
-    await openChestWithReveal();
-  };
-
-  useEffect(() => {
     return () => {
-      if (revealTimerRef.current) {
-        window.clearTimeout(revealTimerRef.current);
-        revealTimerRef.current = null;
-      }
-      if (revealOverlayTimerRef.current) {
-        window.clearTimeout(revealOverlayTimerRef.current);
-        revealOverlayTimerRef.current = null;
-      }
-      openingRef.current = false;
+      cancelled = true;
     };
-  }, []);
+  }, [telegramId]);
 
+  // lock scroll when modal open
+  useEffect(() => {
+    if (!selected) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelected(null);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [selected]);
+
+  // when selecting an item -> mark seen
+  useEffect(() => {
+    if (!selected?.id) return;
+    markSeen(selected.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
+
+  const items: InventoryItem[] = inventory?.items ?? [];
+  const totalPower =
+    typeof inventory?.totalPower === "number" ? inventory.totalPower : core?.totalPower ?? 0;
+
+  const isNewItem = (ui: InventoryItem) => {
+    if (!ui?.id) return false;
+    if (!lastDropId) return false;
+    if (seenIds.has(ui.id)) return false;
+    return ui.id === lastDropId;
+  };
+
+  const filteredSortedItems = useMemo(() => {
+    const baseByType =
+      typeFilter === "all" ? items : items.filter((ui) => normalizeType(ui.item?.type) === typeFilter);
+
+    const baseByRarity =
+      rarityFilter === "all"
+        ? baseByType
+        : baseByType.filter((ui) => normalizeRarity(ui.item?.rarity) === rarityFilter);
+
+    const copy = [...baseByRarity];
+
+    copy.sort((a, b) => {
+      const ap = Number(a?.item?.power_value ?? 0);
+      const bp = Number(b?.item?.power_value ?? 0);
+
+      if (sortMode === "power_asc") return ap - bp;
+      if (sortMode === "power_desc") return bp - ap;
+
+      const at = a.created_at ? Date.parse(a.created_at) : 0;
+      const bt = b.created_at ? Date.parse(b.created_at) : 0;
+      return bt - at;
+    });
+
+    // NEW всегда сверху
+    copy.sort((a, b) => Number(isNewItem(b)) - Number(isNewItem(a)));
+
+    return copy;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, rarityFilter, sortMode, typeFilter, lastDropId, seenIds]);
+
+  const shownCount = filteredSortedItems.length;
+
+  const rarityOptions: { key: RarityFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "common", label: "Common" },
+    { key: "rare", label: "Rare" },
+    { key: "epic", label: "Epic" },
+    { key: "legendary", label: "Legendary" },
+  ];
+
+  const typeOptions: { key: TypeFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "emblem", label: "Emblems" },
+    { key: "item", label: "Items" },
+    { key: "character", label: "Characters" },
+    { key: "pet", label: "Pets" },
+  ];
+
+  const pillBase =
+    "ui-pill transition-all duration-150 ease-out font-extrabold uppercase tracking-[0.18em] text-[11px] px-4 py-2 hover:-translate-y-[1px] active:translate-y-[1px]";
+  const pillActive =
+    "border-[rgba(88,240,255,0.45)] text-[color:var(--text)] bg-[rgba(88,240,255,0.08)] shadow-[0_12px_40px_rgba(88,240,255,0.10)]";
+  const pillIdle = "border-[color:var(--border)] hover:bg-[rgba(255,255,255,0.06)] opacity-90";
+
+  // ---------- UI ----------
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
@@ -289,11 +342,11 @@ export default function ChestPage() {
   }
 
   if (!hasCore) {
-    if (!showGate || loading) {
+    if (!showGate || sessionLoading) {
       return (
         <main className="min-h-screen flex items-center justify-center px-4 pb-24">
           <div className="w-full max-w-md ui-card p-5 text-center">
-            <div className="text-sm font-semibold">Loading...</div>
+            <div className="text-sm font-semibold">Loading inventory...</div>
             <div className="mt-2 text-sm ui-subtle">Syncing session.</div>
             <div className="mt-4 ui-progress">
               <div className="w-1/3 opacity-70 animate-pulse" />
@@ -303,7 +356,7 @@ export default function ChestPage() {
       );
     }
 
-    if (timedOut || !!error) {
+    if (timedOut || !!sessionError) {
       return (
         <main className="min-h-screen flex items-center justify-center px-4 pb-24">
           <div className="w-full max-w-md ui-card p-5">
@@ -317,10 +370,10 @@ export default function ChestPage() {
                 : "Something went wrong while syncing your profile."}
             </div>
 
-            {error && (
+            {sessionError && (
               <div className="mt-4 p-3 rounded-[var(--r-md)] border border-[color:var(--border)] bg-[rgba(255,255,255,0.03)]">
                 <div className="ui-subtitle mb-1">Details</div>
-                <div className="text-xs break-words">{String(error)}</div>
+                <div className="text-xs break-words">{String(sessionError)}</div>
               </div>
             )}
 
@@ -328,6 +381,7 @@ export default function ChestPage() {
               <button onClick={handleResync} className="ui-btn ui-btn-primary w-full">
                 Re-sync
               </button>
+
               <div className="text-[11px] ui-subtle text-center">
                 If it keeps failing, reopen the Mini App from the bot menu.
               </div>
@@ -347,12 +401,12 @@ export default function ChestPage() {
     );
   }
 
-  if (loading || !telegramId) {
+  if (!telegramId) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-sm font-semibold">Loading...</div>
-          <div className="mt-2 text-sm ui-subtle">Syncing session.</div>
+          <div className="text-sm font-semibold">Loading inventory...</div>
+          <div className="mt-2 text-sm ui-subtle">Getting Telegram ID.</div>
           <div className="mt-4 ui-progress">
             <div className="w-1/3 opacity-70 animate-pulse" />
           </div>
@@ -361,37 +415,13 @@ export default function ChestPage() {
     );
   }
 
-  const drop = result?.drop;
-  const isError = !!result?.error;
-  const showReveal = phase === "reveal" && !!result;
-  const fx = drop ? rarityFx(drop.rarity) : "none";
-  const bannerText = rarityBannerText(fx);
-  const glow = fxColor(fx);
-
-  // overlay should feel like an impact only on successful drop reveal
-  const showImpactOverlay = revealOverlayOn && showReveal && !isError && !!drop && fx !== "none";
-  const overlayGlow = fx !== "none" ? glow : "var(--accent)";
-
   return (
-    <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
+    <main className="min-h-screen px-4 pt-6 pb-28 flex justify-center">
+      {/* твой локальный CSS (как был) */}
       <style jsx global>{`
-        @keyframes bannerPop {
-          0% {
-            transform: translateX(-50%) translateY(-10px) scale(0.92);
-            opacity: 0;
-          }
-          65% {
-            transform: translateX(-50%) translateY(0) scale(1.03);
-            opacity: 1;
-          }
-          100% {
-            transform: translateX(-50%) translateY(0) scale(1);
-            opacity: 1;
-          }
-        }
-        @keyframes popIn {
+        @keyframes invModalIn {
           from {
-            transform: translateY(16px) scale(0.985);
+            transform: translateY(40px) scale(0.97);
             opacity: 0;
           }
           to {
@@ -399,652 +429,533 @@ export default function ChestPage() {
             opacity: 1;
           }
         }
-        @keyframes altarFog {
+        @keyframes invShine {
           0% {
-            transform: translateX(-6%) translateY(0);
-            opacity: 0.25;
-          }
-          50% {
-            transform: translateX(6%) translateY(-2%);
-            opacity: 0.4;
-          }
-          100% {
-            transform: translateX(-6%) translateY(0);
-            opacity: 0.25;
-          }
-        }
-        @keyframes altarRays {
-          0% {
-            opacity: 0.18;
-            transform: translateY(0);
-          }
-          50% {
-            opacity: 0.32;
-            transform: translateY(-1%);
-          }
-          100% {
-            opacity: 0.18;
-            transform: translateY(0);
-          }
-        }
-
-        /* =========================
-           REVEAL IMPACT OVERLAY (full screen)
-        ========================== */
-        @keyframes revealFlash {
-          0% {
-            opacity: 0;
-            transform: scale(0.98);
-            filter: blur(0px);
-          }
-          14% {
-            opacity: 1;
-            transform: scale(1);
-            filter: blur(0.5px);
-          }
-          100% {
-            opacity: 0;
-            transform: scale(1.02);
-            filter: blur(1.6px);
-          }
-        }
-        @keyframes particleDriftA {
-          0% {
-            transform: translate3d(-6%, 8%, 0) scale(1);
-            opacity: 0.0;
-          }
-          12% {
-            opacity: 0.55;
-          }
-          100% {
-            transform: translate3d(8%, -10%, 0) scale(1.03);
+            transform: translateX(-120%) rotate(14deg);
             opacity: 0;
           }
-        }
-        @keyframes particleDriftB {
-          0% {
-            transform: translate3d(10%, 10%, 0) scale(1);
-            opacity: 0.0;
+          17% {
+            opacity: 0.11;
           }
-          10% {
-            opacity: 0.42;
+          60% {
+            opacity: 0;
           }
           100% {
-            transform: translate3d(-8%, -12%, 0) scale(1.05);
+            transform: translateX(120%) rotate(14deg);
             opacity: 0;
           }
         }
 
-        .reveal-overlay {
-          position: fixed;
-          inset: 0;
-          z-index: 80;
-          pointer-events: none;
-          animation: revealFlash 720ms cubic-bezier(0.18, 0.8, 0.2, 1) 1;
-          mix-blend-mode: screen;
-        }
-
-        .reveal-overlay::before {
-          content: "";
-          position: absolute;
-          inset: -20px;
-          background:
-            radial-gradient(1100px 540px at 50% 18%,
-              color-mix(in srgb, var(--revealGlow) 30%, transparent) 0%,
-              transparent 62%
-            ),
-            radial-gradient(900px 520px at 65% 28%,
-              color-mix(in srgb, var(--revealGlow) 18%, transparent) 0%,
-              transparent 66%
-            ),
-            linear-gradient(to bottom,
-              rgba(255,255,255,0.05),
-              transparent 45%,
-              rgba(0,0,0,0.18)
-            );
-          opacity: 0.95;
-          filter: blur(0.2px);
-        }
-
-        .reveal-overlay::after {
-          content: "";
-          position: absolute;
-          inset: -40px;
-          background:
-            radial-gradient(2px 2px at 12% 34%, rgba(255,255,255,0.55), transparent 60%),
-            radial-gradient(2px 2px at 18% 54%, rgba(255,255,255,0.42), transparent 60%),
-            radial-gradient(2px 2px at 26% 28%, rgba(255,255,255,0.32), transparent 60%),
-            radial-gradient(2px 2px at 33% 62%, rgba(255,255,255,0.44), transparent 60%),
-            radial-gradient(2px 2px at 41% 38%, rgba(255,255,255,0.30), transparent 60%),
-            radial-gradient(2px 2px at 52% 24%, rgba(255,255,255,0.45), transparent 60%),
-            radial-gradient(2px 2px at 58% 58%, rgba(255,255,255,0.36), transparent 60%),
-            radial-gradient(2px 2px at 66% 36%, rgba(255,255,255,0.40), transparent 60%),
-            radial-gradient(2px 2px at 74% 52%, rgba(255,255,255,0.34), transparent 60%),
-            radial-gradient(2px 2px at 82% 30%, rgba(255,255,255,0.42), transparent 60%),
-            radial-gradient(2px 2px at 88% 62%, rgba(255,255,255,0.30), transparent 60%),
-            radial-gradient(2px 2px at 92% 42%, rgba(255,255,255,0.38), transparent 60%);
-          opacity: 0;
-          animation: particleDriftA 720ms cubic-bezier(0.18, 0.8, 0.2, 1) 1;
-        }
-
-        .reveal-overlay .particles {
-          position: absolute;
-          inset: -40px;
-          background:
-            radial-gradient(2px 2px at 14% 24%, rgba(255,255,255,0.40), transparent 60%),
-            radial-gradient(2px 2px at 22% 72%, rgba(255,255,255,0.34), transparent 60%),
-            radial-gradient(2px 2px at 36% 42%, rgba(255,255,255,0.30), transparent 60%),
-            radial-gradient(2px 2px at 44% 68%, rgba(255,255,255,0.38), transparent 60%),
-            radial-gradient(2px 2px at 56% 36%, rgba(255,255,255,0.34), transparent 60%),
-            radial-gradient(2px 2px at 64% 78%, rgba(255,255,255,0.30), transparent 60%),
-            radial-gradient(2px 2px at 76% 46%, rgba(255,255,255,0.40), transparent 60%),
-            radial-gradient(2px 2px at 84% 70%, rgba(255,255,255,0.34), transparent 60%),
-            radial-gradient(2px 2px at 90% 30%, rgba(255,255,255,0.32), transparent 60%);
-          opacity: 0;
-          animation: particleDriftB 720ms cubic-bezier(0.18, 0.8, 0.2, 1) 1;
-          mix-blend-mode: screen;
-        }
-
-        /* =========================
-           RARITY WAVE (under banner)
-        ========================== */
-        @keyframes rarityWave {
-          0% {
-            transform: translateX(-50%) scaleX(0.55);
-            opacity: 0;
-            filter: blur(10px);
-          }
-          18% {
-            opacity: 0.88;
-          }
-          100% {
-            transform: translateX(-50%) scaleX(1.18);
-            opacity: 0;
-            filter: blur(18px);
-          }
-        }
-
-        .rarity-wave {
-          pointer-events: none;
-          position: absolute;
-          left: 50%;
-          top: 40px;
-          width: min(680px, 92%);
-          height: 96px;
-          transform: translateX(-50%);
-          background:
-            radial-gradient(closest-side at 50% 50%,
-              color-mix(in srgb, var(--waveGlow) 28%, transparent) 0%,
-              transparent 70%
-            ),
-            radial-gradient(closest-side at 50% 60%,
-              color-mix(in srgb, var(--waveGlow) 16%, transparent) 0%,
-              transparent 74%
-            );
-          animation: rarityWave 860ms cubic-bezier(0.18, 0.8, 0.2, 1) 1;
-          mix-blend-mode: screen;
-        }
-
-        /* =========================
-           ALTAR / STAGE
-        ========================== */
-        .altar {
+        .inv-tile {
           position: relative;
+          will-change: transform, box-shadow;
+          box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--tile-glow, #fff8) 38%, transparent),
+            0 0 10px color-mix(in srgb, var(--tile-glow, #fff8) 7%, transparent);
+          background: linear-gradient(
+              105deg,
+              color-mix(in srgb, var(--tile-glow, #fff8) 4%, transparent 92%) 80%,
+              transparent 100%
+            ),
+            var(--panel);
+          transition: transform 0.16s cubic-bezier(0.18, 0.91, 0.47, 1.06),
+            box-shadow 0.16s cubic-bezier(0.18, 0.91, 0.47, 1.06),
+            filter 0.11s cubic-bezier(0.24, 1.02, 0.45, 1.05);
+        }
+        .inv-tile:hover,
+        .inv-tile:focus-visible {
+          transform: translateY(-7px) scale(1.033);
+          z-index: 3;
+          filter: brightness(1.05) saturate(1.1);
+          box-shadow: 0 9px 38px 0 color-mix(in srgb, var(--tile-glow, #fff8) 32%, transparent),
+            0 0 0 1.9px var(--tile-outline, transparent),
+            0 1.6px 26px 0 color-mix(in srgb, var(--tile-glow, #fff8) 13%, transparent);
+        }
+        .inv-tile:active {
+          transform: translateY(1.7px) scale(0.985);
+          filter: brightness(0.96);
+          z-index: 2;
+          box-shadow: 0 1px 11px 0 color-mix(in srgb, var(--tile-glow, #fff8) 14%, transparent),
+            0 0 0 1px var(--tile-outline, transparent);
+        }
+
+        .inv-modal {
+          animation: invModalIn 185ms cubic-bezier(0.18, 0.74, 0.28, 1.03);
+          will-change: transform, opacity;
+        }
+
+        .inv-tile-power {
+          background: linear-gradient(
+              92deg,
+              color-mix(in srgb, var(--tile-glow, #fffc) 92%, transparent 76%),
+              color-mix(in srgb, #050a2e 18%, transparent 64%)
+            ),
+            rgba(0, 0, 0, 0.74);
+          border: 1.2px solid rgba(255, 255, 255, 0.18);
+          backdrop-filter: blur(6px) saturate(1.03);
+          box-shadow: 0 2.5px 10px 0 color-mix(in srgb, var(--tile-glow, #fff8) 16%, transparent);
+        }
+
+        .inv-tile-image {
+          transition: box-shadow 0.15s cubic-bezier(0.31, 1.15, 0.35, 1.08),
+            transform 0.14s cubic-bezier(0.31, 1.15, 0.35, 1.08);
+          box-shadow: 0 2px 10px 0 color-mix(in srgb, var(--tile-glow, #fff8) 6%, transparent);
+        }
+
+        .inv-tile-title {
+          font-size: 1.07rem;
+          letter-spacing: 0.001em;
+          font-weight: 800;
+          line-height: 1.13;
+        }
+
+        .inv-tile-title,
+        .inv-tile-type-label {
+          white-space: nowrap;
           overflow: hidden;
-          border-radius: var(--r-xl);
+          text-overflow: ellipsis;
         }
 
-        .altar::before {
-          content: "";
-          position: absolute;
-          inset: -20px;
-          pointer-events: none;
-          background:
-            radial-gradient(900px 420px at 50% -8%, rgba(88, 240, 255, 0.22) 0%, transparent 62%),
-            radial-gradient(720px 520px at 70% 34%, rgba(184, 92, 255, 0.16) 0%, transparent 65%),
-            radial-gradient(720px 520px at 30% 44%, rgba(255, 204, 87, 0.10) 0%, transparent 70%),
-            linear-gradient(to bottom, rgba(255,255,255,0.05), transparent 40%, rgba(0,0,0,0.22));
-          opacity: 0.95;
+        .inv-modal-img {
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.26));
+          box-shadow: 0 7px 34px 0 color-mix(in srgb, var(--tile-glow, #fff8) 16%, transparent);
+        }
+        .inv-modal-img img {
+          box-shadow: 0 6px 22px 0 color-mix(in srgb, var(--tile-glow, #fff8) 11%, transparent);
         }
 
-        .altar .rays {
-          position: absolute;
-          inset: -20px;
-          pointer-events: none;
-          opacity: 0.22;
-          animation: altarRays 4.8s ease-in-out infinite;
-          background:
-            conic-gradient(from 200deg at 50% 34%,
-              rgba(88,240,255,0.0),
-              rgba(88,240,255,0.10),
-              rgba(184,92,255,0.08),
-              rgba(255,204,87,0.06),
-              rgba(88,240,255,0.0)
-            );
-          mix-blend-mode: screen;
-          filter: blur(0.4px);
+        .inv-modal-overlay {
+          background: radial-gradient(ellipse at 70% 10%, #181a2328 0%, #010101ef 100%);
+          backdrop-filter: blur(2.5px) saturate(1.035);
+          pointer-events: all;
         }
 
-        .altar .fog {
-          position: absolute;
-          inset: -20px;
-          pointer-events: none;
-          opacity: 0.35;
-          animation: altarFog 5.6s ease-in-out infinite;
-          background:
-            radial-gradient(680px 240px at 50% 66%, rgba(255,255,255,0.10), transparent 70%),
-            radial-gradient(560px 200px at 44% 72%, rgba(88,240,255,0.08), transparent 72%),
-            radial-gradient(520px 180px at 60% 76%, rgba(184,92,255,0.06), transparent 72%);
-          filter: blur(8px);
-        }
-
-        .altar .platform {
-          position: absolute;
-          left: 50%;
-          bottom: 28px;
-          transform: translateX(-50%);
-          width: 240px;
-          height: 82px;
-          border-radius: 999px;
-          border: 1px solid rgba(88,240,255,0.24);
-          background: radial-gradient(circle at 50% 40%, rgba(88,240,255,0.18), transparent 70%);
-          box-shadow:
-            0 18px 70px rgba(0,0,0,0.35),
-            0 18px 70px rgba(88,240,255,0.12);
-          pointer-events: none;
-        }
-
-        .chest-wrap {
-          position: relative;
-          width: 152px;
-          height: 152px;
-          margin: 0 auto;
-          z-index: 5;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 1.2rem;
-          overflow: visible;
-        }
-
-        .chest-canvas {
-          position: absolute;
-          inset: -22px;
-          pointer-events: none;
-          filter: drop-shadow(0 16px 44px rgba(0, 0, 0, 0.45));
-        }
-
-        @media (max-width: 768px) {
-          .chest-wrap {
-            width: 120px;
-            height: 120px;
-          }
-          .chest-canvas {
-            inset: -24px;
-          }
-          .altar .platform {
-            width: 210px;
-            height: 72px;
-          }
-        }
-
-        /* =========================
-           UI FX PRIMITIVES (auto classes)
-        ========================== */
-        @keyframes uiFxShimmer {
-          0% {
-            transform: translateX(-140%) rotate(10deg);
-            opacity: 0;
-          }
-          16% {
-            opacity: 0.22;
+        @keyframes newPulse {
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 1;
           }
           55% {
-            opacity: 0.14;
-          }
-          100% {
-            transform: translateX(140%) rotate(10deg);
-            opacity: 0;
+            transform: scale(1.06);
+            opacity: 0.92;
           }
         }
-
-        .ui-fx {
-          position: relative;
-          overflow: hidden;
-          will-change: transform;
-        }
-
-        .ui-fx::after {
-          content: "";
+        .inv-new-badge {
           position: absolute;
-          inset: -22px;
-          pointer-events: none;
-          background:
-            linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
-          transform: translateX(-140%) rotate(10deg);
-          opacity: 0;
-          animation: uiFxShimmer 3.9s cubic-bezier(0.6,0,.69,1.02) infinite;
-        }
-
-        .ui-fx-common { --fxGlow: rgba(255,255,255,0.18); }
-        .ui-fx-rare { --fxGlow: color-mix(in srgb, var(--rarity-rare) 40%, transparent); }
-        .ui-fx-epic { --fxGlow: color-mix(in srgb, var(--rarity-epic) 40%, transparent); }
-        .ui-fx-legendary { --fxGlow: color-mix(in srgb, var(--rarity-legendary) 42%, transparent); }
-
-        .ui-fx.ui-btn,
-        .ui-fx.ui-pill {
-          box-shadow:
-            0 0 0 1px color-mix(in srgb, var(--fxGlow) 44%, transparent),
-            0 14px 60px var(--fxGlow);
-        }
-
-        .ui-fx.ui-btn:hover {
-          filter: brightness(1.03) saturate(1.08);
-          box-shadow:
-            0 0 0 1px color-mix(in srgb, var(--fxGlow) 62%, transparent),
-            0 18px 78px var(--fxGlow);
+          top: 10px;
+          left: 10px;
+          z-index: 20;
+          padding: 6px 10px;
+          border-radius: 999px;
+          font-weight: 900;
+          font-size: 11px;
+          letter-spacing: 0.22em;
+          text-transform: uppercase;
+          background: linear-gradient(90deg, rgba(0, 0, 0, 0.72), rgba(24, 35, 60, 0.62));
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          box-shadow: 0 8px 26px rgba(0, 0, 0, 0.38);
+          animation: newPulse 1.35s ease-in-out infinite;
         }
       `}</style>
 
-      {/* FULLSCREEN reveal punch */}
-      {showImpactOverlay && (
-        <div
-          key={`reveal-overlay-${fxSeed}`}
-          className="reveal-overlay"
-          style={
-            {
-              // @ts-ignore
-              "--revealGlow": overlayGlow,
-            } as any
-          }
-          aria-hidden="true"
-        >
-          <div className="particles" />
-        </div>
-      )}
-
-      <div className="w-full max-w-3xl">
+      <div className="w-full max-w-5xl">
         {/* HUD header */}
         <header className="ui-card px-4 py-3 rounded-[var(--r-xl)] mb-4">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="ui-subtitle">696 Chest</div>
+              <div className="ui-subtitle">Inventory</div>
               <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base truncate">
-                Open. Reveal. Collect.
-              </div>
-              <div className="text-[11px] ui-subtle mt-1">
-                Cost:{" "}
-                <span className="text-[color:var(--text)] font-semibold tabular-nums">
-                  {CHEST_COST_SHARDS}
-                </span>{" "}
-                Shards
+                Your drops & power
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className={["ui-pill", fxClassFor(fx)].join(" ")}>
-                Shards{" "}
-                <span className="ml-2 font-extrabold tabular-nums">{soft}</span>
+              <span className="ui-pill">
+                POWER{" "}
+                <span className="ml-2 font-extrabold tabular-nums">
+                  {formatCompact(totalPower)}
+                </span>
               </span>
-              <span className={["ui-pill", fxClassFor(fx)].join(" ")}>
-                Crystals{" "}
-                <span className="ml-2 font-extrabold tabular-nums">{hard}</span>
+              <span className="ui-pill">
+                ITEMS{" "}
+                <span className="ml-2 font-extrabold tabular-nums">
+                  {shownCount}/{items.length}
+                </span>
               </span>
               <button onClick={handleResync} className="ui-btn ui-btn-ghost">
                 Re-sync
               </button>
             </div>
           </div>
-
-          {refreshing && <div className="mt-3 text-[12px] ui-subtle">Syncing...</div>}
         </header>
 
-        {/* Main altar */}
-        <section className="ui-card-strong p-5 rounded-[var(--r-xl)]">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="ui-subtitle">Basic Chest</div>
-              <div className="text-sm ui-muted mt-1">Ready → Open → Reveal</div>
-            </div>
+        {loading && <div className="mb-4 ui-subtle text-sm text-center">Loading items...</div>}
 
-            <span
-              className={[
-                "ui-pill px-5 h-8 font-extrabold uppercase tracking-[0.22em]",
-                canAfford
-                  ? "border-[rgba(88,240,255,0.45)] bg-[rgba(88,240,255,0.08)]"
-                  : "border-[rgba(255,204,87,0.45)] bg-[rgba(255,204,87,0.06)]",
-              ].join(" ")}
-            >
-              {canAfford ? "READY" : `NEED ${CHEST_COST_SHARDS - soft}`}
-            </span>
+        {inventory?.error && (
+          <div className="mb-4 ui-card p-4 border border-[rgba(255,80,80,0.35)]">
+            <div className="text-sm font-semibold text-red-300">Error</div>
+            <div className="mt-1 text-sm text-red-200/80 break-words">{inventory.error}</div>
           </div>
+        )}
 
-          <div className="mt-4 altar border border-[color:var(--border)] bg-[rgba(255,255,255,0.04)]">
-            <div className="rays" />
-            <div className="fog" />
-            <div className="platform" />
-
-            <div className="relative z-10 px-6 py-10 flex flex-col items-center">
-              <div className="chest-wrap">
-                <div className="chest-canvas">
-                  <Chest3D phase={phase} />
-                </div>
-              </div>
-
-              {phase === "opening" && (
-                <div className="mt-8 w-44">
-                  <div className="ui-progress">
-                    <div className="w-3/4 opacity-70 animate-pulse" />
-                  </div>
-                  <div className="mt-3 text-[12px] ui-subtitle text-center">OPENING...</div>
-                </div>
-              )}
-
-              {!canAfford && (
-                <div className="mt-8 ui-card p-4 text-center w-full max-w-md border border-[rgba(255,204,87,0.32)]">
-                  <div className="text-base font-bold text-[color:var(--text)]">Not enough Shards</div>
-                  <div className="text-xs ui-subtle mt-1">
-                    You need{" "}
-                    <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span>{" "}
-                    more.
-                  </div>
-                  <a href="/" className="ui-btn ui-btn-ghost mt-3">
-                    Go to Home
-                  </a>
-                </div>
-              )}
-
-              <div className="mt-8 flex flex-col items-center gap-3 w-full">
-                <button
-                  onClick={handleOpenChest}
-                  disabled={opening || !canAfford}
-                  className={["ui-btn ui-btn-primary w-full max-w-sm text-base", fxClassFor(fx)].join(" ")}
-                >
-                  {opening ? "Opening..." : "Open Chest"}
-                </button>
-
-                <a
-                  href={INVENTORY_PATH}
-                  className={["ui-btn ui-btn-ghost w-full max-w-sm !font-semibold", fxClassFor(fx)].join(" ")}
-                >
-                  Go to Inventory
-                </a>
-
-                <div className="text-[12px] ui-subtle text-center">
-                  Drops include emblems, items, characters and pets.
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Reveal */}
-        {showReveal && (
-          <section className="mt-5 ui-card p-6 rounded-[var(--r-xl)] overflow-hidden relative">
-            {/* rarity wave shock under banner */}
-            {!isError && drop && fx !== "none" && (
-              <div
-                key={`wave-${fxSeed}`}
-                className="rarity-wave"
-                style={
-                  {
-                    // @ts-ignore
-                    "--waveGlow": glow,
-                  } as any
-                }
-                aria-hidden="true"
-              />
-            )}
-
-            {fx !== "none" && !isError && drop && (
-              <div
-                key={`banner-${fxSeed}`}
-                className={[
-                  "pointer-events-none absolute left-1/2 top-5",
-                  "px-5 py-2 rounded-full ring-2 ring-inset",
-                  "bg-[rgba(0,0,0,0.55)] backdrop-blur",
-                  "text-xs tracking-[0.28em] font-extrabold uppercase",
-                ].join(" ")}
-                style={{
-                  transform: "translateX(-50%)",
-                  animation: "bannerPop 820ms ease-out 1",
-                  borderColor: glow,
-                  boxShadow: `0 18px 110px color-mix(in srgb, ${glow} 45%, transparent)`,
-                  color: "#fff",
-                }}
-              >
-                {bannerText}
-              </div>
-            )}
-
-            {isError ? (
-              <div className="text-center py-6">
-                <div className="text-sm font-bold text-red-300 tracking-wide">Error</div>
-                <div className="mt-2 text-base text-red-200/80 font-semibold">
-                  {result?.code === "INSUFFICIENT_FUNDS"
-                    ? "Недостаточно Shards для открытия сундука."
-                    : `Ошибка: ${result?.error}`}
-                </div>
-              </div>
-            ) : drop ? (
-              <div
-                key={`reveal-${fxSeed}`}
-                className="text-center pt-12 pb-2"
-                style={{ animation: "popIn 340ms ease-out 1" }}
-              >
-                <div className="text-lg font-black tracking-wider drop-shadow mb-2">Drop</div>
-
-                <div
-                  className={[
-                    "mx-auto w-36 h-36 relative rounded-[1.2rem] border-2 overflow-hidden",
-                    "bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(0,0,0,0.18))]",
-                    "shadow-[0_22px_76px_rgba(0,0,0,0.38)]",
-                    rarityFxClass(drop.rarity),
-                  ].join(" ")}
-                  style={{
-                    borderColor: `color-mix(in srgb, ${glow} 65%, rgba(255,255,255,0.25))`,
-                    boxShadow: `0 0 0 2.3px color-mix(in srgb, ${glow} 41%, transparent), 0 22px 120px color-mix(in srgb, ${glow} 22%, transparent)`,
-                  }}
-                >
-                  {drop.image_url ? (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}<div className="absolute inset-0 flex items-center justify-center">
-  {/* eslint-disable-next-line @next/next/no-img-element */}
-  <img
-    src={resolveAssetUrl(drop.image_url)}
-    alt={drop.name}
-    className="select-none"
-    style={{
-      maxWidth: "55%",
-      maxHeight: "55%",
-      width: "auto",
-      height: "auto",
-      objectFit: "contain",
-      objectPosition: "50% 50%",
-    }}
-    draggable={false}
-  />
-</div>
-{/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={CARD_FRAME_SRC}
-                        alt=""
-                        className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
-                        draggable={false}
-                      />
-                    </>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <div className="text-[13px] ui-subtle">NO IMAGE</div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-5 text-xl font-black tracking-widest leading-none">{drop.name}</div>
-
-                <div className="mt-2 flex items-center justify-center gap-3 flex-wrap">
-                  <span
-                    className={["ui-pill text-base px-7 py-2 font-extrabold ring-1 ring-inset", fxClassFor(fx)].join(
-                      " "
-                    )}
-                    style={{
-                      borderColor: glow,
-                      color: "#fff",
-                      background:
-                        fx === "legendary"
-                          ? "linear-gradient(93deg,#f7e48fff 16%,#fff7dd88 61%,#fff4a4ff 90%)"
-                          : fx === "epic"
-                          ? "linear-gradient(90deg,#be80fd40 0%,#85e1ff24 100%)"
-                          : fx === "rare"
-                          ? "linear-gradient(93deg,#2cf2f640 30%,#bcdcff22 100%)"
-                          : "rgba(255,255,255,0.08)",
-                    }}
-                  >
-                    {rarityLabel(drop.rarity)}
-                  </span>
-
-                  <span
-                    className={["ui-pill text-base px-7 py-2 font-bold border border-[rgba(88,240,255,0.28)] bg-[rgba(88,240,255,0.06)]", fxClassFor(fx)].join(
-                      " "
-                    )}
-                  >
-                    POWER{" "}
-                    <span className="ml-2 font-extrabold tabular-nums">{drop.power_value}</span>
-                  </span>
-                </div>
-
-                <div className="mt-4 text-sm ui-subtle">
-                  Total Power after drop:{" "}
-                  <span className="text-[color:var(--text)] font-extrabold tabular-nums">
-                    {typeof result?.totalPowerAfter === "number" ? result.totalPowerAfter : totalPower}
-                  </span>
-                </div>
-
-                <div className="mt-6 flex gap-3 justify-center flex-wrap">
+        {/* Filters */}
+        <div className="ui-card p-4 mb-5">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2 justify-center">
+              {typeOptions.map((opt) => {
+                const active = typeFilter === opt.key;
+                return (
                   <button
-                    onClick={handleOpenAgain}
-                    disabled={opening || !canAfford}
-                    className={["ui-btn ui-btn-primary px-8", fxClassFor(fx)].join(" ")}
+                    key={opt.key}
+                    onClick={() => setTypeFilter(opt.key)}
+                    className={[pillBase, active ? pillActive : pillIdle].join(" ")}
+                    aria-pressed={active}
                   >
-                    {opening ? "Opening..." : "Open again"}
+                    {opt.label}
                   </button>
-                  <a href={INVENTORY_PATH} className={["ui-btn ui-btn-ghost px-8", fxClassFor(fx)].join(" ")}>
-                    Inventory
-                  </a>
-                </div>
+                );
+              })}
+            </div>
 
-                {!canAfford && (
-                  <div className="mt-4 text-[12px] ui-subtle">
-                    Need{" "}
-                    <span className="font-semibold tabular-nums">{CHEST_COST_SHARDS - soft}</span>{" "}
-                    more Shards.
+            <div className="flex flex-wrap gap-2 justify-center">
+              {rarityOptions.map((opt) => {
+                const active = rarityFilter === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setRarityFilter(opt.key)}
+                    className={[pillBase, active ? pillActive : pillIdle].join(" ")}
+                    aria-pressed={active}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <div className="ui-subtitle">Sort</div>
+
+              <button
+                onClick={() => setSortMode("power_desc")}
+                className={[pillBase, sortMode === "power_desc" ? pillActive : pillIdle].join(" ")}
+                aria-pressed={sortMode === "power_desc"}
+              >
+                Power ↓
+              </button>
+
+              <button
+                onClick={() => setSortMode("power_asc")}
+                className={[pillBase, sortMode === "power_asc" ? pillActive : pillIdle].join(" ")}
+                aria-pressed={sortMode === "power_asc"}
+              >
+                Power ↑
+              </button>
+
+              <button
+                onClick={() => setSortMode("newest")}
+                className={[pillBase, sortMode === "newest" ? pillActive : pillIdle].join(" ")}
+                aria-pressed={sortMode === "newest"}
+              >
+                Newest
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {!loading && !inventory?.error && filteredSortedItems.length === 0 && (
+          <div className="ui-card p-6 text-center">
+            <div className="text-lg font-semibold">No items yet</div>
+            <div className="mt-2 text-sm ui-subtle">
+              Open chests to collect emblems, items, characters and pets.
+            </div>
+            <a href="/chest" className="ui-btn ui-btn-primary mt-4">
+              Go to Chest
+            </a>
+          </div>
+        )}
+
+        {/* Tiles */}
+        {filteredSortedItems.length > 0 && (
+          <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {filteredSortedItems.map((ui) => {
+              const rClass = rarityFxClass(ui.item?.rarity);
+              const rColor = rarityColorVar(ui.item?.rarity);
+              const showNew = isNewItem(ui);
+              const typeNorm = normalizeType(ui.item?.type);
+              const imgFit =
+                typeNorm === "character" || typeNorm === "pet" ? "object-contain" : "object-cover";
+
+              const imgSrc = resolveAssetUrl(ui.item.image_url);
+
+              return (
+                <button
+                  key={ui.id}
+                  type="button"
+                  onClick={() => setSelected(ui)}
+                  className={[
+                    "inv-tile group ui-card p-0 text-left w-full relative overflow-hidden",
+                    "rounded-[var(--r-xl)]",
+                    rClass,
+                  ].join(" ")}
+                  style={
+                    {
+                      "--tile-glow": rColor,
+                      "--tile-outline": rColor,
+                    } as CSSProperties
+                  }
+                  aria-label={`Preview ${ui.item?.name || "item"}`}
+                >
+                  {showNew && <div className="inv-new-badge">NEW</div>}
+
+                  <div
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                      background: `radial-gradient(250px 130px at 50% 0%, color-mix(in srgb, ${rColor} 13%, transparent), transparent 80%)`,
+                      opacity: 0.69,
+                    }}
+                  />
+
+                  <div className="pointer-events-none absolute inset-0 flex overflow-hidden">
+                    <div
+                      className="absolute -inset-y-10 -left-1/2 w-1/2 rotate-[14deg] opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, transparent, rgba(255,255,255,0.11), transparent)",
+                        animation:
+                          "invShine 4s cubic-bezier(0.6,0,.69,1.02) infinite",
+                      }}
+                    />
                   </div>
-                )}
-              </div>
-            ) : null}
-          </section>
+
+                  <div className="relative z-10 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="inv-tile-title truncate">{ui.item.name}</div>
+                        <div className="inv-tile-type-label mt-0.5 text-[11px] ui-subtle font-semibold uppercase tracking-wide truncate">
+                          {String(ui.item.type || "")}
+                        </div>
+                      </div>
+
+                      <span
+                        className="ui-pill whitespace-nowrap"
+                        style={{ borderColor: rColor, color: "var(--text)" }}
+                      >
+                        {rarityLabel(ui.item.rarity)}
+                      </span>
+                    </div>
+
+                    <div
+                      className="mt-3 inv-tile-image rounded-[var(--r-lg)] overflow-hidden aspect-square relative flex items-end"
+                      style={{
+                        boxShadow: `inset 0 0 0 1.1px color-mix(in srgb, ${rColor} 22%, rgba(255,255,255,0.13))`,
+                        background:
+                          "linear-gradient(180deg, rgba(255,255,255,0.10), rgba(0,0,0,0.19))",
+                      }}
+                    >
+                      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120px_90px_at_50%_74%,rgba(0,0,0,0.00),rgba(0,0,0,0.38))]" />
+
+                      {imgSrc ? (
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <div className="absolute inset-0 flex items-center justify-center">
+<img
+  src={imgSrc}
+  alt={ui.item.name}
+  className="object-contain transition-transform duration-150 group-hover:scale-[1.03] group-active:scale-[0.98]"
+  style={{ maxWidth: "58%", maxHeight: "58%", objectFit: "contain", objectPosition: "40% 50%" }}
+  loading="lazy"
+  draggable={false}
+/>
+</div>
+
+                          {/* Frame overlay */}
+                          <img
+                            src={CARD_FRAME_SRC}
+                            alt=""
+                            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                            draggable={false}
+                          />
+                        </>
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-black/10">
+                          <div className="ui-subtitle">No image</div>
+                        </div>
+                      )}
+
+                      <div className="absolute left-2 right-2 bottom-2">
+                        <div className="inv-tile-power rounded-[var(--r-md)] px-2 py-[6px] flex items-center justify-between gap-2">
+                          <span className="text-[10px] ui-subtle font-semibold opacity-90 select-none">
+                            POWER
+                          </span>
+                          <span
+                            className="text-sm font-bold tabular-nums tracking-tight text-white drop-shadow-sm"
+                            style={{
+                              textShadow:
+                                "0 1px 4px #16192555,0 1px 2px #0006",
+                            }}
+                          >
+                            {formatCompact(Number(ui.item.power_value ?? 0))}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 text-[11px] ui-subtle text-center opacity-80 group-hover:opacity-100 transition-opacity select-none pointer-events-none">
+                      Tap to preview
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
+
+      {/* Modal */}
+      {selected && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center px-4 pb-6 sm:pb-0"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Item preview"
+        >
+          <button
+            type="button"
+            onClick={() => setSelected(null)}
+            className="absolute inset-0 inv-modal-overlay cursor-pointer"
+            aria-label="Close preview"
+            tabIndex={-1}
+          />
+
+          <div
+            className={[
+              "inv-modal relative w-full max-w-md ui-card-strong p-4 rounded-[var(--r-xl)]",
+              rarityFxClass(selected.item?.rarity),
+              "overflow-hidden select-none outline-none",
+            ].join(" ")}
+            style={{
+              boxShadow: `0 0 0 1.8px color-mix(in srgb, ${rarityColorVar(
+                selected.item?.rarity
+              )} 36%, rgba(255,255,255,0.18)),
+                          0 22px 60px rgba(0,0,0,0.62)`,
+            }}
+            tabIndex={0}
+          >
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background: `radial-gradient(660px 360px at 50% 0%, color-mix(in srgb, ${rarityColorVar(
+                  selected.item?.rarity
+                )} 16%, transparent), transparent 63%)`,
+                opacity: 0.93,
+              }}
+            />
+
+            <div className="relative z-10 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-lg font-semibold truncate">{selected.item.name}</div>
+                <div className="mt-1 flex items-center gap-2 flex-wrap">
+                  <span
+                    className="ui-pill"
+                    style={{
+                      borderColor: rarityColorVar(selected.item?.rarity),
+                      color: "var(--text)",
+                      background: "rgba(255,255,255,0.10)",
+                    }}
+                  >
+                    {rarityLabel(selected.item.rarity)}
+                  </span>
+                  <span className="ui-pill font-semibold">
+                    {String(selected.item.type || "").toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="ui-btn ui-btn-ghost"
+                aria-label="Close"
+              >
+                Close
+              </button>
+            </div>
+
+            <div
+              className="relative z-10 mt-4 inv-modal-img rounded-[var(--r-lg)] overflow-hidden aspect-square"
+              style={{
+                boxShadow: `inset 0 0 0 1.1px color-mix(in srgb, ${rarityColorVar(
+                  selected.item?.rarity
+                )} 23%, rgba(255,255,255,0.21))`,
+                background: "linear-gradient(180deg, rgba(255,255,255,0.07), rgba(0,0,0,0.21))",
+              }}
+            >
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(140px_110px_at_50%_70%,rgba(0,0,0,0.00),rgba(0,0,0,0.44))]" />
+              {resolveAssetUrl(selected.item.image_url) ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+<img
+  src={resolveAssetUrl(selected.item.image_url)!}
+  alt={selected.item.name}
+  className="object-contain"
+  style={{ maxWidth: "62%", maxHeight: "62%", objectFit: "contain", objectPosition: "40% 50%" }}
+  draggable={false}
+/>
+</div>
+
+                  {/* Frame overlay */}
+                  <img
+                    src={CARD_FRAME_SRC}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                    draggable={false}
+                  />
+                </>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-black/10">
+                  <div className="ui-subtitle">No image</div>
+                </div>
+              )}
+            </div>
+
+            <div className="relative z-10 mt-4 ui-card p-4">
+              <div className="flex items-center justify-between">
+                <div className="ui-subtitle">Power</div>
+                <div className="text-2xl font-semibold tabular-nums">
+                  {formatCompact(Number(selected.item.power_value ?? 0))}
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <div className="ui-subtitle">Obtained</div>
+                  <div className="text-sm ui-muted mt-1">
+                    {formatDate(selected.created_at) || "Unknown"}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="ui-subtitle">Source</div>
+                  <div className="text-sm ui-muted mt-1 break-words">
+                    {selected.obtained_from ? String(selected.obtained_from) : "Unknown"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="relative z-10 mt-4 flex gap-2">
+              <a href="/chest" className="ui-btn ui-btn-primary flex-1">
+                Open more
+              </a>
+              <button type="button" onClick={() => setSelected(null)} className="ui-btn ui-btn-ghost flex-1">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
