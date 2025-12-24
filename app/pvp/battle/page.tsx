@@ -1579,14 +1579,25 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
             )}
 
             {unit && (
-              <div className="bb-stats">
-                <div className="bb-stat bb-atk" aria-label="Attack">
-                  <span className="bb-icon" aria-hidden="true">⚔</span>
-                  <span className="tabular-nums">{power ?? 0}</span>
+              <div className="bb-stats" aria-hidden="true">
+                <div className="bb-stat bb-atk" title="Attack">
+                  <span className="bb-stat-icon">
+                    <svg className="bb-stat-svg" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M21 3l-6.8 6.8 1.4 1.4L22.4 4.4 21 3zM13.4 10.4L6.1 17.7l-1.8-.2-.2-1.8 7.3-7.3 2 2zM4.2 19.8l3.7-.4-.9-.9-2 .2-.2-2-.9-.9-.4 3.7c-.1.8.6 1.5 1.5 1.3z" />
+                    </svg>
+                  </span>
+                  <span className="bb-stat-num tabular-nums">{power ?? 0}</span>
                 </div>
-                <div className="bb-stat bb-hp" aria-label="HP">
-                  <span className="bb-icon" aria-hidden="true">❤</span>
-                  <span className="tabular-nums">{unit.hp}</span>
+
+                <div className="bb-stat bb-hp" title="HP">
+                  <span className="bb-stat-icon">
+                    <svg className="bb-stat-svg" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 2s4 5.1 4 8.3C16 14 14 16 12 16s-4-2-4-5.7C8 7.1 12 2 12 2z" />
+                      <path d="M7 14.5C7 18 9.5 21 12 21s5-3 5-6.5c0-1.4-.5-2.8-1.4-3.9.2 3.8-1.8 6.4-3.6 6.4-1.9 0-3.8-2.6-3.6-6.4C7.5 11.7 7 13.1 7 14.5z" opacity="0.6"/>
+                    </svg>
+                  </span>
+                  <span className="bb-stat-num tabular-nums">{unit.hp}</span>
+
                   {unit.shield && unit.shield > 0 ? (
                     <span className="bb-shield" title="Shield">
                       +<span className="tabular-nums">{unit.shield}</span>
@@ -2601,7 +2612,63 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           pointer-events: none;
         }
 
-          `,
+          
+
+        /* === Card stats (Hearthstone-style) === */
+        .bb-stats{
+          position:absolute;
+          inset:0;
+          pointer-events:none;
+          z-index: 12; /* above card body */
+        }
+        .bb-stat{
+          position:absolute;
+          width:34px;
+          height:34px;
+          border-radius:999px;
+          display:grid;
+          place-items:center;
+          background:
+            radial-gradient(120% 120% at 30% 25%, rgba(255,255,255,0.16), rgba(0,0,0,0.72)),
+            #0a0c14;
+          border:1px solid rgba(255,255,255,0.16);
+          box-shadow:
+            0 10px 18px rgba(0,0,0,0.55),
+            inset 0 2px 10px rgba(255,255,255,0.10);
+          overflow:hidden;
+        }
+        .bb-atk{ left:10px; bottom:-6px; }
+        .bb-hp{ right:10px; bottom:-6px; }
+
+        .bb-stat-icon{
+          position:absolute;
+          inset:0;
+          display:grid;
+          place-items:center;
+          opacity:0.35;
+          transform: translateY(-1px);
+        }
+        .bb-stat-svg{
+          width:18px;
+          height:18px;
+          fill: rgba(255,255,255,0.95);
+          filter: drop-shadow(0 2px 6px rgba(0,0,0,0.55));
+        }
+        .bb-stat-num{
+          position:relative;
+          z-index:1;
+          font-weight: 950;
+          font-size: 12px;
+          line-height: 1;
+          color: rgba(255,255,255,0.98);
+          text-shadow: 0 2px 8px rgba(0,0,0,0.85);
+        }
+
+        /* Make sure old oval-style stat UI doesn't show */
+        .bb-icon{ display:none !important; }
+        .bb-hptext{ display:none !important; }
+
+`,
         }}
       />
 
