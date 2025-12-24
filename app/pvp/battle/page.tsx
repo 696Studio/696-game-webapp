@@ -295,7 +295,7 @@ const BOARD_IMG_H = 2796;
 
 
 const DEBUG_ARENA = false; // debug overlay for arena sizing
-const DEBUG_GRID = false; // mirrored A/B measurement grid (dev only)
+const DEBUG_GRID = true; // keep grid ON for placement // mirrored A/B measurement grid (dev only)
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -1578,19 +1578,23 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
               </div>
             )}
 
-            <div className="bb-overlay">
-              {unit && (
-                <div className="bb-hptext">
-                    <span className="tabular-nums">{unit.hp}</span> / <span className="tabular-nums">{unit.maxHp}</span>
-                    {unit.shield > 0 ? (
-                      <span className="bb-shieldnum">
-                        {" "}
-                        +<span className="tabular-nums">{unit.shield}</span>
-                      </span>
-                    ) : null}
-                  </div>
-              )}
-            </div>
+            {unit && (
+              <div className="bb-stats">
+                <div className="bb-stat bb-atk" aria-label="Attack">
+                  <span className="bb-icon" aria-hidden="true">⚔</span>
+                  <span className="tabular-nums">{power ?? 0}</span>
+                </div>
+                <div className="bb-stat bb-hp" aria-label="HP">
+                  <span className="bb-icon" aria-hidden="true">❤</span>
+                  <span className="tabular-nums">{unit.hp}</span>
+                  {unit.shield && unit.shield > 0 ? (
+                    <span className="bb-shield" title="Shield">
+                      +<span className="tabular-nums">{unit.shield}</span>
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            )}
 
             {unit && (
               <div className="bb-corner">
@@ -2343,7 +2347,60 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           z-index: 7;
         }
 
+        
         .bb-stats {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+        }
+
+        .bb-stat {
+          position: absolute;
+          bottom: 6px;
+          width: 44px;
+          height: 26px;
+          border-radius: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          font-weight: 900;
+          font-size: 14px;
+          letter-spacing: 0.2px;
+          color: rgba(255, 255, 255, 0.96);
+          text-shadow: 0 2px 6px rgba(0, 0, 0, 0.65);
+          background: rgba(15, 16, 20, 0.92);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+        }
+
+        .bb-icon {
+          font-size: 12px;
+          line-height: 1;
+          opacity: 0.95;
+        }
+
+        .bb-atk {
+          left: 6px;
+        }
+
+        .bb-hp {
+          right: 6px;
+        }
+
+        .bb-shield {
+          position: absolute;
+          top: -10px;
+          right: -6px;
+          padding: 2px 6px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 900;
+          background: rgba(40, 140, 255, 0.95);
+          border: 1px solid rgba(255, 255, 255, 0.35);
+          box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+        }
+.bb-stats {
           position: absolute;
           inset: 0;
         }
