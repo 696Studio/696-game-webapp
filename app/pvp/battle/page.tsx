@@ -259,6 +259,32 @@ function pickAvatarUrl(p?: PlayerProfile | null, seed?: string) {
   return `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${encodeURIComponent(s)}`;
 }
 
+
+const CARD_FRAME_SRC = "/cards/frame/frame_common.png";
+
+/**
+ * Normalize card art urls after migration from /items/* to /cards/art/*.
+ * - keeps absolute URLs (http/https/data/blob)
+ * - rewrites legacy /items/characters/* and /items/pets/* into /cards/art/...
+ */
+function resolveCardArtUrl(raw?: string | null) {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+
+  const lower = s.toLowerCase();
+  if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("data:") || lower.startsWith("blob:")) {
+    return s;
+  }
+
+  // Ensure leading slash for consistent matching
+  const withSlash = s.startsWith("/") ? s : `/${s}`;
+
+  if (withSlash.includes("/items/characters/")) return withSlash.replace("/items/characters/", "/cards/art/characters/");
+  if (withSlash.includes("/items/pets/")) return withSlash.replace("/items/pets/", "/cards/art/pets/");
+
+  return withSlash;
+}
+
 /**
  * ✅ BOARD COORDS FIX (background-size: cover)
  * IMPORTANT: BOARD_IMG_W/H MUST MATCH your real /public/arena/board.png size.
@@ -1452,7 +1478,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
     const r = (card?.rarity || "common") as string;
     const power = typeof card?.base_power === "number" ? card.base_power : null;
-    const img = card?.image_url || null;
+    const img = resolveCardArtUrl(card?.image_url || null);
 
     const hpPct = useMemo(() => {
       if (!unit) return 100;
@@ -1525,6 +1551,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                 <div className="bb-mark-sm">CARD</div>
               </div>
             )}
+            <img className="bb-frame" src={CARD_FRAME_SRC} alt="" />
+
 
             {unit && (
               <div className="bb-fx">
@@ -2225,6 +2253,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .bb-art {
           position: absolute;
           inset: 0;
+          z-index: 1;
           background-size: cover;
           background-position: center;
           filter: saturate(1.05) contrast(1.05);
@@ -2238,6 +2267,16 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           align-items: center;
           justify-content: center;
         }
+
+.bb-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 5;
+  pointer-events: none;
+}
 
         .bb-fx { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
 
@@ -2314,6 +2353,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .bb-overlay {
           position: absolute;
           inset: 0;
+          z-index: 7;
           display: flex;
           flex-direction: column;
           justify-content: flex-end;

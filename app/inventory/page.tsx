@@ -86,6 +86,31 @@ function normalizeType(t: string | null | undefined): TypeFilter {
   return "item";
 }
 
+const CARD_FRAME_SRC = "/cards/frame/frame_common.png";
+
+function resolveAssetUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+
+  // keep absolute urls as-is
+  if (/^https?:\/\//i.test(s) || s.startsWith("data:")) return s;
+
+  // normalize leading slash
+  const x = s.startsWith("/") ? s : `/${s}`;
+
+  // migrate old items paths -> new cards/art paths
+  // examples:
+  // /items/characters/char_1.png -> /cards/art/characters/char_1.png
+  // /items/pets/pet_1.png -> /cards/art/pets/pet_1.png
+  if (x.startsWith("/items/characters/")) return x.replace("/items/characters/", "/cards/art/characters/");
+  if (x.startsWith("/items/pets/")) return x.replace("/items/pets/", "/cards/art/pets/");
+
+  if (x.startsWith("/items/")) return x.replace("/items/", "/cards/art/");
+
+  return x;
+}
+
 function formatCompact(n: number) {
   const x = Number.isFinite(n) ? n : 0;
   if (x >= 1_000_000_000) return `${(x / 1_000_000_000).toFixed(1)}B`;
@@ -661,6 +686,8 @@ export default function InventoryPage() {
               const imgFit =
                 typeNorm === "character" || typeNorm === "pet" ? "object-contain" : "object-cover";
 
+              const imgSrc = resolveAssetUrl(ui.item.image_url);
+
               return (
                 <button
                   key={ui.id}
@@ -728,15 +755,25 @@ export default function InventoryPage() {
                     >
                       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120px_90px_at_50%_74%,rgba(0,0,0,0.00),rgba(0,0,0,0.38))]" />
 
-                      {ui.item.image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={ui.item.image_url}
+                      {imgSrc ? (
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                          src={imgSrc}
                           alt={ui.item.name}
                           className={`w-full h-full ${imgFit} transition-transform duration-150 group-hover:scale-[1.03] group-active:scale-[0.98] rounded-[var(--r-lg)]`}
                           loading="lazy"
                           draggable={false}
-                        />
+                          />
+
+                          {/* Frame overlay */}
+                          <img
+                          src={CARD_FRAME_SRC}
+                          alt=""
+                          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                          draggable={false}
+                          />
+                        </>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center bg-black/10">
                           <div className="ui-subtitle">No image</div>
@@ -852,14 +889,24 @@ export default function InventoryPage() {
               }}
             >
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(140px_110px_at_50%_70%,rgba(0,0,0,0.00),rgba(0,0,0,0.44))]" />
-              {selected.item.image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
+              {resolveAssetUrl(selected.item.image_url) ? (
+                <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={selected.item.image_url}
+                  src={resolveAssetUrl(selected.item.image_url)!}
                   alt={selected.item.name}
                   className="w-full h-full object-contain"
                   draggable={false}
                 />
+
+                {/* Frame overlay */}
+                <img
+                  src={CARD_FRAME_SRC}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                  draggable={false}
+                />
+                </>
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-black/10">
                   <div className="ui-subtitle">No image</div>
