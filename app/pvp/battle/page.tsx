@@ -2204,7 +2204,14 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           -webkit-backface-visibility: hidden;
         }
 
-        .bb-front { transform: rotateY(180deg); }
+        .bb-front {
+          transform: rotateY(180deg);
+          /* Opaque card body so the arena never shows through */
+          background:
+            radial-gradient(420px 260px at 50% 10%, rgba(255,255,255,0.08) 0%, transparent 62%),
+            linear-gradient(to bottom, rgba(18, 22, 34, 0.92), rgba(8, 10, 14, 0.96)),
+            rgba(8, 10, 14, 0.96);
+        }
         .bb-back { transform: rotateY(0deg); }
 
         .bb-back {
@@ -2215,37 +2222,27 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         }
 
         /* Opaque inner plate so the arena never shows through the card */
-        
 
         .bb-mark { font-weight: 900; letter-spacing: 0.24em; font-size: 14px; opacity: 0.75; text-transform: uppercase; }
         .bb-mark-sm { font-weight: 900; letter-spacing: 0.18em; font-size: 11px; opacity: 0.7; text-transform: uppercase; }
 
         .bb-art {
           position: absolute;
-          inset: 28px;
+          /* Slight inset so the art stays inside the frame window */
+          inset: 18px;
           border-radius: 16px;
           overflow: hidden;
-          background-color: #0b0f18;
+          /* Keep the unit centered and visible */
           background-repeat: no-repeat;
-          /* Assets have a lot of empty transparent space; shift slightly left & down */
-          background-position: 40% 55%;
-          /* Make the unit smaller so it fits inside the frame nicely */
-          background-size: 78% auto;
+          /* Most of our PNGs have a bit more empty space on the left, so shift slightly left */
+          background-position: 46% 60%;
+          background-size: contain;
+          /* Avoid extra “muting” */
+          filter: none;
+          /* Zoom-in the art (PNGs include lots of transparent padding) */
+          transform: scale(1.18);
+          transform-origin: 50% 60%;
         }
-
-        /* Inner plate to make the card opaque even if the PNG is transparent */
-        .bb-art::before {
-          content: "";
-          position: absolute;
-          inset: 0;
-          border-radius: 16px;
-          background:
-            radial-gradient(420px 260px at 50% 10%, rgba(255,255,255,0.08) 0%, transparent 62%),
-            linear-gradient(to bottom, rgba(18, 22, 34, 0.92), rgba(8, 10, 14, 0.96));
-          z-index: 0;
-        }
-        .bb-art > * { position: relative; z-index: 1; }
-        /* Small inner plate under the art so transparent PNGs don't blend into the arena */
         
         .bb-art--ph {
           background:
