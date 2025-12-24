@@ -2236,15 +2236,35 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
         .bb-back {
           background:
-            radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
-            linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.34));
+            radial-gradient(420px 300px at 50% 12%, rgba(255, 255, 255, 0.08) 0%, transparent 64%),
+            linear-gradient(to bottom, rgba(25, 28, 40, 0.32), rgba(8, 10, 14, 0.92)),
+            rgba(8, 10, 14, 0.92);
         }
+
+        /* Opaque inner plate so the arena never shows through the card */
+        .bb-front::before,
+        .bb-back::before {
+          content: "";
+          position: absolute;
+          inset: 9%;
+          border-radius: 14px;
+          z-index: 0;
+          background:
+            radial-gradient(260px 200px at 50% 18%, rgba(255,255,255,0.10) 0%, transparent 60%),
+            linear-gradient(to bottom, rgba(255,255,255,0.05), rgba(0,0,0,0.45)),
+            rgba(12, 12, 18, 0.94);
+          box-shadow:
+            inset 0 0 0 1px rgba(255,255,255,0.06),
+            inset 0 0 28px rgba(0,0,0,0.55);
+        }
+
 
         .bb-front {
           transform: rotateY(180deg);
           background:
-            radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.16) 0%, transparent 58%),
-            linear-gradient(to bottom, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.26));
+            radial-gradient(420px 300px at 50% 12%, rgba(255, 255, 255, 0.10) 0%, transparent 62%),
+            linear-gradient(to bottom, rgba(40, 46, 64, 0.35), rgba(8, 10, 14, 0.92)),
+            rgba(8, 10, 14, 0.92);
         }
 
         .bb-mark { font-weight: 900; letter-spacing: 0.24em; font-size: 14px; opacity: 0.75; text-transform: uppercase; }
@@ -2252,7 +2272,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
         .bb-art {
           position: absolute;
-          inset: 18%;
+          inset: 12%;
           z-index: 1;
           background-size: contain;
           background-repeat: no-repeat;
@@ -2264,7 +2284,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .bb-art::before {
           content: "";
           position: absolute;
-          inset: -8%;
+          inset: -4%;
           border-radius: 14px;
           background:
             radial-gradient(220px 180px at 50% 18%, rgba(255,255,255,0.08) 0%, transparent 62%),
