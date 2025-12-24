@@ -294,8 +294,8 @@ const BOARD_IMG_W = 1290;
 const BOARD_IMG_H = 2796;
 
 
-const DEBUG_ARENA = true; // debug overlay for arena sizing
-const DEBUG_GRID = true; // mirrored A/B measurement grid (dev only)
+const DEBUG_ARENA = false; // debug overlay for arena sizing
+const DEBUG_GRID = false; // mirrored A/B measurement grid (dev only)
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -1579,27 +1579,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
             )}
 
             <div className="bb-overlay">
-              <div className="bb-title">{title}</div>
-              <div className="bb-subrow">
-                <span className="bb-chip">{rarityRu(r)}</span>
-                {power != null && (
-                  <span className="bb-chip">
-                    POW <b className="tabular-nums">{power}</b>
-                  </span>
-                )}
-              </div>
-
               {unit && (
-                <div className="bb-bars">
-                  <div className="bb-bar bb-bar--hp">
-                    <div style={{ width: `${hpPct}%` }} />
-                  </div>
-                  {unit.shield > 0 && (
-                    <div className="bb-bar bb-bar--shield">
-                      <div style={{ width: `${shieldPct}%` }} />
-                    </div>
-                  )}
-                  <div className="bb-hptext">
+                <div className="bb-hptext">
                     <span className="tabular-nums">{unit.hp}</span> / <span className="tabular-nums">{unit.maxHp}</span>
                     {unit.shield > 0 ? (
                       <span className="bb-shieldnum">
@@ -1608,15 +1589,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                       </span>
                     ) : null}
                   </div>
-
-                  {tags.length > 0 && (
-                    <div className="bb-tags">
-                      {tags.map((x) => (
-                        <TagPill key={x} label={String(x).toUpperCase()} />
-                      ))}
-                    </div>
-                  )}
-                </div>
               )}
             </div>
 
@@ -2228,7 +2200,12 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           background: transparent;
           border: none;
           box-shadow: none;
+          backface-visibility: hidden;
+          -webkit-backface-visibility: hidden;
         }
+
+        .bb-front { transform: rotateY(180deg); }
+        .bb-back { transform: rotateY(0deg); }
 
         .bb-back {
           background:
@@ -2245,14 +2222,29 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
         .bb-art {
           position: absolute;
-          inset: 26px;
+          inset: 28px;
           border-radius: 16px;
           overflow: hidden;
           background-color: #0b0f18;
           background-repeat: no-repeat;
-          background-position: center center;
-          background-size: contain;
+          /* Assets have a lot of empty transparent space; shift slightly left & down */
+          background-position: 40% 55%;
+          /* Make the unit smaller so it fits inside the frame nicely */
+          background-size: 78% auto;
         }
+
+        /* Inner plate to make the card opaque even if the PNG is transparent */
+        .bb-art::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          border-radius: 16px;
+          background:
+            radial-gradient(420px 260px at 50% 10%, rgba(255,255,255,0.08) 0%, transparent 62%),
+            linear-gradient(to bottom, rgba(18, 22, 34, 0.92), rgba(8, 10, 14, 0.96));
+          z-index: 0;
+        }
+        .bb-art > * { position: relative; z-index: 1; }
         /* Small inner plate under the art so transparent PNGs don't blend into the arena */
         
         .bb-art--ph {
@@ -2352,6 +2344,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           border-radius: 22px;
           pointer-events: none;
           z-index: 7;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          padding: 10px;
         }
 
         .bb-title { font-weight: 900; letter-spacing: 0.06em; font-size: 12px; text-transform: uppercase; line-height: 1.15; }
@@ -2388,10 +2384,16 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .bb-bar--hp > div { background: rgba(88, 240, 255, 0.22); }
         .bb-bar--shield > div { background: rgba(255, 204, 87, 0.18); }
         .bb-hptext {
-          font-size: 10px;
-          letter-spacing: 0.10em;
+          font-size: 12px;
+          letter-spacing: 0.06em;
+          font-weight: 800;
           text-transform: uppercase;
-          opacity: 0.9;
+          opacity: 0.95;
+          padding: 6px 10px;
+          border-radius: 999px;
+          background: rgba(0, 0, 0, 0.55);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          text-shadow: 0 2px 8px rgba(0,0,0,0.6);
         }
         .bb-shieldnum { opacity: 0.9; }
 
