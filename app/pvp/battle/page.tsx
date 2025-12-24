@@ -2224,14 +2224,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .bb-face {
           position: absolute;
           inset: 0;
-          border-radius: 18px;
-          backface-visibility: hidden;
-          border: 1px solid rgba(255, 255, 255, 0.22);
-          background: rgba(255, 255, 255, 0.06);
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          border-radius: 22px;
+          background: transparent;
+          border: none;
+          box-shadow: none;
         }
 
         .bb-back {
@@ -2242,57 +2238,23 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         }
 
         /* Opaque inner plate so the arena never shows through the card */
-        .bb-front::before,
-        .bb-back::before {
-          content: "";
-          position: absolute;
-          inset: 9%;
-          border-radius: 14px;
-          z-index: 0;
-          background:
-            radial-gradient(260px 200px at 50% 18%, rgba(255,255,255,0.10) 0%, transparent 60%),
-            linear-gradient(to bottom, rgba(255,255,255,0.05), rgba(0,0,0,0.45)),
-            rgba(12, 12, 18, 0.94);
-          box-shadow:
-            inset 0 0 0 1px rgba(255,255,255,0.06),
-            inset 0 0 28px rgba(0,0,0,0.55);
-        }
-
-
-        .bb-front {
-          transform: rotateY(180deg);
-          background:
-            radial-gradient(420px 300px at 50% 12%, rgba(255, 255, 255, 0.10) 0%, transparent 62%),
-            linear-gradient(to bottom, rgba(40, 46, 64, 0.35), rgba(8, 10, 14, 0.92)),
-            rgba(8, 10, 14, 0.92);
-        }
+        
 
         .bb-mark { font-weight: 900; letter-spacing: 0.24em; font-size: 14px; opacity: 0.75; text-transform: uppercase; }
         .bb-mark-sm { font-weight: 900; letter-spacing: 0.18em; font-size: 11px; opacity: 0.7; text-transform: uppercase; }
 
         .bb-art {
           position: absolute;
-          inset: 12%;
-          z-index: 1;
-          background-size: contain;
+          inset: 26px;
+          border-radius: 16px;
+          overflow: hidden;
+          background-color: #0b0f18;
           background-repeat: no-repeat;
-          background-position: center;
-          filter: saturate(1.05) contrast(1.05);
-          transform: none;
+          background-position: center center;
+          background-size: contain;
         }
         /* Small inner plate under the art so transparent PNGs don't blend into the arena */
-        .bb-art::before {
-          content: "";
-          position: absolute;
-          inset: -4%;
-          border-radius: 14px;
-          background:
-            radial-gradient(220px 180px at 50% 18%, rgba(255,255,255,0.08) 0%, transparent 62%),
-            linear-gradient(to bottom, rgba(255,255,255,0.04), rgba(0,0,0,0.22)),
-            rgba(10,12,20,0.85);
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
-          z-index: -1;
-        }
+        
         .bb-art--ph {
           background:
             radial-gradient(420px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
@@ -2387,12 +2349,9 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .bb-overlay {
           position: absolute;
           inset: 0;
+          border-radius: 22px;
+          pointer-events: none;
           z-index: 7;
-          display: flex;
-          flex-direction: column;
-          justify-content: flex-end;
-          padding: 12px;
-          background: linear-gradient(to top, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0.12), transparent);
         }
 
         .bb-title { font-weight: 900; letter-spacing: 0.06em; font-size: 12px; text-transform: uppercase; line-height: 1.15; }
