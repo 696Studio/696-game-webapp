@@ -948,15 +948,24 @@ export default function ChestPage() {
                 >
                   {drop.image_url ? (
                     <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={resolveAssetUrl(drop.image_url)}
-                        alt={drop.name}
-                        className="absolute"
-                        style={{ inset: "28% 30%", width: "auto", height: "auto", maxWidth: "100%", maxHeight: "100%", objectFit: "contain", objectPosition: "50% 50%" , transform: "translateX(-2%) scale(0.88)"}}
-                        draggable={false}
-                      />
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}<div className="absolute inset-0 flex items-center justify-center">
+  {/* eslint-disable-next-line @next/next/no-img-element */}
+  <img
+    src={resolveAssetUrl(drop.image_url)}
+    alt={drop.name}
+    className="select-none"
+    style={{
+      maxWidth: "55%",
+      maxHeight: "55%",
+      width: "auto",
+      height: "auto",
+      objectFit: "contain",
+      objectPosition: "50% 50%",
+    }}
+    draggable={false}
+  />
+</div>
+{/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={CARD_FRAME_SRC}
                         alt=""
