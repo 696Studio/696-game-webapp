@@ -2227,7 +2227,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           border-radius: 18px;
           backface-visibility: hidden;
           border: 1px solid rgba(255, 255, 255, 0.22);
-          background: rgba(255, 255, 255, 0.06);
+          background: rgba(10, 12, 20, 0.88);
           overflow: hidden;
           display: flex;
           align-items: center;
@@ -2242,6 +2242,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
         .bb-front {
           transform: rotateY(180deg);
+          background-color: rgba(10, 12, 20, 0.92);
           background:
             radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.16) 0%, transparent 58%),
             linear-gradient(to bottom, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.26));
@@ -2379,10 +2380,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           text-transform: uppercase;
         }
 
-        .rar-common { box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, 0.02); }
-        .rar-rare { box-shadow: inset 0 0 0 9999px rgba(88, 240, 255, 0.06); }
-        .rar-epic { box-shadow: inset 0 0 0 9999px rgba(184, 92, 255, 0.07); }
-        .rar-legendary { box-shadow: inset 0 0 0 9999px rgba(255, 204, 87, 0.07); }
+        .rar-common { box-shadow: 0 0 10px rgba(255,255,255,0.08), inset 0 0 0 9999px rgba(255, 255, 255, 0.02); }
+        .rar-rare { box-shadow: 0 0 18px rgba(88, 240, 255, 0.35), 0 0 42px rgba(88, 240, 255, 0.18), inset 0 0 0 9999px rgba(88, 240, 255, 0.06); }
+        .rar-epic { box-shadow: 0 0 18px rgba(184, 92, 255, 0.35), 0 0 42px rgba(184, 92, 255, 0.18), inset 0 0 0 9999px rgba(184, 92, 255, 0.07); }
+        .rar-legendary { box-shadow: 0 0 18px rgba(255, 204, 87, 0.35), 0 0 42px rgba(255, 204, 87, 0.18), inset 0 0 0 9999px rgba(255, 204, 87, 0.07); }
 
         .bb-bars { margin-top: 10px; display: grid; gap: 6px; }
         .bb-bar {
