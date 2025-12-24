@@ -2664,9 +2664,66 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           text-shadow: 0 2px 8px rgba(0,0,0,0.85);
         }
 
-        /* Make sure old oval-style stat UI doesn't show */
-        .bb-icon{ display:none !important; }
-        .bb-hptext{ display:none !important; }
+        /* Card stat styling overrides */
+        .bb-card{ max-width: 200px !important; }
+        .bb-card-inner{ border-radius: 20px !important; }
+        .bb-front{ border-radius: 20px !important; }
+        .bb-art{
+          inset: 14px !important;
+          border-radius: 16px !important;
+          background-size: cover !important;
+          background-position: 50% 55% !important;
+          transform: scale(1.12) !important;
+          transform-origin: 50% 55% !important;
+        }
+
+        /* Clean, non-transparent stats like a real card game */
+        .bb-stats{ position:absolute !important; inset:0 !important; pointer-events:none !important; }
+        .bb-stat{
+          width: 36px !important;
+          height: 36px !important;
+          border-radius: 999px !important;
+          bottom: -10px !important;
+          display:flex !important;
+          align-items:center !important;
+          justify-content:center !important;
+          gap: 0 !important;
+          padding: 0 !important;
+          background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.18), rgba(0,0,0,0.92)) !important;
+          border: 1px solid rgba(255,255,255,0.20) !important;
+          box-shadow: 0 10px 18px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.10) !important;
+        }
+        .bb-atk{ left: -6px !important; }
+        .bb-hp{ right: -6px !important; }
+
+        .bb-stat-icon{
+          position:absolute !important;
+          inset: 0 !important;
+          display:flex !important;
+          align-items:center !important;
+          justify-content:center !important;
+          opacity: 0.16 !important;
+        }
+        .bb-stat-svg{
+          width: 18px !important;
+          height: 18px !important;
+          fill: rgba(255,255,255,0.95) !important;
+        }
+        .bb-stat-num{
+          position: relative !important;
+          font-size: 14px !important;
+          font-weight: 900 !important;
+          letter-spacing: 0 !important;
+          color: rgba(255,255,255,0.98) !important;
+          text-shadow: 0 2px 10px rgba(0,0,0,0.85) !important;
+          line-height: 1 !important;
+        }
+        .bb-shield{
+          top: -8px !important;
+          right: -8px !important;
+          font-size: 10px !important;
+          padding: 2px 6px !important;
+        }
 
 `,
         }}
