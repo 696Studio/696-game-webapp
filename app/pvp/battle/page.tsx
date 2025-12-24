@@ -2341,11 +2341,65 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           border-radius: 22px;
           pointer-events: none;
           z-index: 7;
-          display: flex;
-          align-items: flex-end;
-          justify-content: center;
-          padding: 10px;
         }
+
+        .bb-stats {
+          position: absolute;
+          inset: 0;
+        }
+
+        .bb-stat {
+          position: absolute;
+          width: 30px;
+          height: 30px;
+          border-radius: 999px;
+          display: grid;
+          place-items: center;
+          font-weight: 900;
+          font-size: 12px;
+          line-height: 1;
+          color: rgba(255,255,255,0.96);
+          text-shadow: 0 2px 6px rgba(0,0,0,0.75);
+          box-shadow:
+            0 8px 18px rgba(0,0,0,0.55),
+            inset 0 2px 10px rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.12);
+          background: radial-gradient(120% 120% at 30% 25%, rgba(255,255,255,0.10), rgba(0,0,0,0.55));
+        }
+
+        .bb-atk { left: 10px; bottom: 10px; }
+        .bb-hp { right: 10px; bottom: 10px; }
+
+        .bb-atk::before {
+          content: "";
+          position: absolute;
+          inset: -6px;
+          border-radius: 999px;
+          background: radial-gradient(60% 60% at 45% 40%, rgba(255,235,180,0.12), rgba(0,0,0,0));
+          filter: blur(0.5px);
+        }
+
+        .bb-hp::before {
+          content: "";
+          position: absolute;
+          inset: -6px;
+          border-radius: 999px;
+          background: radial-gradient(60% 60% at 45% 40%, rgba(160,255,210,0.10), rgba(0,0,0,0));
+          filter: blur(0.5px);
+        }
+
+        .bb-shield-badge {
+          position: absolute;
+          top: -8px;
+          right: -8px;
+          font-size: 10px;
+          padding: 2px 6px;
+          border-radius: 999px;
+          background: rgba(35, 135, 255, 0.75);
+          border: 1px solid rgba(255,255,255,0.18);
+          box-shadow: 0 8px 16px rgba(0,0,0,0.45);
+        }
+
 
         .bb-title { font-weight: 900; letter-spacing: 0.06em; font-size: 12px; text-transform: uppercase; line-height: 1.15; }
 
