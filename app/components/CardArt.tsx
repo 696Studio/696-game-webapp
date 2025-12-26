@@ -1,3 +1,4 @@
+
 "use client";
 
 import React from "react";
@@ -46,7 +47,8 @@ const DEFAULT_BACK = "/cards/back/card_back.png";
  *
  * IMPORTANT:
  * - This component is intentionally visual-only.
- * - In PVP mode it stays self-contained: background + art + frame + (optional) stats.
+ * - In PVP mode: we render a clipped "inner face" (background/matte/art) and an UNCLIPPED frame on top.
+ *   This allows enlarging the frame without it being cut off by overflow rules.
  * - PVP HUD outside the card must never be touched here.
  */
 export default function CardArt({
@@ -83,18 +85,18 @@ export default function CardArt({
           bottom: 4,
           left: side === "left" ? 6 : undefined,
           right: side === "right" ? 6 : undefined,
-          zIndex: 8,
+          zIndex: 20,
           pointerEvents: "none",
           display: "inline-flex",
           alignItems: "center",
           gap: 2,
           padding: "2px 4px",
           borderRadius: 999,
-          border: "1px solid rgba(255,255,255,0.20)",
-          background: "rgba(0,0,0,0.55)",
+          border: "1px solid rgba(255,255,255,0.18)",
+          background: "rgba(0,0,0,0.45)",
           backdropFilter: "blur(8px)",
           fontWeight: 900,
-          letterSpacing: "0.06em",
+          letterSpacing: "0.05em",
           textTransform: "uppercase",
           fontSize: 7,
           lineHeight: 1,
@@ -113,76 +115,71 @@ export default function CardArt({
           .bb-card .bb-overlay {
             display: none !important;
           }
-
-          /* Hard-clamp any inner layers to the card silhouette (prevents "matte" bleeding). */
-          .bb-card,
-          .bb-card .bb-face,
-          .bb-card .bb-front,
-          .bb-card .bb-face-front,
-          .bb-face {
-            overflow: hidden !important;
-            border-radius: 18px !important;
-          }
         `}</style>
 
-        {/* FRONT FACE ONLY: do NOT render card_back here (it should appear only on flip/back face). */}
+        {/* Inner face (CLIPPED): background + matte + art */}
         <div
           aria-hidden="true"
           style={{
             position: "absolute",
             inset: 0,
             zIndex: 0,
+            overflow: "hidden",
+            borderRadius: 18,
             pointerEvents: "none",
-            background:
-              "radial-gradient(220px 180px at 50% 18%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0) 60%)," +
-              "linear-gradient(to bottom, rgba(10,18,24,0.30), rgba(2,6,10,0.86))",
           }}
-        />
-
-        {/* Inner matte / card face plate (must stay INSIDE the frame window) */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: "22%",
-            borderRadius: 16,
-            zIndex: 1,
-            pointerEvents: "none",
-            background:
-              "radial-gradient(140px 120px at 50% 18%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0.0) 55%)," +
-              "linear-gradient(to bottom, rgba(0,0,0,0.18), rgba(0,0,0,0.58))",
-            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)",
-          }}
-        />
-
-        {/* Art (contain + center) */}
-        {src ? (
+        >
+          {/* Front face background (NOT card back; back should only appear on flip) */}
           <div
-            className="bb-art"
+            aria-hidden="true"
             style={{
-              backgroundImage: `url(${src})`,
-              inset: "16%",
-              backgroundSize: "contain",
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "center",
-              zIndex: 2,
-              transform: "none",
-              filter: "saturate(1.05) contrast(1.05)",
+              position: "absolute",
+              inset: 0,
+              zIndex: 0,
+              background:
+                "radial-gradient(220px 180px at 50% 18%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0) 60%)," +
+                "linear-gradient(to bottom, rgba(10,18,24,0.30), rgba(2,6,10,0.86))",
             }}
           />
-        ) : (
-          <div
-            className="bb-art bb-art--ph"
-            style={{
-              inset: "16%",
-              zIndex: 2,
-            }}
-          >
-            <div className="bb-mark-sm">CARD</div>
-          </div>
-        )}
 
-        {/* Frame overlay */}
+          {/* Inner matte / plate (kept safely inside) */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              inset: "24%", // deeper so it never peeks outside the frame window
+              borderRadius: 16,
+              zIndex: 1,
+              background:
+                "radial-gradient(140px 120px at 50% 18%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0.0) 55%)," +
+                "linear-gradient(to bottom, rgba(0,0,0,0.16), rgba(0,0,0,0.60))",
+              boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)",
+            }}
+          />
+
+          {/* Art (contain + center) */}
+          {src ? (
+            <div
+              className="bb-art"
+              style={{
+                backgroundImage: `url(${src})`,
+                inset: "18%",
+                backgroundSize: "contain",
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "center",
+                zIndex: 2,
+                transform: "none",
+                filter: "saturate(1.05) contrast(1.05)",
+              }}
+            />
+          ) : (
+            <div className="bb-art bb-art--ph" style={{ inset: "18%", zIndex: 2 }}>
+              <div className="bb-mark-sm">CARD</div>
+            </div>
+          )}
+        </div>
+
+        {/* Frame overlay (UNCLIPPED): truly bigger, centered, no distortion */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           className={["bb-frame", frameClassName].join(" ")}
@@ -191,27 +188,19 @@ export default function CardArt({
           draggable={false}
           style={{
             position: "absolute",
-            // Make the frame slightly larger than the face so the inner plate never peeks out.
-            // Use symmetric expansion so it doesn't "shift" to one side.
-            left: "-6%",
-            top: "-6%",
-            width: "112%",
-            height: "112%",
-            zIndex: 6,
+            inset: 0,
+            zIndex: 10,
             pointerEvents: "none",
-            transform: "none",
             objectFit: "contain",
             objectPosition: "center",
+            transform: "scale(1.14)", // bigger frame, centered (doesn't stretch)
+            transformOrigin: "50% 50%",
           }}
         />
 
         {/* Optional bottom-corner stats (HP/ATK) */}
         {showStats ? (
-          <div
-            className="bb-stats"
-            aria-hidden="true"
-            style={{ position: "absolute", inset: 0, zIndex: 8, pointerEvents: "none" }}
-          >
+          <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 20, pointerEvents: "none" }}>
             <StatPill side="left" value={atk} label="ATK" />
             <StatPill
               side="right"
@@ -229,7 +218,7 @@ export default function CardArt({
         ) : null}
 
         {showCorner ? (
-          <div className="bb-corner" style={{ zIndex: 9 }}>
+          <div className="bb-corner" style={{ zIndex: 30 }}>
             <span className="bb-corner-dot" />
           </div>
         ) : null}
@@ -244,12 +233,7 @@ export default function CardArt({
         <>
           {/* Background */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={DEFAULT_BACK}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-            draggable={false}
-          />
+          <img src={DEFAULT_BACK} alt="" className="absolute inset-0 w-full h-full object-cover pointer-events-none" draggable={false} />
 
           {/* Art */}
           <div className="absolute inset-0 flex items-center justify-center">
@@ -274,9 +258,7 @@ export default function CardArt({
           <img
             src={frameSrc}
             alt=""
-            className={["absolute inset-0 w-full h-full object-contain pointer-events-none", frameClassName].join(
-              " "
-            )}
+            className={["absolute inset-0 w-full h-full object-contain pointer-events-none", frameClassName].join(" ")}
             draggable={false}
           />
         </>
