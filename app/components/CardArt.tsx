@@ -123,21 +123,6 @@ export default function CardArt({
             overflow: hidden !important;
             border-radius: 18px !important;
           }
-
-          /* Force the frame to be slightly larger than the base so it covers matte edges.
-             Use !important to override battle CSS if it sets size/position on .bb-frame. */
-          .bb-card .bb-frame,
-          .bb-frame {
-            position: absolute !important;
-            left: -8% !important;
-            top: -8% !important;
-            width: 116% !important;
-            height: 116% !important;
-            object-fit: contain !important;
-            object-position: center !important;
-            transform: none !important;
-            pointer-events: none !important;
-          }
         `}</style>
 
         {/* FRONT FACE ONLY: do NOT render card_back here (it should appear only on flip/back face). */}
@@ -159,7 +144,7 @@ export default function CardArt({
           aria-hidden="true"
           style={{
             position: "absolute",
-            inset: "18%",
+            inset: "22%",
             borderRadius: 16,
             zIndex: 1,
             pointerEvents: "none",
@@ -206,9 +191,12 @@ export default function CardArt({
           draggable={false}
           style={{
             position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
+            // Make the frame slightly larger than the face so the inner plate never peeks out.
+            // Use symmetric expansion so it doesn't "shift" to one side.
+            left: "-6%",
+            top: "-6%",
+            width: "112%",
+            height: "112%",
             zIndex: 6,
             pointerEvents: "none",
             transform: "none",
