@@ -19,7 +19,7 @@ type CardArtProps = {
   variant?: "generic" | "pvp";
 
   /** Size of the art inside the frame (generic mode only, %). */
-  artScalePct?: number;
+  artScalePct?: number; // e.g. 58 means maxWidth/maxHeight 58%
 
   /** PVP stats (pvp mode only). */
   showStats?: boolean;
@@ -45,8 +45,8 @@ const DEFAULT_BACK = "/cards/back/card_back.png";
  * CardArt
  *
  * IMPORTANT:
- * - Visual-only component.
- * - In PVP mode we render a CLIPPED inner face (background + art) and an UNCLIPPED frame on top.
+ * - This component is intentionally visual-only.
+ * - In PVP mode it stays self-contained: background + art + frame + (optional) stats.
  * - PVP HUD outside the card must never be touched here.
  */
 export default function CardArt({
@@ -77,23 +77,24 @@ export default function CardArt({
       extra?: React.ReactNode;
     }) => (
       <div
+        className={`bb-stat bb-stat-${label.toLowerCase()}`}
         style={{
           position: "absolute",
           bottom: 4,
           left: side === "left" ? 6 : undefined,
           right: side === "right" ? 6 : undefined,
-          zIndex: 20,
+          zIndex: 8,
           pointerEvents: "none",
           display: "inline-flex",
           alignItems: "center",
           gap: 2,
           padding: "2px 4px",
           borderRadius: 999,
-          border: "1px solid rgba(255,255,255,0.18)",
-          background: "rgba(0,0,0,0.45)",
+          border: "1px solid rgba(255,255,255,0.20)",
+          background: "rgba(0,0,0,0.55)",
           backdropFilter: "blur(8px)",
           fontWeight: 900,
-          letterSpacing: "0.05em",
+          letterSpacing: "0.06em",
           textTransform: "uppercase",
           fontSize: 7,
           lineHeight: 1,
@@ -109,67 +110,124 @@ export default function CardArt({
       <>
         {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
         <style jsx global>{`
-          .bb-card .bb-overlay { display: none !important; }
-        `}</style>
+          .bb-card .bb-overlay {
+            display: none !important;
+          }
 
-        {/* Inner face (CLIPPED): ONLY a clean background + art (no oval plate, no circular highlights). */}
+          /* Hard-clamp any inner layers to the card silhouette (prevents "matte" bleeding). */
+          .bb-card,
+          .bb-card .bb-face,
+          .bb-card .bb-front,
+          .bb-card .bb-face-front,
+          .bb-face {
+            overflow: hidden !important;
+            border-radius: 18px !important;
+          }
+
+          /* Force the frame to be slightly larger than the base so it covers matte edges.
+             Use !important to override battle CSS if it sets size/position on .bb-frame. */
+          .bb-card .bb-frame,
+          .bb-frame {
+            position: absolute !important;
+            left: -8% !important;
+            top: -8% !important;
+            width: 116% !important;
+            height: 116% !important;
+            object-fit: contain !important;
+            object-position: center !important;
+            transform: none !important;
+            pointer-events: none !important;
+          }
+
+
+/* Kill any legacy highlight bubbles (pseudo-elements / glow layers) that create a small translucent circle. */
+.bb-card::before,
+.bb-card::after,
+.bb-card .bb-face::before,
+.bb-card .bb-face::after,
+.bb-card .bb-front::before,
+.bb-card .bb-front::after,
+.bb-card .bb-face-front::before,
+.bb-card .bb-face-front::after,
+.bb-face::before,
+.bb-face::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.bb-card .bb-glow,
+.bb-card .bb-shine,
+.bb-card .bb-highlight,
+.bb-card .bb-bubble {
+  display: none !important;
+}
+`}</style>
+
+        {/* FRONT FACE ONLY: do NOT render card_back here (it should appear only on flip/back face). */}
         <div
           aria-hidden="true"
           style={{
             position: "absolute",
             inset: 0,
+            width: "100%",
+            height: "100%",
             zIndex: 0,
-            overflow: "hidden",
-            borderRadius: 18,
             pointerEvents: "none",
+            background:
+              "radial-gradient(220px 180px at 50% 18%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0) 60%)," +
+              "linear-gradient(to bottom, rgba(10,18,24,0.30), rgba(2,6,10,0.86))",
           }}
-        >
-          {/* Clean front face background (NOT card back; back should only appear on flip) */}
+        />
+
+        {/* Inner matte / card face plate (must stay INSIDE the frame window) */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            width: "100%",
+            height: "100%",
+            inset: "18%",
+            borderRadius: 16,
+            zIndex: 1,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(140px 120px at 50% 18%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0.0) 55%)," +
+              "linear-gradient(to bottom, rgba(0,0,0,0.18), rgba(0,0,0,0.58))",
+            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)",
+          }}
+        />
+
+        {/* Art (contain + center) */}
+        {src ? (
           <div
-            aria-hidden="true"
+            className="bb-art"
             style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 0,
-              background: "linear-gradient(to bottom, rgba(10,18,24,0.30), rgba(2,6,10,0.86))",
+              backgroundImage: `url(${src})`,
+              inset: "16%",
+              backgroundSize: "contain",
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "center",
+              zIndex: 2,
+              transform: "none",
+              filter: "saturate(1.05) contrast(1.05)",
             }}
           />
+        ) : (
+          <div
+            className="bb-art bb-art--ph"
+            style={{
+              inset: "16%",
+              zIndex: 2,
+            }}
+          >
+            <div className="bb-mark-sm">CARD</div>
+          </div>
+        )}
 
-          {/* Art (contain + center) — do NOT use .bb-art class to avoid any legacy CSS pseudo-elements */}
-          {src ? (
-            <div
-              style={{
-                position: "absolute",
-                inset: "18%",
-                zIndex: 2,
-                backgroundImage: `url(${src})`,
-                backgroundSize: "contain",
-                backgroundRepeat: "no-repeat",
-                backgroundPosition: "center",
-                transform: "none",
-                filter: "saturate(1.05) contrast(1.05)",
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                position: "absolute",
-                inset: "18%",
-                zIndex: 2,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                opacity: 0.6,
-                fontSize: 10,
-                fontWeight: 800,
-              }}
-            >
-              CARD
-            </div>
-          )}
-        </div>
-
-        {/* Frame overlay (UNCLIPPED): bigger frame, centered, no distortion */}
+        {/* Frame overlay (MUST match the card base size; no scaling) */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           className={["bb-frame", frameClassName].join(" ")}
@@ -179,18 +237,23 @@ export default function CardArt({
           style={{
             position: "absolute",
             inset: 0,
-            zIndex: 10,
+            width: "100%",
+            height: "100%",
+            zIndex: 6,
             pointerEvents: "none",
+            transform: "none",
             objectFit: "contain",
             objectPosition: "center",
-            transform: "scale(1.14)",
-            transformOrigin: "50% 50%",
           }}
         />
 
         {/* Optional bottom-corner stats (HP/ATK) */}
         {showStats ? (
-          <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 20, pointerEvents: "none" }}>
+          <div
+            className="bb-stats"
+            aria-hidden="true"
+            style={{ position: "absolute", inset: 0, zIndex: 8, pointerEvents: "none" }}
+          >
             <StatPill side="left" value={atk} label="ATK" />
             <StatPill
               side="right"
@@ -208,7 +271,7 @@ export default function CardArt({
         ) : null}
 
         {showCorner ? (
-          <div className="bb-corner" style={{ zIndex: 30 }}>
+          <div className="bb-corner" style={{ zIndex: 9 }}>
             <span className="bb-corner-dot" />
           </div>
         ) : null}
