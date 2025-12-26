@@ -260,9 +260,21 @@ export default function CardArt({
       <>
         {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
         <style jsx global>{`
-          .bb-card { overflow: visible !important; }
-          .bb-card .bb-overlay { display: none !important; }
-        `}</style>
+          /* Ensure glow + below-card stats are not clipped by legacy containers */
+          .bb-card,
+          .bb-card .bb-face,
+          .bb-card .bb-front,
+          .bb-card .bb-face-front,
+          .bb-face,
+          .bb-front {
+            overflow: visible !important;
+          }
+
+          /* Hide legacy PVP overlay blocks (big bars/text) */
+          .bb-card .bb-overlay {
+            display: none !important;
+          }
+`}</style>
         {/* Card Glow Effect (PREMIUM CYAN-BLUE GLOW) — behind art & frame */}
         <div
           aria-hidden="true"
