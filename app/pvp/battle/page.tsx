@@ -3,6 +3,7 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
+import CardArt from "../../components/CardArt";
 
 type MatchRow = {
   id: string;
@@ -294,8 +295,8 @@ const BOARD_IMG_W = 1290;
 const BOARD_IMG_H = 2796;
 
 
-const DEBUG_ARENA = false; // debug overlay for arena sizing
-const DEBUG_GRID = true; // keep grid ON for placement // mirrored A/B measurement grid (dev only)
+const DEBUG_ARENA = true; // debug overlay for arena sizing
+const DEBUG_GRID = true; // mirrored A/B measurement grid (dev only)
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -1536,333 +1537,91 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
         ].join(" ")}
-        style={{ 
-          animationDelay: `${delayMs}ms`,
-          boxShadow: revealed
-            ? "0 4px 24px 0 rgba(24,22,16,0.32), 0 0 0 4px #e4ba63aa"
-            : "0 2px 10px 0 #1a192027",
-          borderRadius: "16px",
-        }}
+        style={{ animationDelay: `${delayMs}ms` }}
       >
-        <div
-          className="bb-card-inner"
-          style={{
-            background: "linear-gradient(135deg, #272724 60%, #3f3629 100%)",
-            borderRadius: "14px",
-            boxShadow: "0 2px 12px 0 rgba(38,32,21,0.18)",
-            overflow: "hidden",
-            padding: "2.5px 0 0px 0",
-          }}
-        >
-          <div className="bb-face bb-back" style={{
-            background: "radial-gradient(ellipse at 50% 60%, #786c45 55%, #383325 100%)",
-            borderRadius: "11px",
-            boxShadow: "0 2px 12px 0 rgba(64,57,36,0.15)",
-          }}>
-            <div className="bb-mark" style={{textShadow: "0 2px 4px #0006", opacity: 0.16}}>696</div>
+        <div className="bb-card-inner">
+          <div className="bb-face bb-back">
+            <div className="bb-mark">696</div>
           </div>
 
-          <div
-            className={["bb-face bb-front", rarityFxClass(r)].join(" ")}
-            style={{
-              borderRadius: "11px",
-              border: "2.5px solid #684D1A",
-              boxShadow: "0 5px 18px 0 #302a1e33,0 0 0 3px #cab17530",
-              background: "linear-gradient(130deg, #221f1a 80%, #4a3d25 100%)",
-            }}
-          >
-            {img ? (
-              <div
-                className="bb-art"
-                style={{
-                  backgroundImage: `url(${img})`,
-                  objectFit: "cover",
-                  borderRadius: "7px",
-                  boxShadow: "0 0 0 2px #221c11, 0 0 16px #edce7c22",
-                  margin: "8px 8px 0 8px",
-                  height: "92px",
-                  backgroundPosition: "center 42%",
-                  backgroundSize: "cover",
-                }}
-              />
-            ) : (
-              <div
-                className="bb-art bb-art--ph"
-                style={{
-                  borderRadius: "7px",
-                  boxShadow: "0 0 0 2px #221c11, 0px 4px 12px #a18c4a11",
-                  background: "linear-gradient(140deg, #1f1c1c 60%, #3e2c16 100%)",
-                  margin: "8px 8px 0 8px",
-                  height: "92px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}
-              >
-                <div className="bb-mark-sm" style={{color: "#e4ba63", letterSpacing: "2px", fontWeight: 700}}>CARD</div>
-              </div>
-            )}
-            <img
-              className="bb-frame"
-              src={CARD_FRAME_SRC}
-              alt=""
-              style={{
-                pointerEvents: "none",
-                zIndex: 5,
-                position: "absolute",
-                left: 0,
-                top: 0,
-                width: "100%",
-                height: "100%",
-                filter: "drop-shadow(0 0 8px #e5daac55)",
-                borderRadius: "12px",
-              }}
+          <div className={["bb-face bb-front", rarityFxClass(r)].join(" ")}>
+            <CardArt
+              variant="pvp"
+              src={img}
+              frameSrc={CARD_FRAME_SRC}
+              showStats={!!unit}
+              atk={power ?? 0}
+              hp={unit?.hp ?? 0}
+              shield={unit?.shield ?? 0}
+              showCorner={!!unit}
             />
-
             {unit && (
-              <div
-                className="bb-fx"
-                style={{
-                  pointerEvents: "none",
-                  zIndex: 7,
-                  position: "absolute",
-                  left: 0,
-                  top: 0,
-                  width: "100%",
-                  height: "100%",
-                }}
-              >
+              <div className="bb-fx">
                 {spawned && <div key={`spawn-${spawned.t}-${unit.instanceId}`} className="bb-spawn" />}
 
                 {atk && (
                   <div className="bb-atkfx">
-                    {atk.isFrom && (
-                      <div
-                        key={`slash-${atk.t}-${unit.instanceId}`}
-                        className="bb-slash"
-                        style={{
-                          boxShadow:
-                            "0 0 16px 4px #f8f49f77, 0 1px 8px 0 #ffce4a80",
-                          borderRadius: "4px",
-                        }}
-                      />
-                    )}
-                    {atk.isTo && (
-                      <div
-                        key={`impact-${atk.t}-${unit.instanceId}`}
-                        className="bb-impact"
-                        style={{
-                          boxShadow:"0 0 18px 1px #dc555d70, 0 2px 10px #a93d3d50",
-                          borderRadius: "50%",
-                        }}
-                      />
-                    )}
+                    {atk.isFrom && <div key={`slash-${atk.t}-${unit.instanceId}`} className="bb-slash" />}
+                    {atk.isTo && <div key={`impact-${atk.t}-${unit.instanceId}`} className="bb-impact" />}
                   </div>
                 )}
 
                 {dmg && (
                   <>
-                    <div
-                      key={`dmgflash-${dmg.t}-${unit.instanceId}`}
-                      className="bb-dmgflash"
-                      style={{
-                        background:
-                          "radial-gradient(circle, #ffe66777 0%, #d6383080 55%, #0000 80%)",
-                        opacity: 0.65,
-                        borderRadius: "12px",
-                      }}
-                    />
-                    <div
-                      key={`dmgfloat-${dmg.t}-${unit.instanceId}`}
-                      className="bb-dmgfloat"
-                      style={{
-                        color: dmg.blocked ? "#8aefff" : "#fe5155",
-                        textShadow: dmg.blocked
-                          ? "0 1px 4px #35647866, 0 0px 3px #fff9"
-                          : "0 1px 3px #d6393878,0 0px 2px #fff6",
-                        fontWeight: 700,
-                        fontSize: "1.08em",
-                        borderRadius: "6px",
-                        padding: "2px 10px",
-                        background: dmg.blocked
-                          ? "linear-gradient(90deg,#162e41aa,#7deaff80)"
-                          : "linear-gradient(90deg,#ffdec480,#fde6e680)",
-                        border: dmg.blocked
-                          ? "1.3px solid #46beec"
-                          : "1.3px solid #ffb4a3",
-                        boxShadow: dmg.blocked
-                          ? "0 1px 5px #2d3e4a88"
-                          : "0 2px 7px #b51508cc",
-                      }}
-                    >
+                    <div key={`dmgflash-${dmg.t}-${unit.instanceId}`} className="bb-dmgflash" />
+                    <div key={`dmgfloat-${dmg.t}-${unit.instanceId}`} className="bb-dmgfloat">
                       {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
                     </div>
                   </>
                 )}
 
-                {isDying && (
-                  <div
-                    className="bb-death"
-                    style={{
-                      background:
-                        "radial-gradient(circle, #29251077 35%, #000 99%)",
-                      borderRadius: "10px",
-                      opacity: 0.24,
-                    }}
-                  />
+                {isDying && <div className="bb-death" />}
+              </div>
+            )}
+
+            <div className="bb-overlay">
+              <div className="bb-title">{title}</div>
+              <div className="bb-subrow">
+                <span className="bb-chip">{rarityRu(r)}</span>
+                {power != null && (
+                  <span className="bb-chip">
+                    POW <b className="tabular-nums">{power}</b>
+                  </span>
                 )}
               </div>
-            )}
 
-            {unit && (
-              <div className="bb-stats" aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  width: "100%",
-                  left: 0,
-                  bottom: "10px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  padding: "0 12px",
-                  zIndex: 9,
-                }}
-              >
-                <div
-                  className="bb-stat bb-atk"
-                  title="Attack"
-                  style={{
-                    background: "linear-gradient(145deg,#fff2d1 72%,#bfa24f 100%)",
-                    boxShadow:
-                      "0 3px 10px #1c0e000d, 0 0 3px #7b61163c, 0 0 0 3px #f6e3ae99",
-                    borderRadius: "50%",
-                    border: "2px solid #e7b737",
-                    minWidth: "34px",
-                    minHeight: "34px",
-                    maxWidth: "38px",
-                    maxHeight: "38px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginRight: "2px",
-                  }}
-                >
-                  <span className="bb-stat-icon"
-                    style={{
-                      filter: "drop-shadow(0 0 2px #fff6) drop-shadow(0 2px 2px #ffd50033)"
-                    }}
-                  >
-                    <svg className="bb-stat-svg" width={19} height={19} viewBox="0 0 24 24" aria-hidden="true"
-                      style={{
-                        stroke: "#c89b30",
-                        strokeWidth: 1.1,
-                        fill: "#d6ab4a",
-                        filter: "drop-shadow(0 1px 2px #fff4)"
-                      }}
-                    >
-                      <path d="M21 3l-6.8 6.8 1.4 1.4L22.4 4.4 21 3zM13.4 10.4L6.1 17.7l-1.8-.2-.2-1.8 7.3-7.3 2 2zM4.2 19.8l3.7-.4-.9-.9-2 .2-.2-2-.9-.9-.4 3.7c-.1.8.6 1.5 1.5 1.3z" />
-                    </svg>
-                  </span>
-                  <span
-                    className="bb-stat-num tabular-nums"
-                    style={{
-                      color: "#6d4c01",
-                      fontWeight: 700,
-                      fontSize: "1.14em",
-                      letterSpacing: "-.01em",
-                      marginLeft: "2px",
-                      WebkitTextStroke: "1px #feecc9",
-                      textShadow:
-                        "0 2px 6px #fffabd44,0 1px 0 #fbe9b8,0 2px 6px #bba35522",
-                    }}
-                  >{power ?? 0}</span>
+              {unit && (
+                <div className="bb-bars">
+                  <div className="bb-bar bb-bar--hp">
+                    <div style={{ width: `${hpPct}%` }} />
+                  </div>
+                  {unit.shield > 0 && (
+                    <div className="bb-bar bb-bar--shield">
+                      <div style={{ width: `${shieldPct}%` }} />
+                    </div>
+                  )}
+                  <div className="bb-hptext">
+                    <span className="tabular-nums">{unit.hp}</span> / <span className="tabular-nums">{unit.maxHp}</span>
+                    {unit.shield > 0 ? (
+                      <span className="bb-shieldnum">
+                        {" "}
+                        +<span className="tabular-nums">{unit.shield}</span>
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {tags.length > 0 && (
+                    <div className="bb-tags">
+                      {tags.map((x) => (
+                        <TagPill key={x} label={String(x).toUpperCase()} />
+                      ))}
+                    </div>
+                  )}
                 </div>
+              )}
+            </div>
 
-                <div
-                  className="bb-stat bb-hp"
-                  title="HP"
-                  style={{
-                    background: "linear-gradient(145deg,#fff5ea 60%,#db7e5f 100%)",
-                    boxShadow:
-                      "0 2px 12px #9c5b24a1,0 0 0 3px #fde8d8aa",
-                    border: "2px solid #c95a2f",
-                    borderRadius: "50%",
-                    minWidth: "34px",
-                    minHeight: "34px",
-                    maxWidth: "38px",
-                    maxHeight: "38px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginLeft: "2px",
-                    position: "relative"
-                  }}
-                >
-                  <span className="bb-stat-icon"
-                    style={{
-                      filter: "drop-shadow(0 1px 3px #ffddb4d0) drop-shadow(0 2px 2px #d2826036)",
-                    }}
-                  >
-                    <svg className="bb-stat-svg" width={19} height={19} viewBox="0 0 24 24" aria-hidden="true"
-                      style={{
-                        stroke: "#b4421f",
-                        strokeWidth: 1,
-                        fill: "#d47434",
-                        filter: "drop-shadow(0 2px 2px #fff5)"
-                      }}
-                    >
-                      <path d="M12 2s4 5.1 4 8.3C16 14 14 16 12 16s-4-2-4-5.7C8 7.1 12 2 12 2z" />
-                      <path d="M7 14.5C7 18 9.5 21 12 21s5-3 5-6.5c0-1.4-.5-2.8-1.4-3.9.2 3.8-1.8 6.4-3.6 6.4-1.9 0-3.8-2.6-3.6-6.4C7.5 11.7 7 13.1 7 14.5z" opacity="0.6"/>
-                    </svg>
-                  </span>
-                  <span
-                    className="bb-stat-num tabular-nums"
-                    style={{
-                      color: "#9e3410",
-                      fontWeight: 800,
-                      fontSize: "1.16em",
-                      letterSpacing: "-.01em",
-                      marginLeft: "2px",
-                      WebkitTextStroke: "1px #ffeadc",
-                      textShadow:
-                        "0 2.5px 7px #faeed9,0 1px 1.5px #f5b697,0 2px 7px #995f4722",
-                    }}
-                  >{unit.hp}</span>
-
-                  {unit.shield && unit.shield > 0 ? (
-                    <span
-                      className="bb-shield"
-                      title="Shield"
-                      style={{
-                        position: "absolute",
-                        right: "-7px",
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        background: "linear-gradient(94deg,#a2e8ff 50%,#c5e3f4 90%)",
-                        color: "#176a88",
-                        border: "1.5px solid #bbe1fa",
-                        borderRadius: "7px",
-                        fontSize: "0.98em",
-                        fontWeight: 700,
-                        boxShadow: "0 2px 5px #b5eaf813,0 0 0 .5px #b8d8f6b3",
-                        padding: "2px 7px",
-                        minWidth: "22px",
-                        zIndex: 2,
-                        marginLeft: "3px"
-                      }}
-                    >
-                      +<span className="tabular-nums">{unit.shield}</span>
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            )}
-
-            {unit && (
-              <div className="bb-corner">
-                <span className="bb-corner-dot" />
-              </div>
-            )}
-          </div>
+            </div>
         </div>
       </div>
     );
@@ -2461,54 +2220,42 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .bb-face {
           position: absolute;
           inset: 0;
-          border-radius: 22px;
-          background: transparent;
-          border: none;
-          box-shadow: none;
+          border-radius: 18px;
           backface-visibility: hidden;
-          -webkit-backface-visibility: hidden;
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          background: rgba(255, 255, 255, 0.06);
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .bb-back {
+          background:
+            radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.34));
         }
 
         .bb-front {
           transform: rotateY(180deg);
-          /* Opaque card body so the arena never shows through */
           background:
-            radial-gradient(420px 260px at 50% 10%, rgba(255,255,255,0.08) 0%, transparent 62%),
-            linear-gradient(to bottom, rgba(18, 22, 34, 0.92), rgba(8, 10, 14, 0.96)),
-            rgba(8, 10, 14, 0.96);
+            radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.16) 0%, transparent 58%),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.26));
         }
-        .bb-back { transform: rotateY(0deg); }
-
-        .bb-back {
-          background:
-            radial-gradient(420px 300px at 50% 12%, rgba(255, 255, 255, 0.08) 0%, transparent 64%),
-            linear-gradient(to bottom, rgba(25, 28, 40, 0.32), rgba(8, 10, 14, 0.92)),
-            rgba(8, 10, 14, 0.92);
-        }
-
-        /* Opaque inner plate so the arena never shows through the card */
 
         .bb-mark { font-weight: 900; letter-spacing: 0.24em; font-size: 14px; opacity: 0.75; text-transform: uppercase; }
         .bb-mark-sm { font-weight: 900; letter-spacing: 0.18em; font-size: 11px; opacity: 0.7; text-transform: uppercase; }
 
         .bb-art {
           position: absolute;
-          /* Slight inset so the art stays inside the frame window */
-          inset: 18px;
-          border-radius: 16px;
-          overflow: hidden;
-          /* Keep the unit centered and visible */
-          background-repeat: no-repeat;
-          /* Most of our PNGs have a bit more empty space on the left, so shift slightly left */
-          background-position: 46% 60%;
+          inset: 18%;
+          z-index: 1;
           background-size: contain;
-          /* Avoid extra “muting” */
-          filter: none;
-          /* Zoom-in the art (PNGs include lots of transparent padding) */
-          transform: scale(1.18);
-          transform-origin: 50% 60%;
+          background-repeat: no-repeat;
+          background-position: center;
+          filter: saturate(1.05) contrast(1.05);
+          transform: none;
         }
-        
         .bb-art--ph {
           background:
             radial-gradient(420px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
@@ -2603,121 +2350,13 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .bb-overlay {
           position: absolute;
           inset: 0;
-          border-radius: 22px;
-          pointer-events: none;
           z-index: 7;
-        }
-
-        
-        .bb-stats {
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-        }
-
-        .bb-stat {
-          position: absolute;
-          bottom: 6px;
-          width: 44px;
-          height: 26px;
-          border-radius: 14px;
           display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          font-weight: 900;
-          font-size: 14px;
-          letter-spacing: 0.2px;
-          color: rgba(255, 255, 255, 0.96);
-          text-shadow: 0 2px 6px rgba(0, 0, 0, 0.65);
-          background: rgba(15, 16, 20, 0.92);
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+          flex-direction: column;
+          justify-content: flex-end;
+          padding: 12px;
+          background: linear-gradient(to top, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0.12), transparent);
         }
-
-        .bb-icon {
-          font-size: 12px;
-          line-height: 1;
-          opacity: 0.95;
-        }
-
-        .bb-atk {
-          left: 6px;
-        }
-
-        .bb-hp {
-          right: 6px;
-        }
-
-        .bb-shield {
-          position: absolute;
-          top: -10px;
-          right: -6px;
-          padding: 2px 6px;
-          border-radius: 999px;
-          font-size: 11px;
-          font-weight: 900;
-          background: rgba(40, 140, 255, 0.95);
-          border: 1px solid rgba(255, 255, 255, 0.35);
-          box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
-        }
-.bb-stats {
-          position: absolute;
-          inset: 0;
-        }
-
-        .bb-stat {
-          position: absolute;
-          width: 30px;
-          height: 30px;
-          border-radius: 999px;
-          display: grid;
-          place-items: center;
-          font-weight: 900;
-          font-size: 12px;
-          line-height: 1;
-          color: rgba(255,255,255,0.96);
-          text-shadow: 0 2px 6px rgba(0,0,0,0.75);
-          box-shadow:
-            0 8px 18px rgba(0,0,0,0.55),
-            inset 0 2px 10px rgba(255,255,255,0.08);
-          border: 1px solid rgba(255,255,255,0.12);
-          background: radial-gradient(120% 120% at 30% 25%, rgba(255,255,255,0.10), rgba(0,0,0,0.55));
-        }
-
-        .bb-atk { left: 10px; bottom: 10px; }
-        .bb-hp { right: 10px; bottom: 10px; }
-
-        .bb-atk::before {
-          content: "";
-          position: absolute;
-          inset: -6px;
-          border-radius: 999px;
-          background: radial-gradient(60% 60% at 45% 40%, rgba(255,235,180,0.12), rgba(0,0,0,0));
-          filter: blur(0.5px);
-        }
-
-        .bb-hp::before {
-          content: "";
-          position: absolute;
-          inset: -6px;
-          border-radius: 999px;
-          background: radial-gradient(60% 60% at 45% 40%, rgba(160,255,210,0.10), rgba(0,0,0,0));
-          filter: blur(0.5px);
-        }
-
-        .bb-shield-badge {
-          position: absolute;
-          top: -8px;
-          right: -8px;
-          font-size: 10px;
-          padding: 2px 6px;
-          border-radius: 999px;
-          background: rgba(35, 135, 255, 0.75);
-          border: 1px solid rgba(255,255,255,0.18);
-          box-shadow: 0 8px 16px rgba(0,0,0,0.45);
-        }
-
 
         .bb-title { font-weight: 900; letter-spacing: 0.06em; font-size: 12px; text-transform: uppercase; line-height: 1.15; }
 
@@ -2753,16 +2392,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .bb-bar--hp > div { background: rgba(88, 240, 255, 0.22); }
         .bb-bar--shield > div { background: rgba(255, 204, 87, 0.18); }
         .bb-hptext {
-          font-size: 12px;
-          letter-spacing: 0.06em;
-          font-weight: 800;
+          font-size: 10px;
+          letter-spacing: 0.10em;
           text-transform: uppercase;
-          opacity: 0.95;
-          padding: 6px 10px;
-          border-radius: 999px;
-          background: rgba(0, 0, 0, 0.55);
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+          opacity: 0.9;
         }
         .bb-shieldnum { opacity: 0.9; }
 
@@ -2862,120 +2495,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           pointer-events: none;
         }
 
-          
-
-        /* === Card stats (Hearthstone-style) === */
-        .bb-stats{
-          position:absolute;
-          inset:0;
-          pointer-events:none;
-          z-index: 12; /* above card body */
-        }
-        .bb-stat{
-          position:absolute;
-          width:34px;
-          height:34px;
-          border-radius:999px;
-          display:grid;
-          place-items:center;
-          background:
-            radial-gradient(120% 120% at 30% 25%, rgba(255,255,255,0.16), rgba(0,0,0,0.72)),
-            #0a0c14;
-          border:1px solid rgba(255,255,255,0.16);
-          box-shadow:
-            0 10px 18px rgba(0,0,0,0.55),
-            inset 0 2px 10px rgba(255,255,255,0.10);
-          overflow:hidden;
-        }
-        .bb-atk{ left:10px; bottom:-6px; }
-        .bb-hp{ right:10px; bottom:-6px; }
-
-        .bb-stat-icon{
-          position:absolute;
-          inset:0;
-          display:grid;
-          place-items:center;
-          opacity:0.35;
-          transform: translateY(-1px);
-        }
-        .bb-stat-svg{
-          width:18px;
-          height:18px;
-          fill: rgba(255,255,255,0.95);
-          filter: drop-shadow(0 2px 6px rgba(0,0,0,0.55));
-        }
-        .bb-stat-num{
-          position:relative;
-          z-index:1;
-          font-weight: 950;
-          font-size: 12px;
-          line-height: 1;
-          color: rgba(255,255,255,0.98);
-          text-shadow: 0 2px 8px rgba(0,0,0,0.85);
-        }
-
-        /* Card stat styling overrides */
-        .bb-card{ max-width: 200px !important; }
-        .bb-card-inner{ border-radius: 20px !important; }
-        .bb-front{ border-radius: 20px !important; }
-        .bb-art{
-          inset: 14px !important;
-          border-radius: 16px !important;
-          background-size: cover !important;
-          background-position: 50% 55% !important;
-          transform: scale(1.12) !important;
-          transform-origin: 50% 55% !important;
-        }
-
-        /* Clean, non-transparent stats like a real card game */
-        .bb-stats{ position:absolute !important; inset:0 !important; pointer-events:none !important; }
-        .bb-stat{
-          width: 36px !important;
-          height: 36px !important;
-          border-radius: 999px !important;
-          bottom: -10px !important;
-          display:flex !important;
-          align-items:center !important;
-          justify-content:center !important;
-          gap: 0 !important;
-          padding: 0 !important;
-          background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.18), rgba(0,0,0,0.92)) !important;
-          border: 1px solid rgba(255,255,255,0.20) !important;
-          box-shadow: 0 10px 18px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.10) !important;
-        }
-        .bb-atk{ left: -6px !important; }
-        .bb-hp{ right: -6px !important; }
-
-        .bb-stat-icon{
-          position:absolute !important;
-          inset: 0 !important;
-          display:flex !important;
-          align-items:center !important;
-          justify-content:center !important;
-          opacity: 0.16 !important;
-        }
-        .bb-stat-svg{
-          width: 18px !important;
-          height: 18px !important;
-          fill: rgba(255,255,255,0.95) !important;
-        }
-        .bb-stat-num{
-          position: relative !important;
-          font-size: 14px !important;
-          font-weight: 900 !important;
-          letter-spacing: 0 !important;
-          color: rgba(255,255,255,0.98) !important;
-          text-shadow: 0 2px 10px rgba(0,0,0,0.85) !important;
-          line-height: 1 !important;
-        }
-        .bb-shield{
-          top: -8px !important;
-          right: -8px !important;
-          font-size: 10px !important;
-          padding: 2px 6px !important;
-        }
-
-`,
+          `,
         }}
       />
 
