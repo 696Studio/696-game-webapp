@@ -1536,70 +1536,320 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
         ].join(" ")}
-        style={{ animationDelay: `${delayMs}ms` }}
+        style={{ 
+          animationDelay: `${delayMs}ms`,
+          boxShadow: revealed
+            ? "0 4px 24px 0 rgba(24,22,16,0.32), 0 0 0 4px #e4ba63aa"
+            : "0 2px 10px 0 #1a192027",
+          borderRadius: "16px",
+        }}
       >
-        <div className="bb-card-inner">
-          <div className="bb-face bb-back">
-            <div className="bb-mark">696</div>
+        <div
+          className="bb-card-inner"
+          style={{
+            background: "linear-gradient(135deg, #272724 60%, #3f3629 100%)",
+            borderRadius: "14px",
+            boxShadow: "0 2px 12px 0 rgba(38,32,21,0.18)",
+            overflow: "hidden",
+            padding: "2.5px 0 0px 0",
+          }}
+        >
+          <div className="bb-face bb-back" style={{
+            background: "radial-gradient(ellipse at 50% 60%, #786c45 55%, #383325 100%)",
+            borderRadius: "11px",
+            boxShadow: "0 2px 12px 0 rgba(64,57,36,0.15)",
+          }}>
+            <div className="bb-mark" style={{textShadow: "0 2px 4px #0006", opacity: 0.16}}>696</div>
           </div>
 
-          <div className={["bb-face bb-front", rarityFxClass(r)].join(" ")}>
+          <div
+            className={["bb-face bb-front", rarityFxClass(r)].join(" ")}
+            style={{
+              borderRadius: "11px",
+              border: "2.5px solid #684D1A",
+              boxShadow: "0 5px 18px 0 #302a1e33,0 0 0 3px #cab17530",
+              background: "linear-gradient(130deg, #221f1a 80%, #4a3d25 100%)",
+            }}
+          >
             {img ? (
-              <div className="bb-art" style={{ backgroundImage: `url(${img})` }} />
+              <div
+                className="bb-art"
+                style={{
+                  backgroundImage: `url(${img})`,
+                  objectFit: "cover",
+                  borderRadius: "7px",
+                  boxShadow: "0 0 0 2px #221c11, 0 0 16px #edce7c22",
+                  margin: "8px 8px 0 8px",
+                  height: "92px",
+                  backgroundPosition: "center 42%",
+                  backgroundSize: "cover",
+                }}
+              />
             ) : (
-              <div className="bb-art bb-art--ph">
-                <div className="bb-mark-sm">CARD</div>
+              <div
+                className="bb-art bb-art--ph"
+                style={{
+                  borderRadius: "7px",
+                  boxShadow: "0 0 0 2px #221c11, 0px 4px 12px #a18c4a11",
+                  background: "linear-gradient(140deg, #1f1c1c 60%, #3e2c16 100%)",
+                  margin: "8px 8px 0 8px",
+                  height: "92px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}
+              >
+                <div className="bb-mark-sm" style={{color: "#e4ba63", letterSpacing: "2px", fontWeight: 700}}>CARD</div>
               </div>
             )}
-            <img className="bb-frame" src={CARD_FRAME_SRC} alt="" />
-
+            <img
+              className="bb-frame"
+              src={CARD_FRAME_SRC}
+              alt=""
+              style={{
+                pointerEvents: "none",
+                zIndex: 5,
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: "100%",
+                height: "100%",
+                filter: "drop-shadow(0 0 8px #e5daac55)",
+                borderRadius: "12px",
+              }}
+            />
 
             {unit && (
-              <div className="bb-fx">
+              <div
+                className="bb-fx"
+                style={{
+                  pointerEvents: "none",
+                  zIndex: 7,
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  width: "100%",
+                  height: "100%",
+                }}
+              >
                 {spawned && <div key={`spawn-${spawned.t}-${unit.instanceId}`} className="bb-spawn" />}
 
                 {atk && (
                   <div className="bb-atkfx">
-                    {atk.isFrom && <div key={`slash-${atk.t}-${unit.instanceId}`} className="bb-slash" />}
-                    {atk.isTo && <div key={`impact-${atk.t}-${unit.instanceId}`} className="bb-impact" />}
+                    {atk.isFrom && (
+                      <div
+                        key={`slash-${atk.t}-${unit.instanceId}`}
+                        className="bb-slash"
+                        style={{
+                          boxShadow:
+                            "0 0 16px 4px #f8f49f77, 0 1px 8px 0 #ffce4a80",
+                          borderRadius: "4px",
+                        }}
+                      />
+                    )}
+                    {atk.isTo && (
+                      <div
+                        key={`impact-${atk.t}-${unit.instanceId}`}
+                        className="bb-impact"
+                        style={{
+                          boxShadow:"0 0 18px 1px #dc555d70, 0 2px 10px #a93d3d50",
+                          borderRadius: "50%",
+                        }}
+                      />
+                    )}
                   </div>
                 )}
 
                 {dmg && (
                   <>
-                    <div key={`dmgflash-${dmg.t}-${unit.instanceId}`} className="bb-dmgflash" />
-                    <div key={`dmgfloat-${dmg.t}-${unit.instanceId}`} className="bb-dmgfloat">
+                    <div
+                      key={`dmgflash-${dmg.t}-${unit.instanceId}`}
+                      className="bb-dmgflash"
+                      style={{
+                        background:
+                          "radial-gradient(circle, #ffe66777 0%, #d6383080 55%, #0000 80%)",
+                        opacity: 0.65,
+                        borderRadius: "12px",
+                      }}
+                    />
+                    <div
+                      key={`dmgfloat-${dmg.t}-${unit.instanceId}`}
+                      className="bb-dmgfloat"
+                      style={{
+                        color: dmg.blocked ? "#8aefff" : "#fe5155",
+                        textShadow: dmg.blocked
+                          ? "0 1px 4px #35647866, 0 0px 3px #fff9"
+                          : "0 1px 3px #d6393878,0 0px 2px #fff6",
+                        fontWeight: 700,
+                        fontSize: "1.08em",
+                        borderRadius: "6px",
+                        padding: "2px 10px",
+                        background: dmg.blocked
+                          ? "linear-gradient(90deg,#162e41aa,#7deaff80)"
+                          : "linear-gradient(90deg,#ffdec480,#fde6e680)",
+                        border: dmg.blocked
+                          ? "1.3px solid #46beec"
+                          : "1.3px solid #ffb4a3",
+                        boxShadow: dmg.blocked
+                          ? "0 1px 5px #2d3e4a88"
+                          : "0 2px 7px #b51508cc",
+                      }}
+                    >
                       {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
                     </div>
                   </>
                 )}
 
-                {isDying && <div className="bb-death" />}
+                {isDying && (
+                  <div
+                    className="bb-death"
+                    style={{
+                      background:
+                        "radial-gradient(circle, #29251077 35%, #000 99%)",
+                      borderRadius: "10px",
+                      opacity: 0.24,
+                    }}
+                  />
+                )}
               </div>
             )}
 
             {unit && (
-              <div className="bb-stats" aria-hidden="true">
-                <div className="bb-stat bb-atk" title="Attack">
-                  <span className="bb-stat-icon">
-                    <svg className="bb-stat-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <div className="bb-stats" aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  width: "100%",
+                  left: 0,
+                  bottom: "10px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "0 12px",
+                  zIndex: 9,
+                }}
+              >
+                <div
+                  className="bb-stat bb-atk"
+                  title="Attack"
+                  style={{
+                    background: "linear-gradient(145deg,#fff2d1 72%,#bfa24f 100%)",
+                    boxShadow:
+                      "0 3px 10px #1c0e000d, 0 0 3px #7b61163c, 0 0 0 3px #f6e3ae99",
+                    borderRadius: "50%",
+                    border: "2px solid #e7b737",
+                    minWidth: "34px",
+                    minHeight: "34px",
+                    maxWidth: "38px",
+                    maxHeight: "38px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginRight: "2px",
+                  }}
+                >
+                  <span className="bb-stat-icon"
+                    style={{
+                      filter: "drop-shadow(0 0 2px #fff6) drop-shadow(0 2px 2px #ffd50033)"
+                    }}
+                  >
+                    <svg className="bb-stat-svg" width={19} height={19} viewBox="0 0 24 24" aria-hidden="true"
+                      style={{
+                        stroke: "#c89b30",
+                        strokeWidth: 1.1,
+                        fill: "#d6ab4a",
+                        filter: "drop-shadow(0 1px 2px #fff4)"
+                      }}
+                    >
                       <path d="M21 3l-6.8 6.8 1.4 1.4L22.4 4.4 21 3zM13.4 10.4L6.1 17.7l-1.8-.2-.2-1.8 7.3-7.3 2 2zM4.2 19.8l3.7-.4-.9-.9-2 .2-.2-2-.9-.9-.4 3.7c-.1.8.6 1.5 1.5 1.3z" />
                     </svg>
                   </span>
-                  <span className="bb-stat-num tabular-nums">{power ?? 0}</span>
+                  <span
+                    className="bb-stat-num tabular-nums"
+                    style={{
+                      color: "#6d4c01",
+                      fontWeight: 700,
+                      fontSize: "1.14em",
+                      letterSpacing: "-.01em",
+                      marginLeft: "2px",
+                      WebkitTextStroke: "1px #feecc9",
+                      textShadow:
+                        "0 2px 6px #fffabd44,0 1px 0 #fbe9b8,0 2px 6px #bba35522",
+                    }}
+                  >{power ?? 0}</span>
                 </div>
 
-                <div className="bb-stat bb-hp" title="HP">
-                  <span className="bb-stat-icon">
-                    <svg className="bb-stat-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <div
+                  className="bb-stat bb-hp"
+                  title="HP"
+                  style={{
+                    background: "linear-gradient(145deg,#fff5ea 60%,#db7e5f 100%)",
+                    boxShadow:
+                      "0 2px 12px #9c5b24a1,0 0 0 3px #fde8d8aa",
+                    border: "2px solid #c95a2f",
+                    borderRadius: "50%",
+                    minWidth: "34px",
+                    minHeight: "34px",
+                    maxWidth: "38px",
+                    maxHeight: "38px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginLeft: "2px",
+                    position: "relative"
+                  }}
+                >
+                  <span className="bb-stat-icon"
+                    style={{
+                      filter: "drop-shadow(0 1px 3px #ffddb4d0) drop-shadow(0 2px 2px #d2826036)",
+                    }}
+                  >
+                    <svg className="bb-stat-svg" width={19} height={19} viewBox="0 0 24 24" aria-hidden="true"
+                      style={{
+                        stroke: "#b4421f",
+                        strokeWidth: 1,
+                        fill: "#d47434",
+                        filter: "drop-shadow(0 2px 2px #fff5)"
+                      }}
+                    >
                       <path d="M12 2s4 5.1 4 8.3C16 14 14 16 12 16s-4-2-4-5.7C8 7.1 12 2 12 2z" />
                       <path d="M7 14.5C7 18 9.5 21 12 21s5-3 5-6.5c0-1.4-.5-2.8-1.4-3.9.2 3.8-1.8 6.4-3.6 6.4-1.9 0-3.8-2.6-3.6-6.4C7.5 11.7 7 13.1 7 14.5z" opacity="0.6"/>
                     </svg>
                   </span>
-                  <span className="bb-stat-num tabular-nums">{unit.hp}</span>
+                  <span
+                    className="bb-stat-num tabular-nums"
+                    style={{
+                      color: "#9e3410",
+                      fontWeight: 800,
+                      fontSize: "1.16em",
+                      letterSpacing: "-.01em",
+                      marginLeft: "2px",
+                      WebkitTextStroke: "1px #ffeadc",
+                      textShadow:
+                        "0 2.5px 7px #faeed9,0 1px 1.5px #f5b697,0 2px 7px #995f4722",
+                    }}
+                  >{unit.hp}</span>
 
                   {unit.shield && unit.shield > 0 ? (
-                    <span className="bb-shield" title="Shield">
+                    <span
+                      className="bb-shield"
+                      title="Shield"
+                      style={{
+                        position: "absolute",
+                        right: "-7px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        background: "linear-gradient(94deg,#a2e8ff 50%,#c5e3f4 90%)",
+                        color: "#176a88",
+                        border: "1.5px solid #bbe1fa",
+                        borderRadius: "7px",
+                        fontSize: "0.98em",
+                        fontWeight: 700,
+                        boxShadow: "0 2px 5px #b5eaf813,0 0 0 .5px #b8d8f6b3",
+                        padding: "2px 7px",
+                        minWidth: "22px",
+                        zIndex: 2,
+                        marginLeft: "3px"
+                      }}
+                    >
                       +<span className="tabular-nums">{unit.shield}</span>
                     </span>
                   ) : null}
