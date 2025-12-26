@@ -129,18 +129,18 @@ export default function CardArt({
     let glowOpacity = 0.7;
 
     if (rarity === "legend") {
-      glowBoxShadow = "0 0 18px rgba(255,190,60,0.34), 0 0 46px rgba(255,190,60,0.20)";
-      glowOpacity = 0.75;
+      glowBoxShadow = "0 0 26px rgba(255,190,60,0.38), 0 0 74px rgba(255,190,60,0.22)";
+      glowOpacity = 0.86;
     } else if (rarity === "epic") {
-      glowBoxShadow = "0 0 16px rgba(200,80,255,0.30), 0 0 40px rgba(200,80,255,0.18)";
-      glowOpacity = 0.65;
+      glowBoxShadow = "0 0 22px rgba(200,80,255,0.34), 0 0 62px rgba(200,80,255,0.20)";
+      glowOpacity = 0.76;
     } else if (rarity === "rare") {
-      glowBoxShadow = "0 0 14px rgba(0,255,255,0.28), 0 0 34px rgba(0,255,255,0.16)";
-      glowOpacity = 0.60;
+      glowBoxShadow = "0 0 20px rgba(0,255,255,0.34), 0 0 56px rgba(0,255,255,0.18)";
+      glowOpacity = 0.72;
     } else {
       // common
-      glowBoxShadow = "0 0 10px rgba(120,180,255,0.18), 0 0 26px rgba(120,180,255,0.12)";
-      glowOpacity = 0.45;
+      glowBoxShadow = "0 0 18px rgba(0,255,255,0.22), 0 0 44px rgba(0,255,255,0.14)";
+      glowOpacity = 0.60;
     }
 
     // Badge pill for ATK and HP
@@ -320,8 +320,9 @@ export default function CardArt({
             pointerEvents: "none",
             borderRadius: 20,
             boxShadow: glowBoxShadow,
-            filter: "blur(10px)",
+            filter: "blur(14px)",
             opacity: glowOpacity,
+            mixBlendMode: "screen",
             background: "none",
           }}
         />
