@@ -80,23 +80,23 @@ export default function CardArt({
         className={`bb-stat bb-stat-${label.toLowerCase()}`}
         style={{
           position: "absolute",
-          bottom: 6,
+          bottom: 5,
           left: side === "left" ? 6 : undefined,
           right: side === "right" ? 6 : undefined,
           zIndex: 8,
           pointerEvents: "none",
           display: "inline-flex",
           alignItems: "center",
-          gap: 4,
-          padding: "4px 6px",
+          gap: 3,
+          padding: "3px 5px",
           borderRadius: 999,
-          border: "1px solid rgba(255,255,255,0.20)",
-          background: "rgba(0,0,0,0.55)",
+          border: "1px solid rgba(255,255,255,0.16)",
+          background: "rgba(0,0,0,0.50)",
           backdropFilter: "blur(8px)",
           fontWeight: 900,
-          letterSpacing: "0.06em",
+          letterSpacing: "0.05em",
           textTransform: "uppercase",
-          fontSize: 9,
+          fontSize: 8,
           lineHeight: 1,
         }}
         aria-label={label}
@@ -134,7 +134,7 @@ export default function CardArt({
           aria-hidden="true"
           style={{
             position: "absolute",
-            inset: "12%",
+            inset: "13%",
             borderRadius: 16,
             zIndex: 1,
             pointerEvents: "none",
@@ -181,14 +181,16 @@ export default function CardArt({
           draggable={false}
           style={{
             position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: "center",
+            // Slightly larger than the face plate so it fully covers the matte edges
+            left: "-3%",
+            top: "-3%",
+            width: "106%",
+            height: "106%",
             zIndex: 6,
             pointerEvents: "none",
             transform: "none",
+            objectFit: "contain",
+            objectPosition: "center",
           }}
         />
 
