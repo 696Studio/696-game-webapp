@@ -49,7 +49,7 @@ const DEFAULT_BACK = "/cards/back/card_back.png";
 // SVG sword icon for ATK
 function IconSword() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" stroke="rgba(255,255,255,0.9)" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="11" height="11" viewBox="0 0 24 24" stroke="rgba(255,255,255,0.9)" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 20l9-9-3-3-9 9v3h3z" />
       <path d="M16 5l3 3" />
       <path d="M6.5 11.5l6 6" />
@@ -61,7 +61,7 @@ function IconSword() {
 // SVG heart icon for HP
 function IconHeart() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" stroke="rgba(255,255,255,0.9)" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="11" height="11" viewBox="0 0 24 24" stroke="rgba(255,255,255,0.9)" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 21s-6.08-4.35-8.3-7.05C2.07 12.67 2 10.7 3.5 9.18A5.013 5.013 0 0 1 8 7.5c1.6 0 2.98.77 4 2 1.02-1.23 2.4-2 4-2 2.81 0 5.36 3.15 3.8 4.77C18.08 16.65 12 21 12 21z" />
     </svg>
   );
@@ -75,14 +75,14 @@ function StatIconCircle({ children, bg = "rgba(30,255,255,0.22)" }: { children: 
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 20,
-        height: 20,
-        minWidth: 20,
-        minHeight: 20,
+        width: 16,
+        height: 16,
+        minWidth: 16,
+        minHeight: 16,
         borderRadius: '50%',
         background: bg,
-        boxShadow: "0 1px 4px 0 rgba(0,255,255,0.08)",
-        marginRight: 2,
+        boxShadow: "0 1px 3px 0 rgba(0,255,255,0.06)",
+        marginRight: 0,
       }}
     >
       {children}
@@ -120,9 +120,9 @@ export default function CardArt({
               left: "50%",
               top: "100%",
               transform: "translateX(-50%)",
-              marginTop: 6,
+              marginTop: 4,
               display: "flex",
-              gap: 10,
+              gap: 6,
               zIndex: 51,
               pointerEvents: "none",
               fontFamily: "inherit",
@@ -133,18 +133,18 @@ export default function CardArt({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 4,
-                padding: "3px 10px 3px 6px",
+                gap: 3,
+                padding: "2px 8px 2px 5px",
                 borderRadius: 999,
                 background: "rgba(0,10,15,0.75)",
                 border: "1px solid rgba(0,255,255,0.13)",
-                fontSize: 12,
+                fontSize: 10,
                 fontWeight: 900,
                 lineHeight: 1,
                 color: "rgba(255,255,255,0.97)",
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
-                minWidth: 38,
-                minHeight: 24,
+                minWidth: 34,
+                minHeight: 18,
               }}
             >
               <StatIconCircle bg="rgba(3,200,255,0.27)">
@@ -157,18 +157,18 @@ export default function CardArt({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 4,
-                padding: "3px 10px 3px 6px",
+                gap: 3,
+                padding: "2px 8px 2px 5px",
                 borderRadius: 999,
                 background: "rgba(0,10,15,0.75)",
                 border: "1px solid rgba(0,255,255,0.10)",
-                fontSize: 12,
+                fontSize: 10,
                 fontWeight: 900,
                 lineHeight: 1,
                 color: "rgba(255,255,255,0.97)",
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
-                minWidth: 38,
-                minHeight: 24,
+                minWidth: 34,
+                minHeight: 18,
               }}
             >
               <StatIconCircle bg="rgba(30,255,180,0.18)">
@@ -181,7 +181,7 @@ export default function CardArt({
                   marginLeft: 2,
                   color: "#8df9f6",
                   fontWeight: 700,
-                  fontSize: 11
+                  fontSize: 9
                 }}>
                   +<span className="tabular-nums">{Math.max(0, Math.floor(shield))}</span>
                 </span>
