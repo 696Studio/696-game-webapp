@@ -65,9 +65,6 @@ export default function CardArt({
   artClassName = "",
 }: CardArtProps) {
   if (variant === "pvp") {
-    // NOTE: This component is rendered INSIDE .bb-face (which is positioned),
-    // so absolute layers below will be anchored correctly.
-
     const StatPill = ({
       side,
       value,
@@ -113,50 +110,48 @@ export default function CardArt({
       <>
         {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
         <style jsx global>{`
-          .bb-card .bb-overlay { display: none !important; }
+          .bb-card .bb-overlay {
+            display: none !important;
+          }
         `}</style>
 
-        {/* Background (solid card back) */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={DEFAULT_BACK}
-          alt=""
-          draggable={false}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: "center",
-            zIndex: 0,
-            pointerEvents: "none",
-          }}
-        /> 
-
-        {/* Inner matte (between back and frame) */}
+        {/* FRONT FACE ONLY: do NOT render card_back here (it should appear only on flip/back face). */}
         <div
           aria-hidden="true"
           style={{
             position: "absolute",
-            inset: "6%",
-            borderRadius: 14,
+            inset: 0,
+            zIndex: 0,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(220px 180px at 50% 18%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0) 60%)," +
+              "linear-gradient(to bottom, rgba(10,18,24,0.30), rgba(2,6,10,0.86))",
+          }}
+        />
+
+        {/* Inner matte / card face plate (must stay INSIDE the frame window) */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: "12%",
+            borderRadius: 16,
             zIndex: 1,
             pointerEvents: "none",
             background:
-              "radial-gradient(140px 120px at 50% 20%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0.0) 55%), linear-gradient(to bottom, rgba(0,0,0,0.20), rgba(0,0,0,0.55))",
+              "radial-gradient(140px 120px at 50% 18%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0.0) 55%)," +
+              "linear-gradient(to bottom, rgba(0,0,0,0.18), rgba(0,0,0,0.58))",
             boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)",
           }}
         />
 
-        {/* Art (contain + center + bigger inset) */}
+        {/* Art (contain + center) */}
         {src ? (
           <div
             className="bb-art"
             style={{
               backgroundImage: `url(${src})`,
-              // override .bb-art inset (was 18%) to give more breathing room inside the frame
-              inset: "18%",
+              inset: "16%",
               backgroundSize: "contain",
               backgroundRepeat: "no-repeat",
               backgroundPosition: "center",
@@ -169,7 +164,7 @@ export default function CardArt({
           <div
             className="bb-art bb-art--ph"
             style={{
-              inset: "18%",
+              inset: "16%",
               zIndex: 2,
             }}
           >
@@ -177,7 +172,7 @@ export default function CardArt({
           </div>
         )}
 
-        {/* Frame overlay (always on top of art) */}
+        {/* Frame overlay (MUST match the card base size; no scaling) */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           className={["bb-frame", frameClassName].join(" ")}
@@ -185,18 +180,15 @@ export default function CardArt({
           alt=""
           draggable={false}
           style={{
-            // ensure top-most among the base layers
-            zIndex: 6,
-            // IMPORTANT: frame PNG has transparent margins; scale it up so it fully covers inner matte edges
-            inset: "-6%",
-            width: "112%",
-            height: "112%",
-            left: "-6%",
-            top: "-6%",
             position: "absolute",
-            transform: "scale(1.12)",
-            transformOrigin: "center",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center",
+            zIndex: 6,
             pointerEvents: "none",
+            transform: "none",
           }}
         />
 
