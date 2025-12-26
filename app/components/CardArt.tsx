@@ -49,7 +49,7 @@ const DEFAULT_BACK = "/cards/back/card_back.png";
 // SVG sword icon for ATK
 function IconSword() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" stroke="rgba(255,255,255,0.9)" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="10" height="10" viewBox="0 0 24 24" stroke="rgba(255,255,255,0.9)" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 20l9-9-3-3-9 9v3h3z" />
       <path d="M16 5l3 3" />
       <path d="M6.5 11.5l6 6" />
@@ -61,7 +61,7 @@ function IconSword() {
 // SVG heart icon for HP
 function IconHeart() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" stroke="rgba(255,255,255,0.9)" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="10" height="10" viewBox="0 0 24 24" stroke="rgba(255,255,255,0.9)" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 21s-6.08-4.35-8.3-7.05C2.07 12.67 2 10.7 3.5 9.18A5.013 5.013 0 0 1 8 7.5c1.6 0 2.98.77 4 2 1.02-1.23 2.4-2 4-2 2.81 0 5.36 3.15 3.8 4.77C18.08 16.65 12 21 12 21z" />
     </svg>
   );
@@ -75,10 +75,10 @@ function StatIconCircle({ children, bg = "rgba(30,255,255,0.22)" }: { children: 
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 16,
-        height: 16,
-        minWidth: 16,
-        minHeight: 16,
+        width: 14,
+        height: 14,
+        minWidth: 14,
+        minHeight: 14,
         borderRadius: '50%',
         background: bg,
         boxShadow: "0 1px 3px 0 rgba(0,255,255,0.06)",
@@ -119,10 +119,11 @@ export default function CardArt({
               position: "absolute",
               left: "50%",
               top: "100%",
-              transform: "translateX(-50%)",
-              marginTop: 4,
+              transform: "translateX(-50%) scale(0.8)",
+              transformOrigin: "50% 0%",
+              marginTop: 2,
               display: "flex",
-              gap: 6,
+              gap: 5,
               zIndex: 51,
               pointerEvents: "none",
               fontFamily: "inherit",
@@ -134,17 +135,17 @@ export default function CardArt({
                 display: "flex",
                 alignItems: "center",
                 gap: 3,
-                padding: "2px 8px 2px 5px",
+                padding: "1px 6px 1px 4px",
                 borderRadius: 999,
                 background: "rgba(0,10,15,0.75)",
                 border: "1px solid rgba(0,255,255,0.13)",
-                fontSize: 10,
+                fontSize: 8,
                 fontWeight: 900,
                 lineHeight: 1,
                 color: "rgba(255,255,255,0.97)",
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
-                minWidth: 34,
-                minHeight: 18,
+                minWidth: 28,
+                minHeight: 14,
               }}
             >
               <StatIconCircle bg="rgba(3,200,255,0.27)">
@@ -158,17 +159,17 @@ export default function CardArt({
                 display: "flex",
                 alignItems: "center",
                 gap: 3,
-                padding: "2px 8px 2px 5px",
+                padding: "1px 6px 1px 4px",
                 borderRadius: 999,
                 background: "rgba(0,10,15,0.75)",
                 border: "1px solid rgba(0,255,255,0.10)",
-                fontSize: 10,
+                fontSize: 8,
                 fontWeight: 900,
                 lineHeight: 1,
                 color: "rgba(255,255,255,0.97)",
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
-                minWidth: 34,
-                minHeight: 18,
+                minWidth: 28,
+                minHeight: 14,
               }}
             >
               <StatIconCircle bg="rgba(30,255,180,0.18)">
@@ -181,7 +182,7 @@ export default function CardArt({
                   marginLeft: 2,
                   color: "#8df9f6",
                   fontWeight: 700,
-                  fontSize: 9
+                  fontSize: 8
                 }}>
                   +<span className="tabular-nums">{Math.max(0, Math.floor(shield))}</span>
                 </span>
@@ -230,13 +231,13 @@ export default function CardArt({
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 6,
-              padding: "5px 14px 5px 9px",
+              gap: 5,
+              padding: "4px 12px 4px 8px",
               borderRadius: 999,
               background: "linear-gradient(90deg,rgba(40,225,255,0.97) 2%,rgba(10,80,180,0.72) 100%)",
               border: "2px solid rgba(0,255,255,0.38)",
               color: "#fff",
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: 900,
               lineHeight: 1,
               boxShadow: "0 2px 20px 0 rgba(0,255,255,0.18),0 1.5px 5px 0 rgba(0,60,130,0.11)",
@@ -338,7 +339,7 @@ export default function CardArt({
                 alignItems: "center",
                 justifyContent: "center",
                 opacity: 0.6,
-                fontSize: 10,
+                fontSize: 8,
                 fontWeight: 800,
               }}
             >
