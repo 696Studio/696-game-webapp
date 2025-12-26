@@ -83,7 +83,7 @@ export default function CardArt({
         className={`bb-stat bb-stat-${label.toLowerCase()}`}
         style={{
           position: "absolute",
-          bottom: 5,
+          bottom: 6,
           left: side === "left" ? 6 : undefined,
           right: side === "right" ? 6 : undefined,
           zIndex: 8,
@@ -91,7 +91,7 @@ export default function CardArt({
           display: "inline-flex",
           alignItems: "center",
           gap: 4,
-          padding: "3px 6px",
+          padding: "4px 6px",
           borderRadius: 999,
           border: "1px solid rgba(255,255,255,0.20)",
           background: "rgba(0,0,0,0.55)",
@@ -99,7 +99,7 @@ export default function CardArt({
           fontWeight: 900,
           letterSpacing: "0.06em",
           textTransform: "uppercase",
-          fontSize: 8,
+          fontSize: 9,
           lineHeight: 1,
         }}
         aria-label={label}
@@ -116,29 +116,31 @@ export default function CardArt({
           .bb-card .bb-overlay { display: none !important; }
         `}</style>
 
-        {/* Front face background (card front). Card back should only appear on flip. */}
-        <div
-          aria-hidden="true"
+        {/* Background (solid card back) */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={DEFAULT_BACK}
+          alt=""
+          draggable={false}
           style={{
             position: "absolute",
             inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center",
             zIndex: 0,
             pointerEvents: "none",
-            // Rich, non-transparent base under the art (no glass overlays).
-            background:
-              "radial-gradient(220px 180px at 50% 18%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0) 60%)," +
-              "linear-gradient(to bottom, rgba(10,18,24,0.35), rgba(2,6,10,0.82))",
           }}
-        />
-
+        /> 
 
         {/* Inner matte (between back and frame) */}
         <div
           aria-hidden="true"
           style={{
             position: "absolute",
-            inset: "5%",
-            borderRadius: 16,
+            inset: "6%",
+            borderRadius: 14,
             zIndex: 1,
             pointerEvents: "none",
             background:
@@ -154,7 +156,7 @@ export default function CardArt({
             style={{
               backgroundImage: `url(${src})`,
               // override .bb-art inset (was 18%) to give more breathing room inside the frame
-              inset: "14%",
+              inset: "18%",
               backgroundSize: "contain",
               backgroundRepeat: "no-repeat",
               backgroundPosition: "center",
@@ -167,7 +169,7 @@ export default function CardArt({
           <div
             className="bb-art bb-art--ph"
             style={{
-              inset: "14%",
+              inset: "18%",
               zIndex: 2,
             }}
           >
