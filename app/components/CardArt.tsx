@@ -1,4 +1,3 @@
-
 "use client";
 
 import React from "react";
@@ -20,7 +19,7 @@ type CardArtProps = {
   variant?: "generic" | "pvp";
 
   /** Size of the art inside the frame (generic mode only, %). */
-  artScalePct?: number; // e.g. 58 means maxWidth/maxHeight 58%
+  artScalePct?: number;
 
   /** PVP stats (pvp mode only). */
   showStats?: boolean;
@@ -46,9 +45,8 @@ const DEFAULT_BACK = "/cards/back/card_back.png";
  * CardArt
  *
  * IMPORTANT:
- * - This component is intentionally visual-only.
- * - In PVP mode: we render a clipped "inner face" (background/matte/art) and an UNCLIPPED frame on top.
- *   This allows enlarging the frame without it being cut off by overflow rules.
+ * - Visual-only component.
+ * - In PVP mode we render a CLIPPED inner face (background + art) and an UNCLIPPED frame on top.
  * - PVP HUD outside the card must never be touched here.
  */
 export default function CardArt({
@@ -79,7 +77,6 @@ export default function CardArt({
       extra?: React.ReactNode;
     }) => (
       <div
-        className={`bb-stat bb-stat-${label.toLowerCase()}`}
         style={{
           position: "absolute",
           bottom: 4,
@@ -112,12 +109,10 @@ export default function CardArt({
       <>
         {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
         <style jsx global>{`
-          .bb-card .bb-overlay {
-            display: none !important;
-          }
+          .bb-card .bb-overlay { display: none !important; }
         `}</style>
 
-        {/* Inner face (CLIPPED): background + matte + art */}
+        {/* Inner face (CLIPPED): ONLY a clean background + art (no oval plate, no circular highlights). */}
         <div
           aria-hidden="true"
           style={{
@@ -129,7 +124,7 @@ export default function CardArt({
             pointerEvents: "none",
           }}
         >
-          {/* Front face background (NOT card back; back should only appear on flip) */}
+          {/* Clean front face background (NOT card back; back should only appear on flip) */}
           <div
             aria-hidden="true"
             style={{
@@ -140,42 +135,41 @@ export default function CardArt({
             }}
           />
 
-          {/* Inner matte / plate (kept safely inside) */}
-          <div
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              inset: "24%", // deeper so it never peeks outside the frame window
-              borderRadius: 16,
-              zIndex: 1,
-              background: "linear-gradient(to bottom, rgba(0,0,0,0.16), rgba(0,0,0,0.60))",
-              boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)",
-            }}
-          />
-
-          {/* Art (contain + center) */}
+          {/* Art (contain + center) — do NOT use .bb-art class to avoid any legacy CSS pseudo-elements */}
           {src ? (
             <div
-              className="bb-art"
               style={{
-                backgroundImage: `url(${src})`,
+                position: "absolute",
                 inset: "18%",
+                zIndex: 2,
+                backgroundImage: `url(${src})`,
                 backgroundSize: "contain",
                 backgroundRepeat: "no-repeat",
                 backgroundPosition: "center",
-                zIndex: 2,
                 transform: "none",
                 filter: "saturate(1.05) contrast(1.05)",
               }}
             />
           ) : (
-            <div className="bb-art bb-art--ph" style={{ inset: "18%", zIndex: 2 }}>
-              <div className="bb-mark-sm">CARD</div>
+            <div
+              style={{
+                position: "absolute",
+                inset: "18%",
+                zIndex: 2,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: 0.6,
+                fontSize: 10,
+                fontWeight: 800,
+              }}
+            >
+              CARD
             </div>
           )}
         </div>
 
-        {/* Frame overlay (UNCLIPPED): truly bigger, centered, no distortion */}
+        {/* Frame overlay (UNCLIPPED): bigger frame, centered, no distortion */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           className={["bb-frame", frameClassName].join(" ")}
@@ -189,7 +183,7 @@ export default function CardArt({
             pointerEvents: "none",
             objectFit: "contain",
             objectPosition: "center",
-            transform: "scale(1.14)", // bigger frame, centered (doesn't stretch)
+            transform: "scale(1.14)",
             transformOrigin: "50% 50%",
           }}
         />
@@ -229,7 +223,12 @@ export default function CardArt({
         <>
           {/* Background */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={DEFAULT_BACK} alt="" className="absolute inset-0 w-full h-full object-cover pointer-events-none" draggable={false} />
+          <img
+            src={DEFAULT_BACK}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+            draggable={false}
+          />
 
           {/* Art */}
           <div className="absolute inset-0 flex items-center justify-center">
