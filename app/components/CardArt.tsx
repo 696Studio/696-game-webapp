@@ -83,28 +83,27 @@ export default function CardArt({
         className={`bb-stat bb-stat-${label.toLowerCase()}`}
         style={{
           position: "absolute",
-          bottom: 8,
-          left: side === "left" ? 8 : undefined,
-          right: side === "right" ? 8 : undefined,
+          bottom: 6,
+          left: side === "left" ? 6 : undefined,
+          right: side === "right" ? 6 : undefined,
           zIndex: 8,
           pointerEvents: "none",
           display: "inline-flex",
           alignItems: "center",
-          gap: 6,
-          padding: "6px 8px",
+          gap: 4,
+          padding: "4px 6px",
           borderRadius: 999,
-          border: "1px solid rgba(255,255,255,0.22)",
-          background: "rgba(0,0,0,0.38)",
+          border: "1px solid rgba(255,255,255,0.20)",
+          background: "rgba(0,0,0,0.55)",
           backdropFilter: "blur(8px)",
           fontWeight: 900,
-          letterSpacing: "0.08em",
+          letterSpacing: "0.06em",
           textTransform: "uppercase",
-          fontSize: 10,
+          fontSize: 9,
           lineHeight: 1,
         }}
         aria-label={label}
       >
-        <span style={{ opacity: 0.85 }}>{label}</span>
         <span className="tabular-nums">{Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0}</span>
         {extra}
       </div>
@@ -112,6 +111,11 @@ export default function CardArt({
 
     return (
       <>
+        {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
+        <style jsx global>{`
+          .bb-card .bb-overlay { display: none !important; }
+        `}</style>
+
         {/* Background (solid card back) */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -128,6 +132,21 @@ export default function CardArt({
             zIndex: 0,
             pointerEvents: "none",
           }}
+        /> 
+
+        {/* Inner matte (between back and frame) */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: "6%",
+            borderRadius: 14,
+            zIndex: 1,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(140px 120px at 50% 20%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0.0) 55%), linear-gradient(to bottom, rgba(0,0,0,0.20), rgba(0,0,0,0.55))",
+            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)",
+          }}
         />
 
         {/* Art (contain + center + bigger inset) */}
@@ -137,7 +156,7 @@ export default function CardArt({
             style={{
               backgroundImage: `url(${src})`,
               // override .bb-art inset (was 18%) to give more breathing room inside the frame
-              inset: "20%",
+              inset: "18%",
               backgroundSize: "contain",
               backgroundRepeat: "no-repeat",
               backgroundPosition: "center",
@@ -150,7 +169,7 @@ export default function CardArt({
           <div
             className="bb-art bb-art--ph"
             style={{
-              inset: "20%",
+              inset: "18%",
               zIndex: 2,
             }}
           >
