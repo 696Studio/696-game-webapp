@@ -136,9 +136,7 @@ export default function CardArt({
               position: "absolute",
               inset: 0,
               zIndex: 0,
-              background:
-                "radial-gradient(220px 180px at 50% 18%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0) 60%)," +
-                "linear-gradient(to bottom, rgba(10,18,24,0.30), rgba(2,6,10,0.86))",
+              background: "linear-gradient(to bottom, rgba(10,18,24,0.30), rgba(2,6,10,0.86))",
             }}
           />
 
@@ -150,9 +148,7 @@ export default function CardArt({
               inset: "24%", // deeper so it never peeks outside the frame window
               borderRadius: 16,
               zIndex: 1,
-              background:
-                "radial-gradient(140px 120px at 50% 18%, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0.0) 55%)," +
-                "linear-gradient(to bottom, rgba(0,0,0,0.16), rgba(0,0,0,0.60))",
+              background: "linear-gradient(to bottom, rgba(0,0,0,0.16), rgba(0,0,0,0.60))",
               boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)",
             }}
           />
