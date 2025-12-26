@@ -80,15 +80,15 @@ export default function CardArt({
         className={`bb-stat bb-stat-${label.toLowerCase()}`}
         style={{
           position: "absolute",
-          bottom: 6,
+          bottom: 4,
           left: side === "left" ? 6 : undefined,
           right: side === "right" ? 6 : undefined,
           zIndex: 8,
           pointerEvents: "none",
           display: "inline-flex",
           alignItems: "center",
-          gap: 4,
-          padding: "4px 6px",
+          gap: 2,
+          padding: "2px 4px",
           borderRadius: 999,
           border: "1px solid rgba(255,255,255,0.20)",
           background: "rgba(0,0,0,0.55)",
@@ -96,7 +96,7 @@ export default function CardArt({
           fontWeight: 900,
           letterSpacing: "0.06em",
           textTransform: "uppercase",
-          fontSize: 9,
+          fontSize: 7,
           lineHeight: 1,
         }}
         aria-label={label}
@@ -113,12 +113,31 @@ export default function CardArt({
           .bb-card .bb-overlay {
             display: none !important;
           }
-          /* Clip inner plate to the card shape so nothing "bleeds" outside the frame */
-          .bb-card .bb-face {
+
+          /* Hard-clamp any inner layers to the card silhouette (prevents "matte" bleeding). */
+          .bb-card,
+          .bb-card .bb-face,
+          .bb-card .bb-front,
+          .bb-card .bb-face-front,
+          .bb-face {
             overflow: hidden !important;
-            border-radius: 18px;
+            border-radius: 18px !important;
           }
-        
+
+          /* Force the frame to be slightly larger than the base so it covers matte edges.
+             Use !important to override battle CSS if it sets size/position on .bb-frame. */
+          .bb-card .bb-frame,
+          .bb-frame {
+            position: absolute !important;
+            left: -8% !important;
+            top: -8% !important;
+            width: 116% !important;
+            height: 116% !important;
+            object-fit: contain !important;
+            object-position: center !important;
+            transform: none !important;
+            pointer-events: none !important;
+          }
         `}</style>
 
         {/* FRONT FACE ONLY: do NOT render card_back here (it should appear only on flip/back face). */}
@@ -140,7 +159,7 @@ export default function CardArt({
           aria-hidden="true"
           style={{
             position: "absolute",
-            inset: "14%",
+            inset: "18%",
             borderRadius: 16,
             zIndex: 1,
             pointerEvents: "none",
@@ -178,7 +197,7 @@ export default function CardArt({
           </div>
         )}
 
-        {/* Frame overlay (MUST match the card base size; no scaling) */}
+        {/* Frame overlay */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           className={["bb-frame", frameClassName].join(" ")}
@@ -187,11 +206,9 @@ export default function CardArt({
           draggable={false}
           style={{
             position: "absolute",
-            /* Make the frame slightly larger so it fully covers the inner plate edges (no distortion). */
-            left: "-4%",
-            top: "-4%",
-            width: "108%",
-            height: "108%",
+            inset: 0,
+            width: "100%",
+            height: "100%",
             zIndex: 6,
             pointerEvents: "none",
             transform: "none",
@@ -269,7 +286,9 @@ export default function CardArt({
           <img
             src={frameSrc}
             alt=""
-            className={["absolute inset-0 w-full h-full object-contain pointer-events-none", frameClassName].join(" ")}
+            className={["absolute inset-0 w-full h-full object-contain pointer-events-none", frameClassName].join(
+              " "
+            )}
             draggable={false}
           />
         </>
