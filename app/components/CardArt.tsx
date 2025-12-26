@@ -14,8 +14,7 @@ type CardArtProps = {
   /**
    * Render variant:
    * - "generic": simple <img> art + frame overlay (default, used in inventory/chest).
-   * - "pvp": renders PVP card face elements using existing classNames (bb-art/bb-frame/bb-stats),
-   *          so battle layout/animations stay untouched.
+   * - "pvp": renders PVP card face elements.
    */
   variant?: "generic" | "pvp";
 
@@ -40,14 +39,15 @@ type CardArtProps = {
 };
 
 const DEFAULT_FRAME = "/cards/frame/frame_common.png";
+const DEFAULT_BACK = "/cards/back/card_back.png";
 
 /**
  * CardArt
  *
  * IMPORTANT:
  * - This component is intentionally visual-only.
- * - In PVP mode it preserves the exact classNames used by battle CSS/animations.
- * - Do NOT move/resize battle UI outside the card container.
+ * - In PVP mode it stays self-contained: background + art + frame + (optional) stats.
+ * - PVP HUD outside the card must never be touched here.
  */
 export default function CardArt({
   src,
@@ -65,51 +65,137 @@ export default function CardArt({
   artClassName = "",
 }: CardArtProps) {
   if (variant === "pvp") {
+    // NOTE: This component is rendered INSIDE .bb-face (which is positioned),
+    // so absolute layers below will be anchored correctly.
+
+    const StatPill = ({
+      side,
+      value,
+      label,
+      extra,
+    }: {
+      side: "left" | "right";
+      value: number;
+      label: string;
+      extra?: React.ReactNode;
+    }) => (
+      <div
+        className={`bb-stat bb-stat-${label.toLowerCase()}`}
+        style={{
+          position: "absolute",
+          bottom: 8,
+          left: side === "left" ? 8 : undefined,
+          right: side === "right" ? 8 : undefined,
+          zIndex: 8,
+          pointerEvents: "none",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 8px",
+          borderRadius: 999,
+          border: "1px solid rgba(255,255,255,0.22)",
+          background: "rgba(0,0,0,0.38)",
+          backdropFilter: "blur(8px)",
+          fontWeight: 900,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          fontSize: 10,
+          lineHeight: 1,
+        }}
+        aria-label={label}
+      >
+        <span style={{ opacity: 0.85 }}>{label}</span>
+        <span className="tabular-nums">{Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0}</span>
+        {extra}
+      </div>
+    );
+
     return (
       <>
+        {/* Background (solid card back) */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={DEFAULT_BACK}
+          alt=""
+          draggable={false}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center",
+            zIndex: 0,
+            pointerEvents: "none",
+          }}
+        />
+
+        {/* Art (contain + center + bigger inset) */}
         {src ? (
-          <div className="bb-art" style={{ backgroundImage: `url(${src})` }} />
+          <div
+            className="bb-art"
+            style={{
+              backgroundImage: `url(${src})`,
+              // override .bb-art inset (was 18%) to give more breathing room inside the frame
+              inset: "20%",
+              backgroundSize: "contain",
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "center",
+              zIndex: 2,
+              transform: "none",
+              filter: "saturate(1.05) contrast(1.05)",
+            }}
+          />
         ) : (
-          <div className="bb-art bb-art--ph">
+          <div
+            className="bb-art bb-art--ph"
+            style={{
+              inset: "20%",
+              zIndex: 2,
+            }}
+          >
             <div className="bb-mark-sm">CARD</div>
           </div>
         )}
 
-        {/* Frame overlay (must stay on top of art) */}
+        {/* Frame overlay (always on top of art) */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className={["bb-frame", frameClassName].join(" ")} src={frameSrc} alt="" draggable={false} />
+        <img
+          className={["bb-frame", frameClassName].join(" ")}
+          src={frameSrc}
+          alt=""
+          draggable={false}
+          style={{
+            // ensure top-most among the base layers
+            zIndex: 6,
+          }}
+        />
 
+        {/* Optional bottom-corner stats (HP/ATK) */}
         {showStats ? (
-          <div className="bb-stats" aria-hidden="true">
-            <div className="bb-stat bb-atk" title="Attack">
-              <span className="bb-stat-icon">
-                <svg className="bb-stat-svg" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M21 3l-6.8 6.8 1.4 1.4L22.4 4.4 21 3zM3 21l6.8-6.8-1.4-1.4L1.6 19.6 3 21zM14.2 9.8l3.7-.4-.9-.9-2 .2-.2-2-.9-.9-.4 3.7c-.1.8.6 1.5 1.5 1.3z" />
-                </svg>
-              </span>
-              <span className="bb-stat-num tabular-nums">{atk}</span>
-            </div>
-
-            <div className="bb-stat bb-hp" title="HP">
-              <span className="bb-stat-icon">
-                <svg className="bb-stat-svg" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 2s4 5.1 4 8.3C16 14 14 16 12 16s-4-2-4-5.7C8 7.1 12 2 12 2z" />
-                  <path d="M7 14.5C7 18 9.5 21 12 21s5-3 5-6.4c0-1.9 0-3.8-2.6-6.4C7.5 11.7 7 13.1 7 14.5z" opacity="0.6" />
-                </svg>
-              </span>
-              <span className="bb-stat-num tabular-nums">{hp}</span>
-
-              {shield && shield > 0 ? (
-                <span className="bb-shield" title="Shield">
-                  +<span className="tabular-nums">{shield}</span>
-                </span>
-              ) : null}
-            </div>
+          <div
+            className="bb-stats"
+            aria-hidden="true"
+            style={{ position: "absolute", inset: 0, zIndex: 8, pointerEvents: "none" }}
+          >
+            <StatPill side="left" value={atk} label="ATK" />
+            <StatPill
+              side="right"
+              value={hp}
+              label="HP"
+              extra={
+                shield && shield > 0 ? (
+                  <span style={{ opacity: 0.9 }}>
+                    +<span className="tabular-nums">{Math.max(0, Math.floor(shield))}</span>
+                  </span>
+                ) : null
+              }
+            />
           </div>
         ) : null}
 
         {showCorner ? (
-          <div className="bb-corner">
+          <div className="bb-corner" style={{ zIndex: 9 }}>
             <span className="bb-corner-dot" />
           </div>
         ) : null}
@@ -122,6 +208,16 @@ export default function CardArt({
     <div className={["relative w-full h-full", className].join(" ")}>
       {src ? (
         <>
+          {/* Background */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={DEFAULT_BACK}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+            draggable={false}
+          />
+
+          {/* Art */}
           <div className="absolute inset-0 flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -139,14 +235,12 @@ export default function CardArt({
             />
           </div>
 
+          {/* Frame */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={frameSrc}
             alt=""
-            className={[
-              "absolute inset-0 w-full h-full object-contain pointer-events-none",
-              frameClassName,
-            ].join(" ")}
+            className={["absolute inset-0 w-full h-full object-contain pointer-events-none", frameClassName].join(" ")}
             draggable={false}
           />
         </>
