@@ -187,6 +187,16 @@ export default function CardArt({
           style={{
             // ensure top-most among the base layers
             zIndex: 6,
+            // IMPORTANT: frame PNG has transparent margins; scale it up so it fully covers inner matte edges
+            inset: "-6%",
+            width: "112%",
+            height: "112%",
+            left: "-6%",
+            top: "-6%",
+            position: "absolute",
+            transform: "scale(1.12)",
+            transformOrigin: "center",
+            pointerEvents: "none",
           }}
         />
 
