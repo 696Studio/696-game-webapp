@@ -113,6 +113,12 @@ export default function CardArt({
           .bb-card .bb-overlay {
             display: none !important;
           }
+          /* Clip inner plate to the card shape so nothing "bleeds" outside the frame */
+          .bb-card .bb-face {
+            overflow: hidden !important;
+            border-radius: 18px;
+          }
+        
         `}</style>
 
         {/* FRONT FACE ONLY: do NOT render card_back here (it should appear only on flip/back face). */}
@@ -134,7 +140,7 @@ export default function CardArt({
           aria-hidden="true"
           style={{
             position: "absolute",
-            inset: "12%",
+            inset: "14%",
             borderRadius: 16,
             zIndex: 1,
             pointerEvents: "none",
@@ -181,14 +187,16 @@ export default function CardArt({
           draggable={false}
           style={{
             position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: "center",
+            /* Make the frame slightly larger so it fully covers the inner plate edges (no distortion). */
+            left: "-4%",
+            top: "-4%",
+            width: "108%",
+            height: "108%",
             zIndex: 6,
             pointerEvents: "none",
             transform: "none",
+            objectFit: "contain",
+            objectPosition: "center",
           }}
         />
 
