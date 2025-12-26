@@ -120,7 +120,7 @@ export default function CardArt({
               left: "50%",
               top: "100%",
               transform: "translateX(-50%)",
-              marginTop: 36,
+              marginTop: 6,
               display: "flex",
               gap: 10,
               zIndex: 51,
@@ -260,6 +260,7 @@ export default function CardArt({
       <>
         {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
         <style jsx global>{`
+          .bb-card { overflow: visible !important; }
           .bb-card .bb-overlay { display: none !important; }
         `}</style>
         {/* Card Glow Effect (PREMIUM CYAN-BLUE GLOW) — behind art & frame */}
@@ -268,7 +269,7 @@ export default function CardArt({
           style={{
             position: "absolute",
             inset: 0,
-            zIndex: 2,
+            zIndex: 1,
             pointerEvents: "none",
             borderRadius: 20,
             boxShadow: "0 0 18px rgba(0,255,255,0.35), 0 0 42px rgba(0,255,255,0.18)",
@@ -283,7 +284,7 @@ export default function CardArt({
           style={{
             position: "absolute",
             inset: 0,
-            zIndex: 3,
+            zIndex: 2,
             overflow: "hidden",
             borderRadius: 18,
             pointerEvents: "none",
