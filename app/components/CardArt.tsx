@@ -36,6 +36,11 @@ type CardArtProps = {
 
   /** Optional className for the art element (generic mode). */
   artClassName?: string;
+
+  /** PVP: Optional pop-up label below the card ("Attack Pop"). */
+  popText?: string;
+  popType?: "atk" | "hp";
+  showPop?: boolean;
 };
 
 const DEFAULT_FRAME = "/cards/frame/frame_common.png";
@@ -62,6 +67,29 @@ function IconHeart() {
   );
 }
 
+/* Small background icon circle for pill icons */
+function StatIconCircle({ children, bg = "rgba(30,255,255,0.22)" }: { children: React.ReactNode; bg?: string }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 20,
+        height: 20,
+        minWidth: 20,
+        minHeight: 20,
+        borderRadius: '50%',
+        background: bg,
+        boxShadow: "0 1px 4px 0 rgba(0,255,255,0.08)",
+        marginRight: 2,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 export default function CardArt({
   src,
   alt = "",
@@ -76,6 +104,9 @@ export default function CardArt({
   className = "",
   frameClassName = "",
   artClassName = "",
+  popText = "",
+  popType = "atk",
+  showPop = false,
 }: CardArtProps) {
   if (variant === "pvp") {
     // Badge pill for ATK and HP
@@ -89,11 +120,12 @@ export default function CardArt({
               left: "50%",
               top: "100%",
               transform: "translateX(-50%)",
-              marginTop: 6,
+              marginTop: 36,
               display: "flex",
-              gap: 8,
-              zIndex: 50,
+              gap: 10,
+              zIndex: 51,
               pointerEvents: "none",
+              fontFamily: "inherit",
             }}
           >
             {/* ATK pill */}
@@ -102,17 +134,22 @@ export default function CardArt({
                 display: "flex",
                 alignItems: "center",
                 gap: 4,
-                padding: "3px 8px",
+                padding: "3px 10px 3px 6px",
                 borderRadius: 999,
-                background: "rgba(0,0,0,0.55)",
-                border: "1px solid rgba(255,255,255,0.18)",
-                fontSize: 11,
+                background: "rgba(0,10,15,0.75)",
+                border: "1px solid rgba(0,255,255,0.13)",
+                fontSize: 12,
                 fontWeight: 900,
                 lineHeight: 1,
-                color: "rgba(255,255,255,0.95)",
+                color: "rgba(255,255,255,0.97)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
+                minWidth: 38,
+                minHeight: 24,
               }}
             >
-              <IconSword />
+              <StatIconCircle bg="rgba(3,200,255,0.27)">
+                <IconSword />
+              </StatIconCircle>
               <span className="tabular-nums">{Number.isFinite(atk) ? Math.max(0, Math.floor(atk)) : 0}</span>
             </div>
             {/* HP pill */}
@@ -121,20 +158,31 @@ export default function CardArt({
                 display: "flex",
                 alignItems: "center",
                 gap: 4,
-                padding: "3px 8px",
+                padding: "3px 10px 3px 6px",
                 borderRadius: 999,
-                background: "rgba(0,0,0,0.55)",
-                border: "1px solid rgba(255,255,255,0.18)",
-                fontSize: 11,
+                background: "rgba(0,10,15,0.75)",
+                border: "1px solid rgba(0,255,255,0.10)",
+                fontSize: 12,
                 fontWeight: 900,
                 lineHeight: 1,
-                color: "rgba(255,255,255,0.95)",
+                color: "rgba(255,255,255,0.97)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
+                minWidth: 38,
+                minHeight: 24,
               }}
             >
-              <IconHeart />
+              <StatIconCircle bg="rgba(30,255,180,0.18)">
+                <IconHeart />
+              </StatIconCircle>
               <span className="tabular-nums">{Number.isFinite(hp) ? Math.max(0, Math.floor(hp)) : 0}</span>
               {shield && shield > 0 ? (
-                <span style={{ opacity: 0.9 }}>
+                <span style={{
+                  opacity: 0.9,
+                  marginLeft: 2,
+                  color: "#8df9f6",
+                  fontWeight: 700,
+                  fontSize: 11
+                }}>
                   +<span className="tabular-nums">{Math.max(0, Math.floor(shield))}</span>
                 </span>
               ) : null}
@@ -142,20 +190,100 @@ export default function CardArt({
           </div>
         ) : null;
 
+    // Attack Pop-out
+    const AttackPop = showPop && !!popText ? (
+      <>
+        <style jsx>{`
+        @keyframes cardart-pop-fade {
+          from {
+            opacity: 0;
+            transform: translateY(15px) scale(0.92);
+          }
+          60% {
+            opacity: 1;
+            transform: translateY(-2px) scale(1.04);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(-7px) scale(1);
+          }
+        }
+        `}
+        </style>
+        <div
+          aria-live="polite"
+          aria-atomic="true"
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '100%',
+            transform: 'translate(-50%, 0)',
+            marginTop: 10,
+            zIndex: 53,
+            pointerEvents: 'none',
+            display: 'flex',
+            justifyContent: 'center',
+            animation: "cardart-pop-fade 620ms cubic-bezier(0.40,0.50,0.28,1) both",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "5px 14px 5px 9px",
+              borderRadius: 999,
+              background: "linear-gradient(90deg,rgba(40,225,255,0.97) 2%,rgba(10,80,180,0.72) 100%)",
+              border: "2px solid rgba(0,255,255,0.38)",
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 900,
+              lineHeight: 1,
+              boxShadow: "0 2px 20px 0 rgba(0,255,255,0.18),0 1.5px 5px 0 rgba(0,60,130,0.11)",
+              textShadow: "0 1px 2px rgba(9,80,160,0.16)",
+              letterSpacing: "0.01em",
+              opacity: 0.99,
+              filter: "drop-shadow(0 2px 7px rgba(0,255,255,0.20))",
+              userSelect: "none",
+            }}
+          >
+            <StatIconCircle bg={popType === "atk" ? "rgba(10,225,255,0.37)" : "rgba(70,255,180,0.33)"}>
+              {popType === "atk" ? <IconSword /> : <IconHeart />}
+            </StatIconCircle>
+            <span>{popText}</span>
+          </div>
+        </div>
+      </>
+    ) : null;
+
     return (
       <>
         {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
         <style jsx global>{`
           .bb-card .bb-overlay { display: none !important; }
         `}</style>
-
+        {/* Card Glow Effect (PREMIUM CYAN-BLUE GLOW) — behind art & frame */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 2,
+            pointerEvents: "none",
+            borderRadius: 20,
+            boxShadow: "0 0 18px rgba(0,255,255,0.35), 0 0 42px rgba(0,255,255,0.18)",
+            filter: "blur(10px)",
+            opacity: 0.7,
+            background: "none",
+          }}
+        />
         {/* Inner face (CLIPPED): ONLY a clean background + art (no oval plate, no circular highlights). */}
         <div
           aria-hidden="true"
           style={{
             position: "absolute",
             inset: 0,
-            zIndex: 0,
+            zIndex: 3,
             overflow: "hidden",
             borderRadius: 18,
             pointerEvents: "none",
@@ -224,6 +352,9 @@ export default function CardArt({
             transformOrigin: "50% 50%",
           }}
         />
+
+        {/* Attack Pop below the card, above StatsBar */}
+        {AttackPop}
 
         {/* StatsBar now rendered below the card, not overlaid */}
         {StatsBar}
