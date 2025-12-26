@@ -90,6 +90,20 @@ function StatIconCircle({ children, bg = "rgba(30,255,255,0.22)" }: { children: 
   );
 }
 
+// Helper function to infer rarity from frameSrc string
+function inferRarity(frameSrc: string | undefined): "legend" | "epic" | "rare" | "common" {
+  if (frameSrc && frameSrc.toLowerCase().includes("legend")) {
+    return "legend";
+  }
+  if (frameSrc && frameSrc.toLowerCase().includes("epic")) {
+    return "epic";
+  }
+  if (frameSrc && frameSrc.toLowerCase().includes("rare")) {
+    return "rare";
+  }
+  return "common";
+}
+
 export default function CardArt({
   src,
   alt = "",
@@ -109,6 +123,26 @@ export default function CardArt({
   showPop = false,
 }: CardArtProps) {
   if (variant === "pvp") {
+    // Glow visual settings per rarity
+    const rarity = inferRarity(frameSrc);
+    let glowBoxShadow = "";
+    let glowOpacity = 0.7;
+
+    if (rarity === "legend") {
+      glowBoxShadow = "0 0 18px rgba(255,190,60,0.34), 0 0 46px rgba(255,190,60,0.20)";
+      glowOpacity = 0.75;
+    } else if (rarity === "epic") {
+      glowBoxShadow = "0 0 16px rgba(200,80,255,0.30), 0 0 40px rgba(200,80,255,0.18)";
+      glowOpacity = 0.65;
+    } else if (rarity === "rare") {
+      glowBoxShadow = "0 0 14px rgba(0,255,255,0.28), 0 0 34px rgba(0,255,255,0.16)";
+      glowOpacity = 0.60;
+    } else {
+      // common
+      glowBoxShadow = "0 0 10px rgba(120,180,255,0.18), 0 0 26px rgba(120,180,255,0.12)";
+      glowOpacity = 0.45;
+    }
+
     // Badge pill for ATK and HP
     const StatsBar =
       showStats
@@ -276,7 +310,7 @@ export default function CardArt({
             display: none !important;
           }
 `}</style>
-        {/* Card Glow Effect (PREMIUM CYAN-BLUE GLOW) — behind art & frame */}
+        {/* Card Glow Effect (PREMIUM NEON GLOW by RARITY) — behind art & frame */}
         <div
           aria-hidden="true"
           style={{
@@ -285,9 +319,9 @@ export default function CardArt({
             zIndex: 1,
             pointerEvents: "none",
             borderRadius: 20,
-            boxShadow: "0 0 18px rgba(0,255,255,0.35), 0 0 42px rgba(0,255,255,0.18)",
+            boxShadow: glowBoxShadow,
             filter: "blur(10px)",
-            opacity: 0.7,
+            opacity: glowOpacity,
             background: "none",
           }}
         />
