@@ -41,14 +41,27 @@ type CardArtProps = {
 const DEFAULT_FRAME = "/cards/frame/frame_common.png";
 const DEFAULT_BACK = "/cards/back/card_back.png";
 
-/**
- * CardArt
- *
- * IMPORTANT:
- * - Visual-only component.
- * - In PVP mode we render a CLIPPED inner face (background + art) and an UNCLIPPED frame on top.
- * - PVP HUD outside the card must never be touched here.
- */
+// SVG sword icon for ATK
+function IconSword() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" stroke="rgba(255,255,255,0.9)" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20l9-9-3-3-9 9v3h3z" />
+      <path d="M16 5l3 3" />
+      <path d="M6.5 11.5l6 6" />
+      <path d="M7 17l-4 4" />
+    </svg>
+  );
+}
+
+// SVG heart icon for HP
+function IconHeart() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" stroke="rgba(255,255,255,0.9)" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 21s-6.08-4.35-8.3-7.05C2.07 12.67 2 10.7 3.5 9.18A5.013 5.013 0 0 1 8 7.5c1.6 0 2.98.77 4 2 1.02-1.23 2.4-2 4-2 2.81 0 5.36 3.15 3.8 4.77C18.08 16.65 12 21 12 21z" />
+    </svg>
+  );
+}
+
 export default function CardArt({
   src,
   alt = "",
@@ -65,45 +78,69 @@ export default function CardArt({
   artClassName = "",
 }: CardArtProps) {
   if (variant === "pvp") {
-    const StatPill = ({
-      side,
-      value,
-      label,
-      extra,
-    }: {
-      side: "left" | "right";
-      value: number;
-      label: string;
-      extra?: React.ReactNode;
-    }) => (
-      <div
-        style={{
-          position: "absolute",
-          bottom: 4,
-          left: side === "left" ? 6 : undefined,
-          right: side === "right" ? 6 : undefined,
-          zIndex: 20,
-          pointerEvents: "none",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 2,
-          padding: "2px 4px",
-          borderRadius: 999,
-          border: "1px solid rgba(255,255,255,0.18)",
-          background: "rgba(0,0,0,0.45)",
-          backdropFilter: "blur(8px)",
-          fontWeight: 900,
-          letterSpacing: "0.05em",
-          textTransform: "uppercase",
-          fontSize: 7,
-          lineHeight: 1,
-        }}
-        aria-label={label}
-      >
-        <span className="tabular-nums">{Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0}</span>
-        {extra}
-      </div>
-    );
+    // Badge pill for ATK and HP
+    const StatsBar =
+      showStats
+        ? (
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "100%",
+              transform: "translateX(-50%)",
+              marginTop: 6,
+              display: "flex",
+              gap: 8,
+              zIndex: 50,
+              pointerEvents: "none",
+            }}
+          >
+            {/* ATK pill */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "3px 8px",
+                borderRadius: 999,
+                background: "rgba(0,0,0,0.55)",
+                border: "1px solid rgba(255,255,255,0.18)",
+                fontSize: 11,
+                fontWeight: 900,
+                lineHeight: 1,
+                color: "rgba(255,255,255,0.95)",
+              }}
+            >
+              <IconSword />
+              <span className="tabular-nums">{Number.isFinite(atk) ? Math.max(0, Math.floor(atk)) : 0}</span>
+            </div>
+            {/* HP pill */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "3px 8px",
+                borderRadius: 999,
+                background: "rgba(0,0,0,0.55)",
+                border: "1px solid rgba(255,255,255,0.18)",
+                fontSize: 11,
+                fontWeight: 900,
+                lineHeight: 1,
+                color: "rgba(255,255,255,0.95)",
+              }}
+            >
+              <IconHeart />
+              <span className="tabular-nums">{Number.isFinite(hp) ? Math.max(0, Math.floor(hp)) : 0}</span>
+              {shield && shield > 0 ? (
+                <span style={{ opacity: 0.9 }}>
+                  +<span className="tabular-nums">{Math.max(0, Math.floor(shield))}</span>
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ) : null;
 
     return (
       <>
@@ -188,24 +225,8 @@ export default function CardArt({
           }}
         />
 
-        {/* Optional bottom-corner stats (HP/ATK) */}
-        {showStats ? (
-          <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 20, pointerEvents: "none" }}>
-            <StatPill side="left" value={atk} label="ATK" />
-            <StatPill
-              side="right"
-              value={hp}
-              label="HP"
-              extra={
-                shield && shield > 0 ? (
-                  <span style={{ opacity: 0.9 }}>
-                    +<span className="tabular-nums">{Math.max(0, Math.floor(shield))}</span>
-                  </span>
-                ) : null
-              }
-            />
-          </div>
-        ) : null}
+        {/* StatsBar now rendered below the card, not overlaid */}
+        {StatsBar}
 
         {showCorner ? (
           <div className="bb-corner" style={{ zIndex: 30 }}>
