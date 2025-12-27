@@ -1856,7 +1856,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .hud-sub {
           margin-top: 6px;
           display: flex;
-          gap: 8px;
+          gap: 4px;
           flex-wrap: wrap;
           align-items: center;
         }
@@ -1864,7 +1864,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .hud-pill {
           display: inline-flex;
           align-items: center;
-          gap: 8px;
+          gap: 4px;
           padding: 8px 10px;
           border-radius: 999px;
           border: 1px solid rgba(255,255,255,0.18);
@@ -1875,7 +1875,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           opacity: 0.9;
         }
 
-        .hud-actions { display: flex; gap: 8px; align-items: center; }
+        .hud-actions { display: flex; gap: 4px; align-items: center; }
 
         /* ✅ IMPORTANT: no padding here, because background covers the full box */
         .arena {
@@ -1955,7 +1955,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           pointer-events: none;
           display: grid;
           justify-items: center;
-          gap: 8px;
+          gap: 4px;
           filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
         }
         .arena .map-portrait { z-index: 6; }
@@ -2003,13 +2003,13 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
         .map-pillrow {
           display: flex;
-          gap: 8px;
+          gap: 4px;
           align-items: center;
         }
         .map-pill {
           display: inline-flex;
           align-items: center;
-          gap: 8px;
+          gap: 4px;
           padding: 8px 10px;
           border-radius: 999px;
           border: 1px solid rgba(255,255,255,0.18);
@@ -2231,8 +2231,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           margin-top: 6px;
           display: flex;
           align-items: center;
-          gap: 8px;
-          font-size: 9px;
+          gap: 4px;
+          font-size: 7px;
           font-weight: 800;
           line-height: 1;
           letter-spacing: 0.08em;
@@ -2401,12 +2401,12 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
         .bb-title { font-weight: 900; letter-spacing: 0.06em; font-size: 12px; text-transform: uppercase; line-height: 1.15; }
 
-        .bb-subrow { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+        .bb-subrow { margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
 
         .bb-chip {
           display: inline-flex;
           align-items: center;
-          gap: 6px;
+          gap: 4px;
           padding: 6px 10px;
           border-radius: 999px;
           border: 1px solid rgba(255, 255, 255, 0.22);
@@ -2421,7 +2421,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .rar-epic { box-shadow: inset 0 0 0 9999px rgba(184, 92, 255, 0.07); }
         .rar-legendary { box-shadow: inset 0 0 0 9999px rgba(255, 204, 87, 0.07); }
 
-        .bb-bars { margin-top: 10px; display: grid; gap: 6px; }
+        .bb-bars { margin-top: 10px; display: grid; gap: 4px; }
         .bb-bar {
           height: 7px;
           border-radius: 999px;
@@ -2440,7 +2440,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         }
         .bb-shieldnum { opacity: 0.9; }
 
-        .bb-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+        .bb-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
         .bb-tag {
           display: inline-flex;
           align-items: center;
@@ -2448,7 +2448,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           border-radius: 999px;
           border: 1px solid rgba(255,255,255,0.18);
           background: rgba(0,0,0,0.18);
-          font-size: 9px;
+          font-size: 7px;
           letter-spacing: 0.14em;
           text-transform: uppercase;
           opacity: 0.92;
@@ -2473,7 +2473,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .bb-card.has-unit.is-dying { filter: saturate(0.9); }
 
         @media (max-width: 640px) {
-          .slots { gap: 8px; }
+          .slots { gap: 4px; }
           .bb-card { max-width: 110px; border-radius: 16px; }
           .bb-face { border-radius: 16px; }
           .bb-card-inner { border-radius: 16px; }
