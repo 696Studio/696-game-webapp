@@ -340,6 +340,10 @@ export default function CardArt({
             background: transparent !important;
             box-shadow: none !important;
             outline: none !important;
+            border: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            filter: none !important;
           }
 
           /* Kill pseudo-elements that often draw rounded translucent plates */
