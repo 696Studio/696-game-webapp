@@ -340,10 +340,6 @@ export default function CardArt({
             background: transparent !important;
             box-shadow: none !important;
             outline: none !important;
-            border: none !important;
-            backdrop-filter: none !important;
-            -webkit-backdrop-filter: none !important;
-            filter: none !important;
           }
 
           /* Kill pseudo-elements that often draw rounded translucent plates */
@@ -486,7 +482,7 @@ export default function CardArt({
         {/* StatsBar now rendered below the card, not overlaid */}
         {StatsBar}
 
-        {showCorner ? (
+        {false ? (
           <div className="bb-corner" style={{ zIndex: 30 }}>
             <span className="bb-corner-dot" />
           </div>
