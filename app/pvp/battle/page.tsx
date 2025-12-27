@@ -1537,7 +1537,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
         ].join(" ")}
-        style={{ animationDelay: `${delayMs}ms` }}
+        style={{ animationDelay: `${delayMs}ms`, position: "relative", overflow: "visible" }}
       >
         <div className="bb-card-inner">
           <div className="bb-face bb-back">
@@ -1623,6 +1623,28 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
             </div>
         </div>
+
+      {unit && (
+        <div
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: "50%",
+            transform: "translate(-50%, 6px)",
+            whiteSpace: "nowrap",
+            textAlign: "center",
+            fontSize: 11,
+            letterSpacing: "0.08em",
+            opacity: 0.9,
+            pointerEvents: "none",
+          }}
+        >
+          <span>⚔ {card?.base_power ?? 0}</span>
+          <span style={{ margin: "0 8px", opacity: 0.5 }}>•</span>
+          <span>❤ {unit.hp}</span>
+        </div>
+      )}
+
       </div>
     );
   }
