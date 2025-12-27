@@ -104,39 +104,25 @@ function inferRarity(frameSrc: string | undefined): "legend" | "epic" | "rare" |
   return "common";
 }
 
-// Helper to get inner glow radial/edge/neon settings by rarity
-function getInnerGlowSettings(rarity: "legend" | "epic" | "rare" | "common") {
-  // Color stops (strong = inner, mid = edge)
-  let strong: string, mid: string, radial: string;
-  switch (rarity) {
-    case "legend":
-      strong = "rgba(255,190,60,0.30)";
-      mid = "rgba(255,190,60,0.20)";
-      radial =
-        "radial-gradient(circle at 50% 18%, rgba(255,190,60,0.30) 0%, rgba(255,190,60,0.18) 55%, rgba(255,190,60,0.05) 100%)";
-      break;
-    case "epic":
-      strong = "rgba(200,80,255,0.30)";
-      mid = "rgba(200,80,255,0.20)";
-      radial =
-        "radial-gradient(circle at 50% 18%, rgba(200,80,255,0.30) 0%, rgba(200,80,255,0.14) 57%, rgba(200,80,255,0.03) 100%)";
-      break;
-    case "rare":
-      strong = "rgba(0,255,255,0.32)";
-      mid = "rgba(0,255,255,0.22)";
-      radial =
-        "radial-gradient(circle at 50% 18%, rgba(0,255,255,0.32) 0%, rgba(0,255,255,0.14) 60%, rgba(0,255,255,0.02) 100%)";
-      break;
-    case "common":
-    default:
-      strong = "rgba(0,255,255,0.30)";
-      mid = "rgba(0,255,255,0.22)";
-      radial =
-        "radial-gradient(circle at 50% 18%, rgba(0,255,255,0.30) 0%, rgba(0,255,255,0.14) 63%, rgba(0,255,255,0.03) 100%)";
-      break;
+// Rarity glow color map (for inside-the-face glow, not outer)
+const rarityGlowColors = {
+  common: {
+    strong: "rgba(0,255,255,0.22)",
+    mid:    "rgba(0,255,255,0.14)"
+  },
+  rare: {
+    strong: "rgba(0,255,255,0.32)",
+    mid:    "rgba(0,255,255,0.20)"
+  },
+  epic: {
+    strong: "rgba(200,80,255,0.30)",
+    mid:    "rgba(200,80,255,0.18)"
+  },
+  legend: {
+    strong: "rgba(255,190,60,0.30)",
+    mid:    "rgba(255,190,60,0.18)"
   }
-  return { strong, mid, radial };
-}
+};
 
 export default function CardArt({
   src,
@@ -177,8 +163,14 @@ export default function CardArt({
       glowOpacity = 0.78;
     }
 
+    // Used in inner face OUTER glow but not for new inside-face glows
     // Prepare inner (clipped) neon settings
-    const { strong: rarityColorStrong, mid: rarityColorMid, radial: innerGlowRadial } = getInnerGlowSettings(rarity);
+    // const { strong: rarityColorStrong, mid: rarityColorMid, radial: innerGlowRadial } = getInnerGlowSettings(rarity);
+
+    // Rarity neon for INSIDE face neon (exact colors)
+    // See prompt for color source
+    const innerGlowStrong = rarityGlowColors[rarity].strong;
+    const innerGlowMid = rarityGlowColors[rarity].mid;
 
     // Badge pill for ATK and HP
     const StatsBar =
@@ -385,36 +377,36 @@ export default function CardArt({
               background: "linear-gradient(to bottom, #0b1a22, #060c10)",
             }}
           />
-          {/* Visible RARITY NEON GLOW ***INSIDE*** CARD background (under art, over bg) */}
-          {/* Glow layer 1: soft neon fill */}
+          {/* NEON GLOW LAYERS INSIDE CARD FACE (on top of bg, below art) */}
+          {/* Glow 1 (soft overall) */}
           <div
             aria-hidden="true"
             style={{
               position: "absolute",
               inset: "2%",
               borderRadius: 16,
-              background: innerGlowRadial,
-              opacity: 0.9,
+              background: `radial-gradient(circle at 50% 18%, ${innerGlowStrong} 0%, rgba(0,0,0,0) 60%)`,
               mixBlendMode: "screen",
-              filter: "blur(6px)",
+              opacity: 0.85,
+              filter: "blur(8px)",
               zIndex: 1,
-              pointerEvents: "none",
+              pointerEvents: "none"
             }}
           />
-          {/* Glow layer 2: edge neon ring */}
+          {/* Glow 2 (edge ring) */}
           <div
             aria-hidden="true"
             style={{
               position: "absolute",
-              inset: "6%",
+              inset: "7%",
               borderRadius: 14,
-              background: `radial-gradient(circle at 50% 18%, ${rarityColorStrong} 0%, rgba(0,0,0,0) 62%)`,
-              boxShadow: `0 0 22px ${rarityColorMid}, inset 0 0 22px ${rarityColorMid}`,
-              opacity: 0.92,
+              background: "none",
               mixBlendMode: "screen",
+              opacity: 0.9,
               filter: "blur(2px)",
+              boxShadow: `0 0 22px ${innerGlowMid}, inset 0 0 18px ${innerGlowMid}`,
               zIndex: 2,
-              pointerEvents: "none",
+              pointerEvents: "none"
             }}
           />
           {/* Art (contain + center) — do NOT use .bb-art class to avoid any legacy CSS pseudo-elements */}
