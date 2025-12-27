@@ -414,7 +414,7 @@ export default function CardArt({
         </div>
 
         {/* --- STATS BAR BELOW CARD --- */}
-        {showStats && (
+        {true && (
           <div
             aria-hidden="true"
             style={{
