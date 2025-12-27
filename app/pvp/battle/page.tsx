@@ -2232,7 +2232,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           display: flex;
           align-items: center;
           gap: 8px;
-          font-size: 11px;
+          font-size: 9px;
           font-weight: 800;
           line-height: 1;
           letter-spacing: 0.08em;
