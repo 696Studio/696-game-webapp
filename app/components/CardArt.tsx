@@ -240,17 +240,16 @@ export default function CardArt({
     // Compute clamped numbers for display
     const shownAtk = Number.isFinite(atk) ? Math.max(0, Math.floor(atk as number)) : 0;
     const shownHp = Number.isFinite(hp) ? Math.max(0, Math.floor(hp as number)) : 0;
-    const STATS_H = 18;
 
     return (
-      <div style={{ position: "relative", width: "100%", height: "100%", paddingBottom: STATS_H }}>
+      <div style={{position:"relative", width:"100%", height:"100%"}}>
         {/* The card body */}
         <div
           className={["relative w-full h-full", className].join(" ")}
           style={{
             position: "relative",
             width: "100%",
-            height: `calc(100% - ${STATS_H}px)`,
+            height: "100%",
             overflow: "hidden",
             borderRadius: 18,
           }}
@@ -420,15 +419,12 @@ export default function CardArt({
             aria-hidden="true"
             style={{
               position: "absolute",
+              top: "100%",
               left: "50%",
-              bottom: 0,
               transform: "translateX(-50%)",
+              marginTop: 4,
               zIndex: 5,
               pointerEvents: "none",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              height: STATS_H,
               fontSize: 9,
               fontWeight: 700,
               color: "rgba(255,255,255,0.9)",
