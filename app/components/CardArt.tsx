@@ -351,19 +351,18 @@ export default function CardArt({
             pointerEvents: "none",
           }}
         >
-          {/* Solid dark background */}
+          {/* Solid card background (RED theme) */}
           <div
             aria-hidden="true"
             style={{
               position: "absolute",
               inset: 0,
               zIndex: 1,
-              background: "linear-gradient(to bottom, #0b1a22, #060c10)",
+              background: "linear-gradient(to bottom, #3b0a0a, #140405)",
             }}
           />
 
-          {/* INNER NEON GLOW LAYER (between bg and art); 
-              For debug: background: 'rgba(255,0,0,0.35)' instead of real glow */}
+          {/* INNER NEON GLOW LAYER (between bg and art, behind art) */}
           <div
             aria-hidden="true"
             style={{
@@ -373,9 +372,9 @@ export default function CardArt({
               pointerEvents: "none",
               zIndex: 2,
               // DEBUG MODE: should show a visible red tint behind the art.
-              background: "rgba(255,0,0,0.35)",
-              boxShadow: "none",
-              opacity: 1,
+              background: `radial-gradient(circle at 50% 18%, ${STRONG} 0%, rgba(0,0,0,0) 58%)`,
+              boxShadow: `inset 0 0 28px ${MID}, inset 0 0 70px ${WEAK}, 0 0 16px ${neonGlowColor}`,
+              opacity: Math.min(0.95, (opacity ?? 0.7) + 0.20),
             }}
           />
 
