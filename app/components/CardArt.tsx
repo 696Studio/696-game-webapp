@@ -104,24 +104,32 @@ function inferRarity(frameSrc: string | undefined): "legend" | "epic" | "rare" |
   return "common";
 }
 
-// Rarity glow color map (for inside-the-face glow, not outer)
-const rarityGlowColors = {
+// INNER GLOW color map (for inside card face, behind art, above bg)
+const rarityInnerGlow = {
   common: {
-    strong: "rgba(0,255,255,0.22)",
-    mid:    "rgba(0,255,255,0.14)"
+    STRONG: "rgba(0,255,255,0.22)",
+    MID: "rgba(0,255,255,0.14)",
+    WEAK: "rgba(0,255,255,0.08)",
+    opacity: 0.55,
   },
   rare: {
-    strong: "rgba(0,255,255,0.32)",
-    mid:    "rgba(0,255,255,0.20)"
+    STRONG: "rgba(0,255,255,0.34)",
+    MID: "rgba(0,255,255,0.20)",
+    WEAK: "rgba(0,255,255,0.10)",
+    opacity: 0.70,
   },
   epic: {
-    strong: "rgba(200,80,255,0.30)",
-    mid:    "rgba(200,80,255,0.18)"
+    STRONG: "rgba(200,80,255,0.32)",
+    MID: "rgba(200,80,255,0.20)",
+    WEAK: "rgba(200,80,255,0.10)",
+    opacity: 0.72,
   },
   legend: {
-    strong: "rgba(255,190,60,0.30)",
-    mid:    "rgba(255,190,60,0.18)"
-  }
+    STRONG: "rgba(255,190,60,0.32)",
+    MID: "rgba(255,190,60,0.20)",
+    WEAK: "rgba(255,190,60,0.10)",
+    opacity: 0.75,
+  },
 };
 
 // OUTER NEON GLOW MAP for rarity
@@ -152,15 +160,15 @@ export default function CardArt({
 }: CardArtProps) {
 
   if (variant === "pvp") {
-    // Glow settings per rarity for OUTER neon
+    // Infer rarity from frameSrc
     const rarity = inferRarity(frameSrc);
 
-    // Outer neon glow color
+    // OUTER neon glow color
     const neonGlowColor = rarityOuterGlow[rarity];
 
-    // Inner face neon glow for INSIDE face
-    const innerGlowStrong = rarityGlowColors[rarity].strong;
-    const innerGlowMid = rarityGlowColors[rarity].mid;
+    // INNER neon glow properties
+    const innerGlowColors = rarityInnerGlow[rarity];
+    const { STRONG, MID, WEAK, opacity } = innerGlowColors;
 
     // Badge pill for ATK and HP
     const StatsBar =
@@ -310,8 +318,7 @@ export default function CardArt({
       </>
     ) : null;
 
-    // NEW GLOW OUTSIDE THE CLIP CONTAINER, BUT INSIDE ROOT
-    // Use before clipped card body. See outer container below.
+    // OUTER NEON GLOW (UNCLIPPED, under card)
     return (
       <div
         className={["relative w-full h-full", className].join(" ")}
@@ -323,7 +330,6 @@ export default function CardArt({
       >
         {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
         <style jsx global>{`
-          /* Ensure glow + below-card stats are not clipped by legacy containers */
           .bb-card,
           .bb-card .bb-face,
           .bb-card .bb-front,
@@ -353,7 +359,7 @@ export default function CardArt({
           }}
         />
 
-        {/* Inner face (CLIPPED): ONLY a clean background + art (no oval plate, no circular highlights). */}
+        {/* Inner face (CLIPPED) */}
         <div
           aria-hidden="true"
           style={{
@@ -365,7 +371,7 @@ export default function CardArt({
             pointerEvents: "none",
           }}
         >
-          {/* Clean front face background (NOT card back; back should only appear on flip) */}
+          {/* Solid dark background */}
           <div
             aria-hidden="true"
             style={{
@@ -375,39 +381,23 @@ export default function CardArt({
               background: "linear-gradient(to bottom, #0b1a22, #060c10)",
             }}
           />
-          {/* NEON GLOW LAYERS INSIDE CARD FACE (on top of bg, below art) */}
-          {/* Glow 1 (soft overall) */}
+
+          {/* INNER NEON GLOW LAYER (between bg and art) */}
           <div
             aria-hidden="true"
             style={{
               position: "absolute",
-              inset: "2%",
-              borderRadius: 16,
-              background: `radial-gradient(circle at 50% 18%, ${innerGlowStrong} 0%, rgba(0,0,0,0) 60%)`,
-              mixBlendMode: "screen",
-              opacity: 0.85,
-              filter: "blur(8px)",
+              inset: 0,
+              borderRadius: 18,
+              pointerEvents: "none",
               zIndex: 1,
-              pointerEvents: "none"
+              background: `radial-gradient(circle at 50% 18%, ${STRONG} 0%, rgba(0,0,0,0) 58%)`,
+              boxShadow: `inset 0 0 18px ${MID}, inset 0 0 40px ${WEAK}`,
+              opacity: opacity,
             }}
           />
-          {/* Glow 2 (edge ring) */}
-          <div
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              inset: "7%",
-              borderRadius: 14,
-              background: "none",
-              mixBlendMode: "screen",
-              opacity: 0.9,
-              filter: "blur(2px)",
-              boxShadow: `0 0 22px ${innerGlowMid}, inset 0 0 18px ${innerGlowMid}`,
-              zIndex: 2,
-              pointerEvents: "none"
-            }}
-          />
-          {/* Art (contain + center) — do NOT use .bb-art class to avoid any legacy CSS pseudo-elements */}
+
+          {/* Art (contain + center) */}
           {src ? (
             <div
               style={{
