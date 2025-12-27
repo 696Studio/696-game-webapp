@@ -413,26 +413,34 @@ export default function CardArt({
           )}
         </div>
 
-        {/* Frame overlay (UNCLIPPED): bigger frame, centered, no distortion */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          className={["bb-frame", frameClassName].join(" ")}
-          src={frameSrc}
-          alt=""
-          draggable={false}
+        {/* Frame overlay (CLIPPED): bigger frame, centered, but clipped to card bounds */}
+        <div
+          aria-hidden="true"
           style={{
             position: "absolute",
             inset: 0,
             zIndex: 10,
+            overflow: "hidden",
+            borderRadius: 18,
             pointerEvents: "none",
-            objectFit: "contain",
-            objectPosition: "center",
-            transform: "scale(1.14)",
-            transformOrigin: "50% 50%",
           }}
-        />
-
-        {/* Attack Pop below the card, above StatsBar */}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            className={["bb-frame", frameClassName].join(" ")}
+            src={frameSrc}
+            alt=""
+            draggable={false}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              objectPosition: "center",
+              transform: "scale(1.14)",
+              transformOrigin: "50% 50%",
+            }}
+          />
+        </div>{/* Attack Pop below the card, above StatsBar */}
         {AttackPop}
 
         {/* StatsBar now rendered below the card, not overlaid */}
