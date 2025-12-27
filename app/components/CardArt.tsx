@@ -242,14 +242,14 @@ export default function CardArt({
     const shownHp = Number.isFinite(hp) ? Math.max(0, Math.floor(hp as number)) : 0;
 
     return (
-      <div style={{position:"relative", width:"100%", height:"100%"}}>
+      <div style={{ position: "relative", width: "100%", height: "100%" }}>
         {/* The card body */}
         <div
           className={["relative w-full h-full", className].join(" ")}
           style={{
             position: "relative",
             width: "100%",
-            height: "100%",
+            height: showStats ? "calc(100% - 18px)" : "100%",
             overflow: "hidden",
             borderRadius: 18,
           }}
@@ -408,10 +408,11 @@ export default function CardArt({
               }}
             />
           </div>
-          {/* Attack Pop below the card */}
-          {AttackPop}
 
         </div>
+
+        {/* Attack Pop below the card */}
+        {AttackPop}
 
         {/* --- STATS BAR BELOW CARD --- */}
         {true && (
@@ -419,10 +420,14 @@ export default function CardArt({
             aria-hidden="true"
             style={{
               position: "absolute",
-              top: "100%",
-              left: "50%",
-              transform: "translateX(-50%)",
-              marginTop: 4,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 18,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
               zIndex: 5,
               pointerEvents: "none",
               fontSize: 9,
