@@ -328,17 +328,51 @@ export default function CardArt({
       >
         {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
         <style jsx global>{`
+
+          /* CardArt safety overrides for legacy battle markup */
+          /* 1) Remove any "glass" / highlight layers coming from wrapper styles */
+          .bb-card,
+          .bb-face,
+          .bb-front,
+          .bb-card .bb-face,
+          .bb-card .bb-front,
+          .bb-card .bb-face-front {
+            background: transparent !important;
+            box-shadow: none !important;
+            outline: none !important;
+          }
+
+          /* Kill pseudo-elements that often draw rounded translucent plates */
+          .bb-card::before,
+          .bb-card::after,
+          .bb-face::before,
+          .bb-face::after,
+          .bb-front::before,
+          .bb-front::after,
+          .bb-card .bb-face::before,
+          .bb-card .bb-face::after,
+          .bb-card .bb-front::before,
+          .bb-card .bb-front::after {
+            content: none !important;
+            display: none !important;
+          }
+
+          /* Keep our component clipping; don't force overflow visible */
           .bb-card,
           .bb-card .bb-face,
           .bb-card .bb-front,
           .bb-card .bb-face-front,
           .bb-face,
           .bb-front {
-            overflow: visible !important;
+            overflow: hidden !important;
+            border-radius: 18px !important;
           }
+
+          /* Remove any legacy overlay containers */
           .bb-card .bb-overlay {
             display: none !important;
           }
+
         `}</style>
 
         {/* Inner face (CLIPPED) */}
