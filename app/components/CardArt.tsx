@@ -124,6 +124,14 @@ const rarityGlowColors = {
   }
 };
 
+// OUTER NEON GLOW MAP for rarity
+const rarityOuterGlow = {
+  common: "rgba(0,255,255,0.35)",
+  rare: "rgba(0,255,255,0.55)",
+  epic: "rgba(180,90,255,0.55)",
+  legend: "rgba(255,190,80,0.60)",
+};
+
 export default function CardArt({
   src,
   alt = "",
@@ -142,33 +150,15 @@ export default function CardArt({
   popType = "atk",
   showPop = false,
 }: CardArtProps) {
+
   if (variant === "pvp") {
-    // Glow visual settings per rarity
+    // Glow settings per rarity for OUTER neon
     const rarity = inferRarity(frameSrc);
-    let glowBoxShadow = "";
-    let glowOpacity = 0.7;
 
-    if (rarity === "legend") {
-      glowBoxShadow = "0 0 26px rgba(255,190,60,0.38), 0 0 74px rgba(255,190,60,0.22)";
-      glowOpacity = 0.86;
-    } else if (rarity === "epic") {
-      glowBoxShadow = "0 0 22px rgba(200,80,255,0.34), 0 0 62px rgba(200,80,255,0.20)";
-      glowOpacity = 0.76;
-    } else if (rarity === "rare") {
-      glowBoxShadow = "0 0 20px rgba(0,255,255,0.34), 0 0 56px rgba(0,255,255,0.18)";
-      glowOpacity = 0.72;
-    } else {
-      // common
-      glowBoxShadow = "0 0 26px rgba(0,255,255,0.28), 0 0 74px rgba(0,255,255,0.18)";
-      glowOpacity = 0.78;
-    }
+    // Outer neon glow color
+    const neonGlowColor = rarityOuterGlow[rarity];
 
-    // Used in inner face OUTER glow but not for new inside-face glows
-    // Prepare inner (clipped) neon settings
-    // const { strong: rarityColorStrong, mid: rarityColorMid, radial: innerGlowRadial } = getInnerGlowSettings(rarity);
-
-    // Rarity neon for INSIDE face neon (exact colors)
-    // See prompt for color source
+    // Inner face neon glow for INSIDE face
     const innerGlowStrong = rarityGlowColors[rarity].strong;
     const innerGlowMid = rarityGlowColors[rarity].mid;
 
@@ -320,8 +310,17 @@ export default function CardArt({
       </>
     ) : null;
 
+    // NEW GLOW OUTSIDE THE CLIP CONTAINER, BUT INSIDE ROOT
+    // Use before clipped card body. See outer container below.
     return (
-      <>
+      <div
+        className={["relative w-full h-full", className].join(" ")}
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "100%",
+        }}
+      >
         {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
         <style jsx global>{`
           /* Ensure glow + below-card stats are not clipped by legacy containers */
@@ -333,28 +332,27 @@ export default function CardArt({
           .bb-front {
             overflow: visible !important;
           }
-
-          /* Hide legacy PVP overlay blocks (big bars/text) */
           .bb-card .bb-overlay {
             display: none !important;
           }
-`}</style>
-        {/* Card Glow Effect (PREMIUM NEON GLOW by RARITY) — behind art & frame */}
+        `}</style>
+
+        {/* OUTER NEON GLOW BY RARITY */}
         <div
+          className="card-glow"
           aria-hidden="true"
           style={{
             position: "absolute",
-            inset: 0,
+            inset: "-8%",
+            borderRadius: 20,
             zIndex: 1,
             pointerEvents: "none",
-            borderRadius: 20,
-            boxShadow: glowBoxShadow,
             filter: "blur(14px)",
-            opacity: glowOpacity,
-            mixBlendMode: "screen",
-            background: "none",
+            boxShadow:
+              `0 0 30px ${neonGlowColor}, 0 0 60px ${neonGlowColor}`,
           }}
         />
+
         {/* Inner face (CLIPPED): ONLY a clean background + art (no oval plate, no circular highlights). */}
         <div
           aria-hidden="true"
@@ -473,7 +471,7 @@ export default function CardArt({
             <span className="bb-corner-dot" />
           </div>
         ) : null}
-      </>
+      </div>
     );
   }
 
