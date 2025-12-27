@@ -486,12 +486,8 @@ export default function CardArt({
         {/* StatsBar now rendered below the card, not overlaid */}
         {StatsBar}
 
-        {showCorner ? (
-          <div className="bb-corner" style={{ zIndex: 30 }}>
-            <span className="bb-corner-dot" />
-          </div>
-        ) : null}
-      </div>
+        {/* showCorner indicator removed in PVP */}
+</div>
     );
   }
 
