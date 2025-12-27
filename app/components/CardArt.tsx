@@ -356,7 +356,8 @@ export default function CardArt({
             aria-hidden="true"
             style={{
               position: "absolute",
-              inset: 0,
+              inset: "6%",
+              borderRadius: 14,
               zIndex: 1,
               background: "linear-gradient(to bottom, #3b0a0a, #140405)",
             }}
@@ -367,8 +368,8 @@ export default function CardArt({
             aria-hidden="true"
             style={{
               position: "absolute",
-              inset: 0,
-              borderRadius: 18,
+              inset: "6%",
+              borderRadius: 14,
               pointerEvents: "none",
               zIndex: 2,
               // DEBUG MODE: should show a visible red tint behind the art.
