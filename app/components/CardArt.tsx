@@ -104,41 +104,39 @@ function inferRarity(frameSrc: string | undefined): "legend" | "epic" | "rare" |
   return "common";
 }
 
-// INNER GLOW color map (for inside card face, behind art, above bg)
-const rarityInnerGlow = {
-  common: {
-    STRONG: "rgba(0,255,255,0.22)",
-    MID: "rgba(0,255,255,0.14)",
-    WEAK: "rgba(0,255,255,0.08)",
-    opacity: 0.55,
-  },
-  rare: {
-    STRONG: "rgba(0,255,255,0.34)",
-    MID: "rgba(0,255,255,0.20)",
-    WEAK: "rgba(0,255,255,0.10)",
-    opacity: 0.70,
-  },
-  epic: {
-    STRONG: "rgba(200,80,255,0.32)",
-    MID: "rgba(200,80,255,0.20)",
-    WEAK: "rgba(200,80,255,0.10)",
-    opacity: 0.72,
-  },
-  legend: {
-    STRONG: "rgba(255,190,60,0.32)",
-    MID: "rgba(255,190,60,0.20)",
-    WEAK: "rgba(255,190,60,0.10)",
-    opacity: 0.75,
-  },
-};
-
-// OUTER NEON GLOW MAP for rarity
-const rarityOuterGlow = {
-  common: "rgba(0,255,255,0.35)",
-  rare: "rgba(0,255,255,0.55)",
-  epic: "rgba(180,90,255,0.55)",
-  legend: "rgba(255,190,80,0.60)",
-};
+// Helper to get inner glow radial/edge/neon settings by rarity
+function getInnerGlowSettings(rarity: "legend" | "epic" | "rare" | "common") {
+  // Color stops (strong = inner, mid = edge)
+  let strong: string, mid: string, radial: string;
+  switch (rarity) {
+    case "legend":
+      strong = "rgba(255,190,60,0.30)";
+      mid = "rgba(255,190,60,0.20)";
+      radial =
+        "radial-gradient(circle at 50% 18%, rgba(255,190,60,0.30) 0%, rgba(255,190,60,0.18) 55%, rgba(255,190,60,0.05) 100%)";
+      break;
+    case "epic":
+      strong = "rgba(200,80,255,0.30)";
+      mid = "rgba(200,80,255,0.20)";
+      radial =
+        "radial-gradient(circle at 50% 18%, rgba(200,80,255,0.30) 0%, rgba(200,80,255,0.14) 57%, rgba(200,80,255,0.03) 100%)";
+      break;
+    case "rare":
+      strong = "rgba(0,255,255,0.32)";
+      mid = "rgba(0,255,255,0.22)";
+      radial =
+        "radial-gradient(circle at 50% 18%, rgba(0,255,255,0.32) 0%, rgba(0,255,255,0.14) 60%, rgba(0,255,255,0.02) 100%)";
+      break;
+    case "common":
+    default:
+      strong = "rgba(0,255,255,0.22)";
+      mid = "rgba(0,255,255,0.18)";
+      radial =
+        "radial-gradient(circle at 50% 18%, rgba(0,255,255,0.22) 0%, rgba(0,255,255,0.10) 63%, rgba(0,255,255,0.01) 100%)";
+      break;
+  }
+  return { strong, mid, radial };
+}
 
 export default function CardArt({
   src,
@@ -159,12 +157,110 @@ export default function CardArt({
   showPop = false,
 }: CardArtProps) {
   if (variant === "pvp") {
-    // Infer rarity from frameSrc
+    // Glow visual settings per rarity
     const rarity = inferRarity(frameSrc);
+    let glowBoxShadow = "";
+    let glowOpacity = 0.7;
 
-    const neonGlowColor = rarityOuterGlow[rarity];
-    const innerGlowColors = rarityInnerGlow[rarity];
-    const { STRONG, MID, WEAK, opacity } = innerGlowColors;
+    if (rarity === "legend") {
+      glowBoxShadow = "0 0 26px rgba(255,190,60,0.38), 0 0 74px rgba(255,190,60,0.22)";
+      glowOpacity = 0.86;
+    } else if (rarity === "epic") {
+      glowBoxShadow = "0 0 22px rgba(200,80,255,0.34), 0 0 62px rgba(200,80,255,0.20)";
+      glowOpacity = 0.76;
+    } else if (rarity === "rare") {
+      glowBoxShadow = "0 0 20px rgba(0,255,255,0.34), 0 0 56px rgba(0,255,255,0.18)";
+      glowOpacity = 0.72;
+    } else {
+      // common
+      glowBoxShadow = "0 0 18px rgba(0,255,255,0.22), 0 0 44px rgba(0,255,255,0.14)";
+      glowOpacity = 0.60;
+    }
+
+    // Prepare inner (clipped) neon settings
+    const { strong: rarityColorStrong, mid: rarityColorMid, radial: innerGlowRadial } = getInnerGlowSettings(rarity);
+
+    // Badge pill for ATK and HP
+    const StatsBar =
+      showStats
+        ? (
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "100%",
+              transform: "translateX(-50%) scale(0.8)",
+              transformOrigin: "50% 0%",
+              marginTop: 2,
+              display: "flex",
+              gap: 5,
+              zIndex: 51,
+              pointerEvents: "none",
+              fontFamily: "inherit",
+            }}
+          >
+            {/* ATK pill */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 3,
+                padding: "1px 6px 1px 4px",
+                borderRadius: 999,
+                background: "rgba(0,10,15,0.75)",
+                border: "1px solid rgba(0,255,255,0.13)",
+                fontSize: 8,
+                fontWeight: 900,
+                lineHeight: 1,
+                color: "rgba(255,255,255,0.97)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
+                minWidth: 28,
+                minHeight: 14,
+              }}
+            >
+              <StatIconCircle bg="rgba(3,200,255,0.27)">
+                <IconSword />
+              </StatIconCircle>
+              <span className="tabular-nums">{Number.isFinite(atk) ? Math.max(0, Math.floor(atk)) : 0}</span>
+            </div>
+            {/* HP pill */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 3,
+                padding: "1px 6px 1px 4px",
+                borderRadius: 999,
+                background: "rgba(0,10,15,0.75)",
+                border: "1px solid rgba(0,255,255,0.10)",
+                fontSize: 8,
+                fontWeight: 900,
+                lineHeight: 1,
+                color: "rgba(255,255,255,0.97)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
+                minWidth: 28,
+                minHeight: 14,
+              }}
+            >
+              <StatIconCircle bg="rgba(30,255,180,0.18)">
+                <IconHeart />
+              </StatIconCircle>
+              <span className="tabular-nums">{Number.isFinite(hp) ? Math.max(0, Math.floor(hp)) : 0}</span>
+              {shield && shield > 0 ? (
+                <span style={{
+                  opacity: 0.9,
+                  marginLeft: 2,
+                  color: "#8df9f6",
+                  fontWeight: 700,
+                  fontSize: 8
+                }}>
+                  +<span className="tabular-nums">{Math.max(0, Math.floor(shield))}</span>
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ) : null;
 
     // Attack Pop-out
     const AttackPop = showPop && !!popText ? (
@@ -232,211 +328,160 @@ export default function CardArt({
       </>
     ) : null;
 
-    // MAIN CARD CONTAINER
-    // We'll need to wrap the card in an outer div (for positioning stats bar absolutely relative to root)
-    // Do NOT change card visuals or styles!
-    // StatsBar will be a separate sibling absolutely positioned, not inside card
-
-    // Compute clamped numbers for display
-    const shownAtk = Number.isFinite(atk) ? Math.max(0, Math.floor(atk as number)) : 0;
-    const shownHp = Number.isFinite(hp) ? Math.max(0, Math.floor(hp as number)) : 0;
-
     return (
-      <div style={{position:"relative", width:"100%", height:"100%"}}>
-        {/* The card body */}
+      <>
+        {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
+        <style jsx global>{`
+          /* Ensure glow + below-card stats are not clipped by legacy containers */
+          .bb-card,
+          .bb-card .bb-face,
+          .bb-card .bb-front,
+          .bb-card .bb-face-front,
+          .bb-face,
+          .bb-front {
+            overflow: visible !important;
+          }
+
+          /* Hide legacy PVP overlay blocks (big bars/text) */
+          .bb-card .bb-overlay {
+            display: none !important;
+          }
+`}</style>
+        {/* Card Glow Effect (PREMIUM NEON GLOW by RARITY) — behind art & frame */}
         <div
-          className={["relative w-full h-full", className].join(" ")}
+          aria-hidden="true"
           style={{
-            position: "relative",
-            width: "100%",
-            height: "100%",
+            position: "absolute",
+            inset: 0,
+            zIndex: 1,
+            pointerEvents: "none",
+            borderRadius: 20,
+            boxShadow: glowBoxShadow,
+            filter: "blur(14px)",
+            opacity: glowOpacity,
+            mixBlendMode: "screen",
+            background: "none",
+          }}
+        />
+        {/* Inner face (CLIPPED): ONLY a clean background + art (no oval plate, no circular highlights). */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 2,
             overflow: "hidden",
             borderRadius: 18,
+            pointerEvents: "none",
           }}
         >
-          {/* Hide legacy PVP overlay blocks (title/big HP bars) without touching page.tsx */}
-          <style jsx global>{`
-
-            /* CardArt safety overrides for legacy battle markup */
-            /* 1) Remove any "glass" / highlight layers coming from wrapper styles */
-            .bb-card,
-            .bb-face,
-            .bb-front,
-            .bb-card .bb-face,
-            .bb-card .bb-front,
-            .bb-card .bb-face-front {
-              background: transparent !important;
-              box-shadow: none !important;
-              outline: none !important;
-              border: none !important;
-              backdrop-filter: none !important;
-              -webkit-backdrop-filter: none !important;
-              filter: none !important;
-            }
-
-            /* Kill pseudo-elements that often draw rounded translucent plates */
-            .bb-card::before,
-            .bb-card::after,
-            .bb-face::before,
-            .bb-face::after,
-            .bb-front::before,
-            .bb-front::after,
-            .bb-card .bb-face::before,
-            .bb-card .bb-face::after,
-            .bb-card .bb-front::before,
-            .bb-card .bb-front::after {
-              content: none !important;
-              display: none !important;
-            }
-
-            /* Keep our component clipping; don't force overflow visible */
-            .bb-card,
-            .bb-card .bb-face,
-            .bb-card .bb-front,
-            .bb-card .bb-face-front,
-            .bb-face,
-            .bb-front {
-              overflow: hidden !important;
-              border-radius: 18px !important;
-            }
-
-            /* Remove any legacy overlay containers */
-            .bb-card .bb-overlay {
-              display: none !important;
-            }
-
-          `}</style>
-
-          {/* Inner face (CLIPPED) */}
+          {/* Clean front face background (NOT card back; back should only appear on flip) */}
           <div
             aria-hidden="true"
             style={{
               position: "absolute",
               inset: 0,
+              zIndex: 0,
+              background: "linear-gradient(to bottom, rgba(10,18,24,0.30), rgba(2,6,10,0.86))",
+            }}
+          />
+          {/* Visible RARITY NEON GLOW ***INSIDE*** CARD background (under art, over bg) */}
+          {/* Glow layer 1: soft neon fill */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              inset: "2%",
+              borderRadius: 16,
+              background: innerGlowRadial,
+              opacity: 0.9,
+              mixBlendMode: "screen",
+              filter: "blur(6px)",
+              zIndex: 1,
+              pointerEvents: "none",
+            }}
+          />
+          {/* Glow layer 2: edge neon ring */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              inset: "6%",
+              borderRadius: 14,
+              background: `radial-gradient(circle at 50% 18%, ${rarityColorStrong} 0%, rgba(0,0,0,0) 62%)`,
+              boxShadow: `0 0 22px ${rarityColorMid}, inset 0 0 22px ${rarityColorMid}`,
+              opacity: 0.85,
+              mixBlendMode: "screen",
+              filter: "blur(2px)",
               zIndex: 2,
-              overflow: "hidden",
-              borderRadius: 18,
               pointerEvents: "none",
             }}
-          >
-            {/* Solid card background (RED theme) */}
+          />
+          {/* Art (contain + center) — do NOT use .bb-art class to avoid any legacy CSS pseudo-elements */}
+          {src ? (
             <div
-              aria-hidden="true"
               style={{
                 position: "absolute",
-                inset: "6%",
-                borderRadius: 14,
-                zIndex: 1,
-                background: "linear-gradient(to bottom, #3b0a0a, #140405)",
+                inset: "18%",
+                zIndex: 3,
+                backgroundImage: `url(${src})`,
+                backgroundSize: "contain",
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "center",
+                transform: "none",
+                filter: "saturate(1.05) contrast(1.05)",
               }}
             />
-
-            {/* INNER NEON GLOW LAYER (between bg and art, behind art) */}
+          ) : (
             <div
-              aria-hidden="true"
               style={{
                 position: "absolute",
-                inset: "6%",
-                borderRadius: 14,
-                pointerEvents: "none",
-                zIndex: 2,
-                background: `radial-gradient(circle at 50% 18%, ${STRONG} 0%, rgba(0,0,0,0) 58%)`,
-                boxShadow: `inset 0 0 28px ${MID}, inset 0 0 70px ${WEAK}, 0 0 16px ${neonGlowColor}`,
-                opacity: Math.min(0.95, (opacity ?? 0.7) + 0.20),
+                inset: "18%",
+                zIndex: 3,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: 0.6,
+                fontSize: 8,
+                fontWeight: 800,
               }}
-            />
-
-            {/* Art (contain + center) */}
-            {src ? (
-              <div
-                style={{
-                  position: "absolute",
-                  inset: "18%",
-                  zIndex: 3,
-                  backgroundImage: `url(${src})`,
-                  backgroundSize: "contain",
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "center",
-                  transform: "none",
-                  filter: "saturate(1.05) contrast(1.05)",
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  position: "absolute",
-                  inset: "18%",
-                  zIndex: 3,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  opacity: 0.6,
-                  fontSize: 8,
-                  fontWeight: 800,
-                }}
-              >
-                CARD
-              </div>
-            )}
-          </div>
-
-          {/* Frame overlay (CLIPPED): bigger frame, centered, but clipped to card bounds */}
-          <div
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 10,
-              overflow: "hidden",
-              borderRadius: 18,
-              pointerEvents: "none",
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              className={["bb-frame", frameClassName].join(" ")}
-              src={frameSrc}
-              alt=""
-              draggable={false}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-                objectPosition: "center",
-                transform: "scale(1.14)",
-                transformOrigin: "50% 50%",
-              }}
-            />
-          </div>
-          {/* Attack Pop below the card */}
-          {AttackPop}
-
+            >
+              CARD
+            </div>
+          )}
         </div>
 
-        {/* --- STATS BAR BELOW CARD --- */}
-        {true && (
-          <div
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              top: "100%",
-              left: "50%",
-              transform: "translateX(-50%)",
-              marginTop: 6,
-              zIndex: 5,
-              pointerEvents: "none",
-              fontSize: 11,
-              fontWeight: 600,
-              color: "rgba(255,255,255,0.9)",
-              letterSpacing: 0.2,
-              whiteSpace: "nowrap",
-              // No background, no border, no blur, no boxShadow
-            }}
-          >
-            <span role="img" aria-label="Attack" style={{fontStyle:"normal"}}>⚔</span> {shownAtk} &nbsp; &bull; &nbsp; <span role="img" aria-label="Health" style={{fontStyle:"normal"}}>❤</span> {shownHp}
+        {/* Frame overlay (UNCLIPPED): bigger frame, centered, no distortion */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className={["bb-frame", frameClassName].join(" ")}
+          src={frameSrc}
+          alt=""
+          draggable={false}
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 10,
+            pointerEvents: "none",
+            objectFit: "contain",
+            objectPosition: "center",
+            transform: "scale(1.14)",
+            transformOrigin: "50% 50%",
+          }}
+        />
+
+        {/* Attack Pop below the card, above StatsBar */}
+        {AttackPop}
+
+        {/* StatsBar now rendered below the card, not overlaid */}
+        {StatsBar}
+
+        {showCorner ? (
+          <div className="bb-corner" style={{ zIndex: 30 }}>
+            <span className="bb-corner-dot" />
           </div>
-        )}
-      </div>
+        ) : null}
+      </>
     );
   }
 
@@ -452,13 +497,10 @@ export default function CardArt({
             alt=""
             className="absolute inset-0 w-full h-full object-cover pointer-events-none"
             draggable={false}
-            style={{
-              zIndex: 1
-            }}
           />
 
           {/* Art */}
-          <div className="absolute inset-0 flex items-center justify-center" style={{zIndex: 3}}>
+          <div className="absolute inset-0 flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={src}
@@ -482,9 +524,6 @@ export default function CardArt({
             alt=""
             className={["absolute inset-0 w-full h-full object-contain pointer-events-none", frameClassName].join(" ")}
             draggable={false}
-            style={{
-              zIndex: 10
-            }}
           />
         </>
       ) : (
