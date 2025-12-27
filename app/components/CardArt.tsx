@@ -166,87 +166,67 @@ export default function CardArt({
     const innerGlowColors = rarityInnerGlow[rarity];
     const { STRONG, MID, WEAK, opacity } = innerGlowColors;
 
-    // Badge pill for ATK and HP
+    // Single line stats bar (ATK + HP) under the card (PVP only)
     const StatsBar =
-      showStats
-        ? (
-          <div
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              left: "50%",
-              top: "100%",
-              transform: "translateX(-50%) scale(0.8)",
-              transformOrigin: "50% 0%",
-              marginTop: 2,
-              display: "flex",
-              gap: 5,
-              zIndex: 51,
-              pointerEvents: "none",
-              fontFamily: "inherit",
-            }}
-          >
-            {/* ATK pill */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 3,
-                padding: "1px 6px 1px 4px",
-                borderRadius: 999,
-                background: "rgba(0,10,15,0.75)",
-                border: "1px solid rgba(0,255,255,0.13)",
-                fontSize: 8,
-                fontWeight: 900,
-                lineHeight: 1,
-                color: "rgba(255,255,255,0.97)",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
-                minWidth: 28,
-                minHeight: 14,
-              }}
-            >
-              <StatIconCircle bg="rgba(3,200,255,0.27)">
-                <IconSword />
-              </StatIconCircle>
-              <span className="tabular-nums">{Number.isFinite(atk) ? Math.max(0, Math.floor(atk)) : 0}</span>
-            </div>
-            {/* HP pill */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 3,
-                padding: "1px 6px 1px 4px",
-                borderRadius: 999,
-                background: "rgba(0,10,15,0.75)",
-                border: "1px solid rgba(0,255,255,0.10)",
-                fontSize: 8,
-                fontWeight: 900,
-                lineHeight: 1,
-                color: "rgba(255,255,255,0.97)",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
-                minWidth: 28,
-                minHeight: 14,
-              }}
-            >
-              <StatIconCircle bg="rgba(30,255,180,0.18)">
-                <IconHeart />
-              </StatIconCircle>
-              <span className="tabular-nums">{Number.isFinite(hp) ? Math.max(0, Math.floor(hp)) : 0}</span>
-              {shield && shield > 0 ? (
-                <span style={{
+      showStats ? (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "100%",
+            transform: "translateX(-50%) scale(0.8)",
+            transformOrigin: "50% 0%",
+            marginTop: 2,
+            zIndex: 51,
+            pointerEvents: "none",
+            fontFamily: "inherit",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "1px 8px 1px 6px",
+            borderRadius: 999,
+            background: "rgba(0,10,15,0.75)",
+            border: "1px solid rgba(0,255,255,0.12)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14)",
+            color: "rgba(255,255,255,0.97)",
+            fontSize: 8,
+            fontWeight: 900,
+            lineHeight: 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+            <StatIconCircle bg="rgba(3,200,255,0.27)">
+              <IconSword />
+            </StatIconCircle>
+            <span className="tabular-nums">{Number.isFinite(atk) ? Math.max(0, Math.floor(atk)) : 0}</span>
+          </span>
+
+          <span style={{ opacity: 0.35 }}>•</span>
+
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+            <StatIconCircle bg="rgba(30,255,180,0.18)">
+              <IconHeart />
+            </StatIconCircle>
+            <span className="tabular-nums">{Number.isFinite(hp) ? Math.max(0, Math.floor(hp)) : 0}</span>
+            {shield && shield > 0 ? (
+              <span
+                style={{
                   opacity: 1.0,
                   marginLeft: 2,
                   color: "#8df9f6",
                   fontWeight: 700,
-                  fontSize: 8
-                }}>
-                  +<span className="tabular-nums">{Math.max(0, Math.floor(shield))}</span>
-                </span>
-              ) : null}
-            </div>
-          </div>
-        ) : null;
+                  fontSize: 8,
+                }}
+              >
+                +<span className="tabular-nums">{Math.max(0, Math.floor(shield))}</span>
+              </span>
+            ) : null}
+          </span>
+        </div>
+      ) : null;
+
 
     // Attack Pop-out
     const AttackPop = showPop && !!popText ? (
