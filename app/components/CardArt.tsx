@@ -129,10 +129,10 @@ function getInnerGlowSettings(rarity: "legend" | "epic" | "rare" | "common") {
       break;
     case "common":
     default:
-      strong = "rgba(0,255,255,0.22)";
-      mid = "rgba(0,255,255,0.18)";
+      strong = "rgba(0,255,255,0.30)";
+      mid = "rgba(0,255,255,0.22)";
       radial =
-        "radial-gradient(circle at 50% 18%, rgba(0,255,255,0.22) 0%, rgba(0,255,255,0.10) 63%, rgba(0,255,255,0.01) 100%)";
+        "radial-gradient(circle at 50% 18%, rgba(0,255,255,0.30) 0%, rgba(0,255,255,0.14) 63%, rgba(0,255,255,0.03) 100%)";
       break;
   }
   return { strong, mid, radial };
@@ -173,8 +173,8 @@ export default function CardArt({
       glowOpacity = 0.72;
     } else {
       // common
-      glowBoxShadow = "0 0 18px rgba(0,255,255,0.22), 0 0 44px rgba(0,255,255,0.14)";
-      glowOpacity = 0.60;
+      glowBoxShadow = "0 0 26px rgba(0,255,255,0.28), 0 0 74px rgba(0,255,255,0.18)";
+      glowOpacity = 0.78;
     }
 
     // Prepare inner (clipped) neon settings
@@ -249,7 +249,7 @@ export default function CardArt({
               <span className="tabular-nums">{Number.isFinite(hp) ? Math.max(0, Math.floor(hp)) : 0}</span>
               {shield && shield > 0 ? (
                 <span style={{
-                  opacity: 0.9,
+                  opacity: 1.0,
                   marginLeft: 2,
                   color: "#8df9f6",
                   fontWeight: 700,
@@ -382,7 +382,7 @@ export default function CardArt({
               position: "absolute",
               inset: 0,
               zIndex: 0,
-              background: "linear-gradient(to bottom, rgba(10,18,24,0.30), rgba(2,6,10,0.86))",
+              background: "linear-gradient(to bottom, #0b1a22, #060c10)",
             }}
           />
           {/* Visible RARITY NEON GLOW ***INSIDE*** CARD background (under art, over bg) */}
@@ -410,7 +410,7 @@ export default function CardArt({
               borderRadius: 14,
               background: `radial-gradient(circle at 50% 18%, ${rarityColorStrong} 0%, rgba(0,0,0,0) 62%)`,
               boxShadow: `0 0 22px ${rarityColorMid}, inset 0 0 22px ${rarityColorMid}`,
-              opacity: 0.85,
+              opacity: 0.92,
               mixBlendMode: "screen",
               filter: "blur(2px)",
               zIndex: 2,
