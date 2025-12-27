@@ -158,15 +158,11 @@ export default function CardArt({
   popType = "atk",
   showPop = false,
 }: CardArtProps) {
-
   if (variant === "pvp") {
     // Infer rarity from frameSrc
     const rarity = inferRarity(frameSrc);
 
-    // OUTER neon glow color
     const neonGlowColor = rarityOuterGlow[rarity];
-
-    // INNER neon glow properties
     const innerGlowColors = rarityInnerGlow[rarity];
     const { STRONG, MID, WEAK, opacity } = innerGlowColors;
 
@@ -318,7 +314,7 @@ export default function CardArt({
       </>
     ) : null;
 
-    // OUTER NEON GLOW (UNCLIPPED, under card)
+    // MAIN CARD CONTAINER
     return (
       <div
         className={["relative w-full h-full", className].join(" ")}
@@ -343,22 +339,6 @@ export default function CardArt({
           }
         `}</style>
 
-        {/* OUTER NEON GLOW BY RARITY */}
-        <div
-          className="card-glow"
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: "-8%",
-            borderRadius: 20,
-            zIndex: 1,
-            pointerEvents: "none",
-            filter: "blur(14px)",
-            boxShadow:
-              `0 0 30px ${neonGlowColor}, 0 0 60px ${neonGlowColor}`,
-          }}
-        />
-
         {/* Inner face (CLIPPED) */}
         <div
           aria-hidden="true"
@@ -377,12 +357,13 @@ export default function CardArt({
             style={{
               position: "absolute",
               inset: 0,
-              zIndex: 0,
+              zIndex: 1,
               background: "linear-gradient(to bottom, #0b1a22, #060c10)",
             }}
           />
 
-          {/* INNER NEON GLOW LAYER (between bg and art) */}
+          {/* INNER NEON GLOW LAYER (between bg and art); 
+              For debug: background: 'rgba(255,0,0,0.35)' instead of real glow */}
           <div
             aria-hidden="true"
             style={{
@@ -390,10 +371,11 @@ export default function CardArt({
               inset: 0,
               borderRadius: 18,
               pointerEvents: "none",
-              zIndex: 1,
-              background: `radial-gradient(circle at 50% 18%, ${STRONG} 0%, rgba(0,0,0,0) 58%)`,
-              boxShadow: `inset 0 0 18px ${MID}, inset 0 0 40px ${WEAK}`,
-              opacity: opacity,
+              zIndex: 2,
+              // DEBUG MODE: should show a visible red tint behind the art.
+              background: "rgba(255,0,0,0.35)",
+              boxShadow: "none",
+              opacity: 1,
             }}
           />
 
@@ -477,10 +459,13 @@ export default function CardArt({
             alt=""
             className="absolute inset-0 w-full h-full object-cover pointer-events-none"
             draggable={false}
+            style={{
+              zIndex: 1
+            }}
           />
 
           {/* Art */}
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center" style={{zIndex: 3}}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={src}
@@ -504,6 +489,9 @@ export default function CardArt({
             alt=""
             className={["absolute inset-0 w-full h-full object-contain pointer-events-none", frameClassName].join(" ")}
             draggable={false}
+            style={{
+              zIndex: 10
+            }}
           />
         </>
       ) : (
