@@ -1522,6 +1522,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [unit]);
 
     return (
+      <div className="bb-slot">
       <div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
@@ -1537,7 +1538,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
         ].join(" ")}
-        style={{ animationDelay: `${delayMs}ms`, position: "relative", overflow: "visible" }}
+        style={{ animationDelay: `${delayMs}ms` }}
       >
         <div className="bb-card-inner">
           <div className="bb-face bb-back">
@@ -1549,11 +1550,11 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
               variant="pvp"
               src={img}
               frameSrc={CARD_FRAME_SRC}
-              showStats={!!unit}
+              showStats={false}
               atk={power ?? 0}
               hp={unit?.hp ?? 0}
               shield={unit?.shield ?? 0}
-              showCorner={!!unit}
+              showCorner={false}
             />
             {unit && (
               <div className="bb-fx">
@@ -1623,29 +1624,15 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
             </div>
         </div>
-
+      </div>
       {unit && (
-        <div
-          style={{
-            position: "absolute",
-            top: "100%",
-            left: "50%",
-            transform: "translate(-50%, 6px)",
-            whiteSpace: "nowrap",
-            textAlign: "center",
-            fontSize: 11,
-            letterSpacing: "0.08em",
-            opacity: 0.9,
-            pointerEvents: "none",
-          }}
-        >
-          <span>⚔ {card?.base_power ?? 0}</span>
-          <span style={{ margin: "0 8px", opacity: 0.5 }}>•</span>
-          <span>❤ {unit.hp}</span>
+        <div className="bb-hud" aria-hidden="true">
+          <span className="bb-hud-item">⚔ {power ?? 0}</span>
+          <span className="bb-hud-sep">•</span>
+          <span className="bb-hud-item">❤ {unit?.hp ?? 0}</span>
         </div>
       )}
-
-      </div>
+    </div>
     );
   }
 
@@ -2227,6 +2214,38 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           perspective: 900px;
           border-radius: 18px;
           margin: 0 auto;
+        }
+
+        .bb-slot {
+          position: relative;
+          width: 100%;
+          max-width: 150px;
+          margin: 0 auto;
+        }
+
+        .bb-hud {
+          position: absolute;
+          top: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          margin-top: 6px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          font-weight: 800;
+          line-height: 1;
+          letter-spacing: 0.08em;
+          color: rgba(255, 255, 255, 0.92);
+          white-space: nowrap;
+          pointer-events: none;
+          z-index: 30;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+        }
+
+        .bb-hud-sep {
+          opacity: 0.55;
+          font-weight: 900;
         }
         .bb-card-inner {
           width: 100%;
