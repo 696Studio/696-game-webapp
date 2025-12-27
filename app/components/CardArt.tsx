@@ -104,6 +104,40 @@ function inferRarity(frameSrc: string | undefined): "legend" | "epic" | "rare" |
   return "common";
 }
 
+// Helper to get inner glow radial/edge/neon settings by rarity
+function getInnerGlowSettings(rarity: "legend" | "epic" | "rare" | "common") {
+  // Color stops (strong = inner, mid = edge)
+  let strong: string, mid: string, radial: string;
+  switch (rarity) {
+    case "legend":
+      strong = "rgba(255,190,60,0.30)";
+      mid = "rgba(255,190,60,0.20)";
+      radial =
+        "radial-gradient(circle at 50% 18%, rgba(255,190,60,0.30) 0%, rgba(255,190,60,0.18) 55%, rgba(255,190,60,0.05) 100%)";
+      break;
+    case "epic":
+      strong = "rgba(200,80,255,0.30)";
+      mid = "rgba(200,80,255,0.20)";
+      radial =
+        "radial-gradient(circle at 50% 18%, rgba(200,80,255,0.30) 0%, rgba(200,80,255,0.14) 57%, rgba(200,80,255,0.03) 100%)";
+      break;
+    case "rare":
+      strong = "rgba(0,255,255,0.32)";
+      mid = "rgba(0,255,255,0.22)";
+      radial =
+        "radial-gradient(circle at 50% 18%, rgba(0,255,255,0.32) 0%, rgba(0,255,255,0.14) 60%, rgba(0,255,255,0.02) 100%)";
+      break;
+    case "common":
+    default:
+      strong = "rgba(0,255,255,0.22)";
+      mid = "rgba(0,255,255,0.18)";
+      radial =
+        "radial-gradient(circle at 50% 18%, rgba(0,255,255,0.22) 0%, rgba(0,255,255,0.10) 63%, rgba(0,255,255,0.01) 100%)";
+      break;
+  }
+  return { strong, mid, radial };
+}
+
 export default function CardArt({
   src,
   alt = "",
@@ -123,27 +157,28 @@ export default function CardArt({
   showPop = false,
 }: CardArtProps) {
   if (variant === "pvp") {
-    // Glow visual settings per rarity for the new INSIDE glow
+    // Glow visual settings per rarity
     const rarity = inferRarity(frameSrc);
-
-    // Rarity color maps for the inner face neon glow
-    let innerGlowRadial: string;
-    let innerGlowBoxShadow: string;
+    let glowBoxShadow = "";
+    let glowOpacity = 0.7;
 
     if (rarity === "legend") {
-      innerGlowRadial = "radial-gradient(circle at 50% 20%, rgba(255,190,60,0.26) 0%, rgba(0,0,0,0) 65%)";
-      innerGlowBoxShadow = "inset 0 0 18px rgba(255,190,60,0.28), 0 0 10px rgba(255,190,60,0.20)";
+      glowBoxShadow = "0 0 26px rgba(255,190,60,0.38), 0 0 74px rgba(255,190,60,0.22)";
+      glowOpacity = 0.86;
     } else if (rarity === "epic") {
-      innerGlowRadial = "radial-gradient(circle at 50% 20%, rgba(200,80,255,0.26) 0%, rgba(0,0,0,0) 65%)";
-      innerGlowBoxShadow = "inset 0 0 18px rgba(200,80,255,0.28), 0 0 10px rgba(200,80,255,0.18)";
+      glowBoxShadow = "0 0 22px rgba(200,80,255,0.34), 0 0 62px rgba(200,80,255,0.20)";
+      glowOpacity = 0.76;
     } else if (rarity === "rare") {
-      innerGlowRadial = "radial-gradient(circle at 50% 20%, rgba(0,255,255,0.28) 0%, rgba(0,0,0,0) 65%)";
-      innerGlowBoxShadow = "inset 0 0 18px rgba(0,255,255,0.24), 0 0 10px rgba(0,255,255,0.13)";
+      glowBoxShadow = "0 0 20px rgba(0,255,255,0.34), 0 0 56px rgba(0,255,255,0.18)";
+      glowOpacity = 0.72;
     } else {
       // common
-      innerGlowRadial = "radial-gradient(circle at 50% 20%, rgba(0,255,255,0.18) 0%, rgba(0,0,0,0) 65%)";
-      innerGlowBoxShadow = "inset 0 0 18px rgba(0,255,255,0.17), 0 0 10px rgba(0,255,255,0.08)";
+      glowBoxShadow = "0 0 18px rgba(0,255,255,0.22), 0 0 44px rgba(0,255,255,0.14)";
+      glowOpacity = 0.60;
     }
+
+    // Prepare inner (clipped) neon settings
+    const { strong: rarityColorStrong, mid: rarityColorMid, radial: innerGlowRadial } = getInnerGlowSettings(rarity);
 
     // Badge pill for ATK and HP
     const StatsBar =
@@ -311,9 +346,23 @@ export default function CardArt({
           .bb-card .bb-overlay {
             display: none !important;
           }
-        `}</style>
-        {/* Card Glow Effect (OLD OUTER GLOW, removed as per requirements) */}
-        {/* (Previously here. No longer rendered.) */}
+`}</style>
+        {/* Card Glow Effect (PREMIUM NEON GLOW by RARITY) — behind art & frame */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 1,
+            pointerEvents: "none",
+            borderRadius: 20,
+            boxShadow: glowBoxShadow,
+            filter: "blur(14px)",
+            opacity: glowOpacity,
+            mixBlendMode: "screen",
+            background: "none",
+          }}
+        />
         {/* Inner face (CLIPPED): ONLY a clean background + art (no oval plate, no circular highlights). */}
         <div
           aria-hidden="true"
@@ -326,26 +375,45 @@ export default function CardArt({
             pointerEvents: "none",
           }}
         >
-          {/* SOLID front face background */}
+          {/* Clean front face background (NOT card back; back should only appear on flip) */}
           <div
             aria-hidden="true"
             style={{
               position: "absolute",
               inset: 0,
               zIndex: 0,
-              background: "linear-gradient(to bottom, #0b1a22, #060c10)",
+              background: "linear-gradient(to bottom, rgba(10,18,24,0.30), rgba(2,6,10,0.86))",
             }}
           />
-          {/* VISIBLE RARITY-BASED NEON GLOW INSIDE CARD (between bg and art) */}
+          {/* Visible RARITY NEON GLOW ***INSIDE*** CARD background (under art, over bg) */}
+          {/* Glow layer 1: soft neon fill */}
           <div
             aria-hidden="true"
             style={{
               position: "absolute",
-              inset: "10%",
-              zIndex: 1,
-              borderRadius: 14,
+              inset: "2%",
+              borderRadius: 16,
               background: innerGlowRadial,
-              boxShadow: innerGlowBoxShadow,
+              opacity: 0.9,
+              mixBlendMode: "screen",
+              filter: "blur(6px)",
+              zIndex: 1,
+              pointerEvents: "none",
+            }}
+          />
+          {/* Glow layer 2: edge neon ring */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              inset: "6%",
+              borderRadius: 14,
+              background: `radial-gradient(circle at 50% 18%, ${rarityColorStrong} 0%, rgba(0,0,0,0) 62%)`,
+              boxShadow: `0 0 22px ${rarityColorMid}, inset 0 0 22px ${rarityColorMid}`,
+              opacity: 0.85,
+              mixBlendMode: "screen",
+              filter: "blur(2px)",
+              zIndex: 2,
               pointerEvents: "none",
             }}
           />
@@ -355,7 +423,7 @@ export default function CardArt({
               style={{
                 position: "absolute",
                 inset: "18%",
-                zIndex: 2,
+                zIndex: 3,
                 backgroundImage: `url(${src})`,
                 backgroundSize: "contain",
                 backgroundRepeat: "no-repeat",
@@ -369,7 +437,7 @@ export default function CardArt({
               style={{
                 position: "absolute",
                 inset: "18%",
-                zIndex: 2,
+                zIndex: 3,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
