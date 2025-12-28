@@ -1525,24 +1525,26 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [unit]);
 
     return (
-      <div className="bb-slot">
       <div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
         }}
         className={[
-          "bb-card",
-          revealed ? "is-revealed" : "",
-          `rt-${revealTick}`,
-          unit ? "has-unit" : "",
-          isDead ? "is-dead" : "",
-          isActive ? "is-active" : "",
+          "bb-slot",
           spawned ? "is-spawn" : "",
           dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
           atk?.isFrom ? "is-attack-from" : "",
           atk?.isTo ? "is-attack-to" : "",
         ].join(" ")}
+      >
+      <div
+        className={["bb-card",
+          revealed ? "is-revealed" : "",
+          `rt-${revealTick}`,
+          unit ? "has-unit" : "",
+          isDead ? "is-dead" : "",
+          isActive ? "is-active" : "",].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
         <div className="bb-card-inner">
