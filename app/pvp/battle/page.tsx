@@ -1627,12 +1627,87 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       </div>
       {unit && (
         <div className="bb-hud" aria-hidden="true">
-          <span className="bb-hud-item">⚔ {power ?? 0}</span>
-          <span className="bb-hud-sep">•</span>
-          <span className="bb-hud-item">❤ {unit?.hp ?? 0}</span>
+          <span className="bb-hud-item">
+            <span className="bb-hud-icon" role="img" aria-label="Attack">⚔</span>
+            <span className="bb-hud-num">{power ?? 0}</span>
+          </span>
+          <span className="bb-hud-sep" />
+          <span className="bb-hud-item">
+            <span className="bb-hud-icon hp" role="img" aria-label="HP">❤</span>
+            <span className="bb-hud-num">{unit?.hp ?? 0}</span>
+          </span>
         </div>
       )}
-    </div>
+
+      <style jsx>{`
+        .bb-hud {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(11, 18, 26, 0.92);
+          border-radius: 10px;
+          border: 1.6px solid rgba(51,241,255,0.38);
+          box-shadow:
+            0 0 1.5px #36ffe4be,
+            0 0 7px 0 #30e6ff40,
+            0 0 0.8px 0 #00dbff75;
+          padding: 1.5px 9px 1.5px 9px;
+          min-height: 17px;
+          gap: 8px;
+          font-size: 11px;
+          user-select: none;
+          font-family: inherit;
+          width: fit-content;
+        }
+        .bb-hud-item {
+          display: flex;
+          align-items: center;
+          gap: 2.5px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+        }
+        .bb-hud-icon {
+          font-size: 11px;
+          color: #52e6ff;
+          text-shadow:
+            0 0 3px #26fff59a,
+            0 0 1.5px #52ffe952;
+        }
+        .bb-hud-icon.hp {
+          color: #ff6797;
+          text-shadow:
+            0 0 3px #fd4c72ab,
+            0 0 1px #ff729ec2;
+        }
+        .bb-hud-num {
+          font-variant-numeric: tabular-nums;
+          font-size: 11px;
+          min-width: 13px;
+          color: #f1fcff;
+          text-shadow:
+            0 0 2px #00fff875,
+            0 0 0.5px #0003;
+        }
+        .bb-hud-sep {
+          width: 4px;
+          height: 4px;
+          background: radial-gradient(circle, #33ffe7cc 73%, transparent 100%);
+          border-radius: 50%;
+          margin: 0 1px;
+          opacity: 0.54;
+        }
+        @media (max-width: 500px) {
+          .bb-hud {
+            min-height: 14px;
+            font-size: 9px;
+            padding: 1.5px 6px;
+            border-radius: 7.5px;
+          }
+          .bb-hud-num, .bb-hud-icon { font-size: 9px; min-width: 10px; }
+        }
+      `}</style>
+      </div>
+
     );
   }
 
