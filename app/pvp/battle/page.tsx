@@ -1420,23 +1420,25 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                 left: pos.left,
                 top: pos.top,
                 transform: "translate(-50%,-50%)",
+                width: 0,
+                height: 0,
                 ["--ringSize" as any]: `${pos.ring}px`,
                 ["--imgSize" as any]: `${pos.img}px`,
               } as React.CSSProperties)
             : undefined
         }
       >
-        {/* Top player stays exactly as-is. */}
+        {/* Top: ring anchored; name/HP are absolute so resizing/margins don’t shift the ring. */}
         <>
-          <div className="map-portrait-ring">
+          <div className="map-portrait-ring" style={{ position: "absolute", left: 0, top: 10, transform: "translate(-50%,-50%)" }}>
             <div className="map-portrait-img">
               <img src={avatar} alt={tone} />
             </div>
           </div>
 
-          <div className="map-portrait-name" style={{ marginTop: 20 }}>{name}</div>
+          <div className="map-portrait-name" style={{ position: "absolute", left: 0, top: (pos?.ring ?? 0) / 2 + 30 + 8, transform: "translateX(-50%)" }}>{name}</div>
 
-          <div className="map-pillrow" style={{ marginTop: 16 }}>
+          <div className="map-pillrow" style={{ position: "absolute", left: 0, top: (pos?.ring ?? 0) / 2 + 64, transform: "translateX(-50%)" }}>
             <div
               className="map-xp"
               style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%`, ["--xpHue" as any]: `${Math.round(120 * clamp(hp / 30, 0, 1))}` } as React.CSSProperties}
