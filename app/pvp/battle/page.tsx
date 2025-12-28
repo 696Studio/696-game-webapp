@@ -1641,72 +1641,83 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
       <style jsx>{`
         .bb-hud {
-          display: flex;
+          display: inline-flex;
           align-items: center;
           justify-content: center;
           background: rgba(11, 18, 26, 0.92);
-          border-radius: 10px;
+          border-radius: 9px;
           border: 1.6px solid rgba(51,241,255,0.38);
           box-shadow:
             0 0 1.5px #36ffe4be,
             0 0 7px 0 #30e6ff40,
             0 0 0.8px 0 #00dbff75;
-          padding: 1px 7px;
-          min-height: 15px;
+          padding: 1px 6px;
+          gap: 4px;
+          min-height: 14px;
           max-width: calc(100% - 6px);
           width: max-content;
           box-sizing: border-box;
-          gap: 6px;
-          font-size: 10px;
-          user-select: none;
-          font-family: inherit;
-          width: fit-content;
+          overflow: hidden;
+          white-space: nowrap;
         }
+
         .bb-hud-item {
-          display: flex;
+          display: inline-flex;
           align-items: center;
+          justify-content: center;
           gap: 2px;
-          font-weight: 700;
-          letter-spacing: 0.03em;
+          min-width: 0;
         }
+
         .bb-hud-icon {
-          font-size: 10px;
-          color: #52e6ff;
-          text-shadow:
-            0 0 3px #26fff59a,
-            0 0 1.5px #52ffe952;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 10px;
+          height: 10px;
+          font-size: 9px;
+          line-height: 1;
+          flex: 0 0 auto;
         }
-        .bb-hud-icon.hp {
-          color: #ff6797;
-          text-shadow:
-            0 0 3px #fd4c72ab,
-            0 0 1px #ff729ec2;
-        }
+
         .bb-hud-num {
+          font-size: 9px;
+          line-height: 1;
           font-variant-numeric: tabular-nums;
-          font-size: 10px;
-          min-width: 11px;
-          color: #f1fcff;
-          text-shadow:
-            0 0 2px #00fff875,
-            0 0 0.5px #0003;
+          letter-spacing: 0.15px;
+          flex: 0 1 auto;
+          min-width: 0;
         }
+
         .bb-hud-sep {
-          width: 3px;
-          height: 3px;
+          display: inline-block;
+          width: 4px;
+          height: 4px;
           background: radial-gradient(circle, #33ffe7cc 73%, transparent 100%);
           border-radius: 50%;
-          margin: 0 0.5px;
-          opacity: 0.54;
+          opacity: 0.5;
+          flex: 0 0 auto;
         }
+
         @media (max-width: 500px) {
           .bb-hud {
-            min-height: 13px;
-            font-size: 8px;
+            min-height: 12px;
             padding: 1px 5px;
             border-radius: 7px;
+            gap: 3px;
           }
-          .bb-hud-num, .bb-hud-icon { font-size: 8px; min-width: 9px; }
+          .bb-hud-icon {
+            width: 9px;
+            height: 9px;
+            font-size: 8px;
+          }
+          .bb-hud-num {
+            font-size: 8px;
+          }
+          .bb-hud-sep {
+            width: 3px;
+            height: 3px;
+          }
         }
       `}</style>
       </div>
