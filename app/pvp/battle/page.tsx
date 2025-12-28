@@ -1537,6 +1537,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           spawned ? "is-spawn" : "",
           dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
+          atk?.isFrom ? "is-attack-from" : "",
+          atk?.isTo ? "is-attack-to" : "",
         ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
