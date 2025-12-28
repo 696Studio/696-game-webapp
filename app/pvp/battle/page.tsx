@@ -1651,10 +1651,13 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
             0 0 1.5px #36ffe4be,
             0 0 7px 0 #30e6ff40,
             0 0 0.8px 0 #00dbff75;
-          padding: 1.5px 9px 1.5px 9px;
-          min-height: 17px;
-          gap: 8px;
-          font-size: 11px;
+          padding: 1px 7px;
+          min-height: 15px;
+          max-width: calc(100% - 6px);
+          width: max-content;
+          box-sizing: border-box;
+          gap: 6px;
+          font-size: 10px;
           user-select: none;
           font-family: inherit;
           width: fit-content;
@@ -1662,12 +1665,12 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         .bb-hud-item {
           display: flex;
           align-items: center;
-          gap: 2.5px;
+          gap: 2px;
           font-weight: 700;
-          letter-spacing: 0.04em;
+          letter-spacing: 0.03em;
         }
         .bb-hud-icon {
-          font-size: 11px;
+          font-size: 10px;
           color: #52e6ff;
           text-shadow:
             0 0 3px #26fff59a,
@@ -1681,29 +1684,29 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         }
         .bb-hud-num {
           font-variant-numeric: tabular-nums;
-          font-size: 11px;
-          min-width: 13px;
+          font-size: 10px;
+          min-width: 11px;
           color: #f1fcff;
           text-shadow:
             0 0 2px #00fff875,
             0 0 0.5px #0003;
         }
         .bb-hud-sep {
-          width: 4px;
-          height: 4px;
+          width: 3px;
+          height: 3px;
           background: radial-gradient(circle, #33ffe7cc 73%, transparent 100%);
           border-radius: 50%;
-          margin: 0 1px;
+          margin: 0 0.5px;
           opacity: 0.54;
         }
         @media (max-width: 500px) {
           .bb-hud {
-            min-height: 14px;
-            font-size: 9px;
-            padding: 1.5px 6px;
-            border-radius: 7.5px;
+            min-height: 13px;
+            font-size: 8px;
+            padding: 1px 5px;
+            border-radius: 7px;
           }
-          .bb-hud-num, .bb-hud-icon { font-size: 9px; min-width: 10px; }
+          .bb-hud-num, .bb-hud-icon { font-size: 8px; min-width: 9px; }
         }
       `}</style>
       </div>
