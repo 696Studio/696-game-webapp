@@ -1351,7 +1351,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
       const yOffset =
       where === "top"
-        ? -Math.round(arenaBox.h * 0.02)   // ⬆️ ВЕРХНЕГО ИГРОКА ЧУТЬ ВЫШЕ
+        ? Math.round(arenaBox.h * 0.008) // ⬇️ TOP tiny down
         : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
     
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
@@ -1428,15 +1428,15 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       >
         {/* Top player stays exactly as-is. */}
         <>
-          <div className="map-portrait-ring" style={{ transform: "translateY(4px)" }}>
+          <div className="map-portrait-ring">
             <div className="map-portrait-img">
               <img src={avatar} alt={tone} />
             </div>
           </div>
 
-          <div className="map-portrait-name">{name}</div>
+          <div className="map-portrait-name" style={{ marginTop: 20 }}>{name}</div>
 
-          <div className="map-pillrow">
+          <div className="map-pillrow" style={{ marginTop: 16 }}>
             <div
               className="map-xp"
               style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%`, ["--xpHue" as any]: `${Math.round(120 * clamp(hp / 30, 0, 1))}` } as React.CSSProperties}
