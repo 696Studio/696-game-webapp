@@ -1,5 +1,8 @@
 "use client";
 
+import "./battle.animations.css";
+
+
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
