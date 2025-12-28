@@ -2632,7 +2632,109 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           pointer-events: none;
         }
 
-          `,
+          
+
+/* =========================================================
+   BB SLOT ANIMATIONS (inlined fallback)
+   NOTE: same rules also exist in battle.animations.css
+   This inline copy guarantees animations even if CSS import is not applied.
+   ========================================================= */
+/* =========================================================
+   696 GAME — PVP CARD ANIMATIONS
+   (container animations live on .bb-slot)
+   ---------------------------------------------------------
+   WHY .bb-slot:
+   - In page.tsx animation state classes (is-spawn / is-attack-*) are applied to .bb-slot
+   - .bb-card already uses its own animation (flipIn) and 3D transforms; we avoid conflicts
+   RULES:
+   - CardArt is NOT animated directly
+   - Only transforms/opacity (no layout: no left/top)
+   ========================================================= */
+
+/* Base safety */
+.bb-slot {
+    will-change: transform, opacity;
+    transform-origin: 50% 70%;
+  }
+  
+  /* ---------------------------------------------------------
+     STEP 1 — SPAWN (Hearthstone-like, clean)
+     Triggered by: .bb-slot.is-spawn
+  --------------------------------------------------------- */
+  
+  .bb-slot.is-spawn {
+    animation: bb-slot-spawn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  
+  @keyframes bb-slot-spawn {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 18px, 0) scale(0.94);
+    }
+    55% {
+      opacity: 1;
+      transform: translate3d(0, -2px, 0) scale(1.04);
+    }
+    100% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+  
+  /* Spawn FX layer (already used by .bb-spawn in JSX) */
+  .bb-slot.is-spawn .bb-spawn {
+    animation: bb-spawn-flash 260ms ease-out both;
+  }
+  
+  @keyframes bb-spawn-flash {
+    0% {
+      opacity: 0;
+      box-shadow:
+        inset 0 0 0 9999px rgba(255,255,255,0.08),
+        0 0 0 rgba(255,255,255,0);
+    }
+    40% {
+      opacity: 1;
+      box-shadow:
+        inset 0 0 0 9999px rgba(255,255,255,0.05),
+        0 0 24px rgba(120,240,255,0.25);
+    }
+    100% {
+      opacity: 0;
+      box-shadow:
+        inset 0 0 0 9999px rgba(255,255,255,0),
+        0 0 0 rgba(255,255,255,0);
+    }
+  }
+  
+  /* ---------------------------------------------------------
+     STEP 3 — ATTACK LUNGE (Hearthstone-like)
+     Triggered by:
+       .bb-slot.is-attack-from  : attacker lunge
+       .bb-slot.is-attack-to    : defender micro-impact
+  --------------------------------------------------------- */
+  
+  .bb-slot.is-attack-from {
+    animation: bb-slot-lunge 160ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  
+  .bb-slot.is-attack-to {
+    animation: bb-slot-impact 140ms ease-out both;
+  }
+  
+  @keyframes bb-slot-lunge {
+    0%   { transform: translate3d(0, 0, 0) scale(1); }
+    65%  { transform: translate3d(0, -10px, 0) scale(1.06); }
+    100% { transform: translate3d(0, 0, 0) scale(1); }
+  }
+  
+  @keyframes bb-slot-impact {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(0.965); }
+    100% { transform: scale(1); }
+  }
+  
+`,
         }}
       />
 
