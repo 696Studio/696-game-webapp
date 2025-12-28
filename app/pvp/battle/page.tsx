@@ -1645,15 +1645,15 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           align-items: center;
           justify-content: center;
           background: rgba(11, 18, 26, 0.92);
-          border-radius: 9px;
+          border-radius: 8px;
           border: 1.6px solid rgba(51,241,255,0.38);
           box-shadow:
             0 0 1.5px #36ffe4be,
             0 0 7px 0 #30e6ff40,
             0 0 0.8px 0 #00dbff75;
-          padding: 1px 6px;
-          gap: 4px;
-          min-height: 14px;
+          padding: 1px 5px;
+          gap: 3px;
+          min-height: 12px;
           max-width: calc(100% - 6px);
           width: max-content;
           box-sizing: border-box;
@@ -1665,7 +1665,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 2px;
+          gap: 1px;
           min-width: 0;
         }
 
@@ -1684,7 +1684,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           font-size: 9px;
           line-height: 1;
           font-variant-numeric: tabular-nums;
-          letter-spacing: 0.15px;
+          letter-spacing: 0.1px;
           flex: 0 1 auto;
           min-width: 0;
         }
@@ -1701,22 +1701,22 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
         @media (max-width: 500px) {
           .bb-hud {
-            min-height: 12px;
-            padding: 1px 5px;
+            min-height: 11px;
+            padding: 1px 4px;
             border-radius: 7px;
-            gap: 3px;
+            gap: 2px;
           }
           .bb-hud-icon {
-            width: 9px;
-            height: 9px;
-            font-size: 8px;
+            width: 8px;
+            height: 8px;
+            font-size: 7px;
           }
           .bb-hud-num {
-            font-size: 8px;
+            font-size: 7px;
           }
           .bb-hud-sep {
-            width: 3px;
-            height: 3px;
+            width: 2px;
+            height: 2px;
           }
         }
       `}</style>
