@@ -327,7 +327,7 @@ export default function CardArt({
                 inset: "6%",
                 borderRadius: 14,
                 zIndex: 1,
-                background: "linear-gradient(to bottom, #3b0a0a, #140405)",
+                background: "linear-gradient(to bottom, #5a0b0b, #1a0506)",
               }}
             />
 
@@ -340,9 +340,9 @@ export default function CardArt({
                 borderRadius: 14,
                 pointerEvents: "none",
                 zIndex: 2,
-                background: `radial-gradient(circle at 50% 18%, ${STRONG} 0%, rgba(0,0,0,0) 58%)`,
-                boxShadow: `inset 0 0 28px ${MID}, inset 0 0 70px ${WEAK}, 0 0 16px ${neonGlowColor}`,
-                opacity: Math.min(0.95, (opacity ?? 0.7) + 0.20),
+                background: "none",
+                boxShadow: "none",
+                opacity: 0,
               }}
             />
 
