@@ -2735,37 +2735,49 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   }
 
 /* ---------------------------------------------------------
-   STEP 4 — DEATH (freeze → tilt → fade)
-   Triggered by: .bb-slot.is-dying  (from death events window)
+   STEP 4A — DEATH V2 (Collapse + Ash) — NO ASSETS
+   Goal: readable "death" (freeze → collapse → ash) not just fade
+   Trigger: .bb-slot.is-dying
 --------------------------------------------------------- */
+
+/* Make sure FX overlays can sit correctly without affecting layout */
+.bb-slot { position: relative; }
+
 .bb-slot.is-dying {
-  animation: bb-slot-death 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  transform-origin: 50% 75%;
+  animation: bb-death-collapse 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: 50% 80%;
 }
 
-/* Subtle "freeze" feel: stop other motions inside during death */
+/* Freeze internal flip/hover transitions during death to avoid fighting transforms */
 .bb-slot.is-dying .bb-card-inner {
   transition: none !important;
+  filter: grayscale(0.35) saturate(0.65) contrast(1.05);
 }
 
-@keyframes bb-slot-death {
-  0%   { opacity: 1; transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
-  18%  { opacity: 1; transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
-  55%  { opacity: 0.95; transform: translate3d(0, 6px, 0) rotate(6deg) scale(0.985); }
-  100% { opacity: 0; transform: translate3d(0, 22px, 0) rotate(10deg) scale(0.96); }
-}
-
-/* "Skeleton pop" placeholder: quick pulse on existing .bb-death layer */
+/* Ash overlay using existing .bb-death layer (placeholder FX, still looks "gamey") */
 .bb-slot.is-dying .bb-death {
-  animation: bb-skel-pop 520ms ease-out both;
-  opacity: 1;
+  pointer-events: none;
+  opacity: 0;
+  animation: bb-ash-burst 560ms ease-out both;
+  background:
+    radial-gradient(closest-side, rgba(255,255,255,0.18), rgba(255,255,255,0) 65%),
+    radial-gradient(closest-side, rgba(160,220,255,0.12), rgba(160,220,255,0) 70%);
+  mix-blend-mode: screen;
 }
 
-@keyframes bb-skel-pop {
-  0%   { opacity: 0; transform: scale(0.85); }
-  25%  { opacity: 0.55; transform: scale(1.05); }
-  60%  { opacity: 0.28; transform: scale(1.18); }
-  100% { opacity: 0; transform: scale(1.28); }
+@keyframes bb-death-collapse {
+  0%   { opacity: 1; transform: translate3d(0,0,0) rotate(0deg) scale3d(1,1,1); }
+  18%  { opacity: 1; transform: translate3d(0,0,0) rotate(0deg) scale3d(0.985,0.99,1); }
+  52%  { opacity: 0.98; transform: translate3d(0,10px,0) rotate(7deg) scale3d(0.96,0.88,1); }
+  78%  { opacity: 0.7; transform: translate3d(0,22px,0) rotate(11deg) scale3d(0.86,0.62,1); }
+  100% { opacity: 0; transform: translate3d(0,34px,0) rotate(14deg) scale3d(0.74,0.40,1); }
+}
+
+@keyframes bb-ash-burst {
+  0%   { opacity: 0; transform: scale(0.85); filter: blur(0px); }
+  20%  { opacity: 0.55; transform: scale(1.05); filter: blur(0px); }
+  55%  { opacity: 0.28; transform: scale(1.22); filter: blur(0.6px); }
+  100% { opacity: 0; transform: scale(1.32); filter: blur(1px); }
 }
 `,
         }}
