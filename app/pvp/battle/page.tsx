@@ -2733,7 +2733,40 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     45%  { transform: scale(0.965); }
     100% { transform: scale(1); }
   }
-  
+
+/* ---------------------------------------------------------
+   STEP 4 — DEATH (freeze → tilt → fade)
+   Triggered by: .bb-slot.is-dying  (from death events window)
+--------------------------------------------------------- */
+.bb-slot.is-dying {
+  animation: bb-slot-death 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: 50% 75%;
+}
+
+/* Subtle "freeze" feel: stop other motions inside during death */
+.bb-slot.is-dying .bb-card-inner {
+  transition: none !important;
+}
+
+@keyframes bb-slot-death {
+  0%   { opacity: 1; transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  18%  { opacity: 1; transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  55%  { opacity: 0.95; transform: translate3d(0, 6px, 0) rotate(6deg) scale(0.985); }
+  100% { opacity: 0; transform: translate3d(0, 22px, 0) rotate(10deg) scale(0.96); }
+}
+
+/* "Skeleton pop" placeholder: quick pulse on existing .bb-death layer */
+.bb-slot.is-dying .bb-death {
+  animation: bb-skel-pop 520ms ease-out both;
+  opacity: 1;
+}
+
+@keyframes bb-skel-pop {
+  0%   { opacity: 0; transform: scale(0.85); }
+  25%  { opacity: 0.55; transform: scale(1.05); }
+  60%  { opacity: 0.28; transform: scale(1.18); }
+  100% { opacity: 0; transform: scale(1.28); }
+}
 `,
         }}
       />
