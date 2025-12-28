@@ -1428,13 +1428,13 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       >
         {/* Top player stays exactly as-is. */}
         <>
-          <div className="map-portrait-ring">
+          <div className="map-portrait-ring" style={{ transform: "translateY(6px)" }}>
             <div className="map-portrait-img">
               <img src={avatar} alt={tone} />
             </div>
           </div>
 
-          <div className="map-portrait-name" style={{ marginTop: 20 }}>{name}</div>
+          <div className="map-portrait-name" style={{ marginTop: 20, transform: "translateY(6px)" }}>{name}</div>
 
           <div className="map-pillrow" style={{ marginTop: 16 }}>
             <div
