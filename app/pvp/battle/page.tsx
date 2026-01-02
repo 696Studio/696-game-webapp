@@ -296,7 +296,6 @@ const BOARD_IMG_H = 2796;
 
 
 const DEBUG_ARENA = true; // debug overlay for arena sizing
-const DEBUG_FX = process.env.NODE_ENV !== "production";
 const DEBUG_GRID = true; // mirrored A/B measurement grid (dev only)
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
@@ -1524,7 +1523,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     return (
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
-      
         <div className="bb-fx-anchor">{isDying ? <div className="bb-death" /> : null}</div>
 <div
         ref={(el) => {
@@ -1538,7 +1536,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           isDead ? "is-dead" : "",
           isActive ? "is-active" : "",
           spawned ? "is-spawn" : "",
-          dmg ? "is-damage" : ""
+          dmg ? "is-damage" : "",
+          isDying ? "is-dying" : "",
         ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
@@ -1578,8 +1577,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                   </>
                 )}
 
-                
-              </div>
+                </div>
             )}
 
             <div className="bb-overlay">

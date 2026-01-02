@@ -23,31 +23,11 @@
     --bb-fx-shadow: 0 0 14px rgba(120, 220, 255, .35);
   }
   
-  
-/* STEP A FIX: ensure FX layer is above bb-overlay (page.tsx sets .bb-fx z-index:6) */
-.bb-fx{ z-index: 12 !important; }
-
-/* Base safety */
+  /* Base safety */
   .bb-slot{
-    
-    position: relative;
-    isolation: isolate;
-will-change: transform, opacity;
+    will-change: transform, opacity;
     transform-origin: 50% 70%;
   }
-
-  /* =========================================================
-     FX ANCHOR — lives as a sibling layer to the card inside .bb-slot
-     (Not clipped by CardArt overflow)
-     ========================================================= */
-  .bb-fx-anchor{
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: 999;
-    overflow: visible;
-  }
-
   
   /* =========================================================
      STEP 1 — SPAWN
@@ -156,7 +136,7 @@ will-change: transform, opacity;
   
   /* =========================================================
      STEP 4B — OPTIONAL SPRITE POP (death_burst.png)
-     Put sprite here: public/fx/death_burst.png
+     Put sprite here: public/fx/retro/death_burst.png
   
      Expected:
      - 8 frames in a row (horizontal)
@@ -180,7 +160,7 @@ will-change: transform, opacity;
     width: 220px;
     height: 220px;
     transform: translate(-50%,-55%);
-    background-image: url("/fx/death_burst.png");
+    background-image: url("/fx/retro/death_burst.png");
     background-repeat: no-repeat;
     background-size: 800% 100%;
     image-rendering: auto;
@@ -232,34 +212,40 @@ will-change: transform, opacity;
   }
   
 
-/* =========================================================
-   OVERRIDES — make sure death FX is visible and centered on card slot
-   ========================================================= */
-.bb-slot.is-dying .bb-death{
+/* ===========================
+   FX Anchor (CardSlot sibling)
+   =========================== */
+
+.bb-slot { position: relative; }
+
+.bb-fx-anchor{
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  overflow: visible;
+}
+
+/* Death burst sprite (horizontal strip) */
+.bb-death{
   position: absolute;
   left: 50%;
   top: 50%;
   width: 180%;
   height: 180%;
-  transform: translate(-50%, -55%);
-  pointer-events: none;
-  z-index: 1000;
-}
-
-.bb-slot.is-dying .bb-death::before{
-  content: "";
-  position: absolute;
-  inset: 0;
+  transform: translate(-50%, -50%);
   background-image: url("/fx/retro/death_burst.png");
   background-repeat: no-repeat;
-  background-size: auto 100%;
-  background-position: 0 50%;
-  image-rendering: pixelated;
+  /* default: 8 frames horizontally */
+  background-size: 800% 100%;
+  background-position: 0% 50%;
   opacity: 1;
-  animation: bb_death_burst 750ms steps(var(--bb-death-frames, 12)) forwards;
+  filter: drop-shadow(0 0 16px rgba(180,240,255,.65));
+  mix-blend-mode: normal;
+  animation: bb-death-sprite 850ms steps(8) forwards;
 }
 
-@keyframes bb_death_burst{
+@keyframes bb-death-sprite{
   from { background-position-x: 0%; }
   to   { background-position-x: 100%; }
 }
