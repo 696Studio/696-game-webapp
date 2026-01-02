@@ -344,8 +344,8 @@ function coverMapRect(
 function BattleInner() {
   const router = useRouter();
   // === DEBUG FX (STEP A) ===
-  const [debugFxEnabled, setDebugFxEnabled] = useState<boolean>(true);
-  const [debugDyingId, setDebugDyingId] = useState<string | null>(null);
+  // Enable: hold SHIFT and click a card to play death burst on that card for 800ms
+
 
   const sp = useSearchParams();
   const matchId = sp.get("matchId") || "";
@@ -440,6 +440,8 @@ function BattleInner() {
   const prevEndSigRef = useRef<string>("");
 
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
+    // DEV: force-show death FX on any card by clicking it
+  const [debugDyingId, setDebugDyingId] = useState<string | null>(null);
   const debugDyingTimerRef = useRef<number | null>(null);
 
   const triggerDebugDeath = (instanceId: string) => {
@@ -1602,7 +1604,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                   </>
                 )}
 
-                {isDying && <div className="bb-death"><div className="bb-death-debug-marker" /></div>}
+                {/* death FX moved to bb-slot level (above bb-card stacking) */}
               </div>
             )}
 
@@ -1651,6 +1653,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
             </div>
         </div>
       </div>
+      {unit && isDying && <div className="bb-death" aria-hidden="true" />}
       {unit && (
         <div className="bb-hud" aria-hidden="true">
           <span className="bb-hud-item">
@@ -2828,7 +2831,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
                     debugFxEnabled={DEBUG_FX}
                     onDebugDeath={s.unit?.instanceId ? () => triggerDebugDeath(s.unit!.instanceId) : undefined}
-                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
+                    isDying={!!(s.unit?.instanceId && (deathFxByInstance.has(s.unit.instanceId) || (DEBUG_FX && debugDyingId === s.unit.instanceId)))}
                     revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
                   />
@@ -2861,7 +2864,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
                     debugFxEnabled={DEBUG_FX}
                     onDebugDeath={s.unit?.instanceId ? () => triggerDebugDeath(s.unit!.instanceId) : undefined}
-                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
+                    isDying={!!(s.unit?.instanceId && (deathFxByInstance.has(s.unit.instanceId) || (DEBUG_FX && debugDyingId === s.unit.instanceId)))}
                     revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
                   />
