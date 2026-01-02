@@ -197,8 +197,8 @@
     position:absolute;
     left:50%;
     top:50%;
-    width: 320px;
-    height: 320px;
+    width: 180%;
+    height: 180%;
     transform: translate(-50%,-55%);
     background-image: url("/fx/death_burst.png");
     background-repeat: no-repeat;
@@ -251,51 +251,29 @@
     .bb-slot.is-dying .bb-death::before,
     .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
   }
+  
 
-/* =========================================================
-   DEATH FX — sprite burst (death_burst.png)
-   Works for a horizontal sprite strip.
-   ========================================================= */
-:root{
-  --bb-death-frames: 8; /* adjust if your sheet has different frame count */
-  --bb-death-ms: 720ms;
+/* === DEBUG: make death FX unmistakable === */
+.bb-debug-fx-toggle{
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 9999;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.25);
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
 }
 
-.bb-slot.is-dying .bb-card{
-  animation: bb_death_fade var(--bb-death-ms) var(--bb-ease-out) both;
-}
-
-@keyframes bb_death_fade{
-  0%   { opacity: 1; filter: none; }
-  55%  { opacity: .55; filter: saturate(.9) brightness(.95); }
-  100% { opacity: .20; filter: saturate(.8) brightness(.9); }
-}
-
-.bb-death{
-  position: absolute;
-  inset: -10%;
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.bb-death::before{
-  content: "";
-  width: 120%;
-  height: 120%;
-  background-image: url("/fx/death_burst.png");
-  background-repeat: no-repeat;
-  background-position: 0% 50%;
-  background-size: calc(var(--bb-death-frames) * 100%) 100%;
-  opacity: .95;
-  transform: translateZ(0) scale(1);
-  animation: bb_death_burst var(--bb-death-ms) steps(var(--bb-death-frames)) both;
-  filter: drop-shadow(0 0 10px rgba(255,255,255,.25));
-  mix-blend-mode: screen;
-}
-
-@keyframes bb_death_burst{
-  from { background-position: 0% 50%; }
-  to   { background-position: 100% 50%; }
+.bb-slot{ position: relative; overflow: visible; }
+.bb-fx{ position: absolute; inset: 0; pointer-events: none; z-index: 999; }
+.bb-death{ position: absolute; inset: 0; pointer-events:none; }
+.bb-death-debug-marker{
+  position:absolute;
+  inset: 12%;
+  border: 2px dashed rgba(255,0,0,0.9);
+  border-radius: 16px;
+  background: rgba(255,0,0,0.08);
 }

@@ -343,6 +343,10 @@ function coverMapRect(
 
 function BattleInner() {
   const router = useRouter();
+  // === DEBUG FX (STEP A) ===
+  const [debugFxEnabled, setDebugFxEnabled] = useState<boolean>(true);
+  const [debugDyingId, setDebugDyingId] = useState<string | null>(null);
+
   const sp = useSearchParams();
   const matchId = sp.get("matchId") || "";
 
@@ -436,8 +440,6 @@ function BattleInner() {
   const prevEndSigRef = useRef<string>("");
 
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
-    // DEV: force-show death FX on any card by clicking it
-  const [debugDyingId, setDebugDyingId] = useState<string | null>(null);
   const debugDyingTimerRef = useRef<number | null>(null);
 
   const triggerDebugDeath = (instanceId: string) => {
@@ -1600,7 +1602,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                   </>
                 )}
 
-                {isDying && <div className="bb-death" />}
+                {isDying && <div className="bb-death"><div className="bb-death-debug-marker" /></div>}
               </div>
             )}
 
@@ -2826,7 +2828,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
                     debugFxEnabled={DEBUG_FX}
                     onDebugDeath={s.unit?.instanceId ? () => triggerDebugDeath(s.unit!.instanceId) : undefined}
-                    isDying={!!(s.unit?.instanceId && (deathFxByInstance.has(s.unit.instanceId) || debugDyingId === s.unit.instanceId))}
+                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
                     revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
                   />
@@ -2859,7 +2861,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
                     debugFxEnabled={DEBUG_FX}
                     onDebugDeath={s.unit?.instanceId ? () => triggerDebugDeath(s.unit!.instanceId) : undefined}
-                    isDying={!!(s.unit?.instanceId && (deathFxByInstance.has(s.unit.instanceId) || debugDyingId === s.unit.instanceId))}
+                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
                     revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
                   />
