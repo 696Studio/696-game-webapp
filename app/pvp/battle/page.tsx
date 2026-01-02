@@ -1259,45 +1259,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return set;
   }, [timeline, t]);
 
-  // --- Linger system: keep last known unit for a short time so death FX + flip can render
-  const lastTopInstRef = useRef<(string | null)[]>([]);
-  const lastBotInstRef = useRef<(string | null)[]>([]);
-  const lingerByInstanceRef = useRef<Record<string, { unit: UnitView; expiresAt: number }>>({});
-
-  // Update linger map with currently visible units
-  useEffect(() => {
-    const now = performance.now();
-    // prune old
-    for (const [k, v] of Object.entries(lingerByInstanceRef.current)) {
-      if (v.expiresAt <= now) delete lingerByInstanceRef.current[k];
-    }
-    // store latest units we see
-    for (const s of [...topSlots, ...bottomSlots]) {
-      const u = s?.unit;
-      if (u?.instanceId) {
-        lingerByInstanceRef.current[u.instanceId] = {
-          unit: u,
-          expiresAt: now + 2000, // keep last known snapshot for 2s
-        };
-      }
-    }
-  }, [topSlots, bottomSlots]);
-
-  // When a death event occurs, extend linger window so FX/flip can complete even if unit is removed from slot immediately
-  useEffect(() => {
-    if (!deathFxByInstance || deathFxByInstance.size === 0) return;
-    const now = performance.now();
-    for (const id of deathFxByInstance) {
-      const existing = lingerByInstanceRef.current[id];
-      if (existing) {
-        lingerByInstanceRef.current[id] = {
-          unit: { ...existing.unit, alive: false, hp: 0 },
-          expiresAt: Math.max(existing.expiresAt, now + 1200),
-        };
-      }
-    }
-  }, [deathFxByInstance]);
-
   function getCenterInArena(instanceId: string) {
     const arenaEl = arenaRef.current;
     const el = unitElByIdRef.current[instanceId];
@@ -2830,27 +2791,20 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
               }
             >
               <div className="slots">
-                {topSlots.map((s, i) => {
-                  const instId = (s.unit?.instanceId ?? (lastTopInstRef.current[i] ?? null));
-                  if (s.unit?.instanceId) (lastTopInstRef.current[i] = s.unit.instanceId);
-                  const linger = instId ? lingerByInstanceRef.current[instId]?.unit : null;
-                  const displayUnit = s.unit ?? linger ?? null;
-                  const dying = !!(instId && deathFxByInstance.has(instId));
-                  return (
+                {topSlots.map((s, i) => (
                   <CardSlot
                     key={`top-${revealTick}-${i}`}
                     card={s.card}
                     fallbackId={s.fallbackId}
-                    unit={displayUnit}
-                    attackFx={displayUnit?.instanceId ? attackFxByInstance[displayUnit.instanceId] : undefined}
-                    spawnFx={displayUnit?.instanceId ? spawnFxByInstance[displayUnit.instanceId] : undefined}
-                    damageFx={displayUnit?.instanceId ? damageFxByInstance[displayUnit.instanceId] : undefined}
-                    isDying={dying}
+                    unit={s.unit}
+                    attackFx={s.unit ? attackFxByInstance[s.unit.instanceId] : undefined}
+                    spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
+                    damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
+                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
                     revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
                   />
-                  );
-                })}
+                ))}
               </div>
             </div>
 
@@ -2868,27 +2822,20 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
               }
             >
               <div className="slots">
-                {bottomSlots.map((s, i) => {
-                  const instId = (s.unit?.instanceId ?? (lastBotInstRef.current[i] ?? null));
-                  if (s.unit?.instanceId) (lastBotInstRef.current[i] = s.unit.instanceId);
-                  const linger = instId ? lingerByInstanceRef.current[instId]?.unit : null;
-                  const displayUnit = s.unit ?? linger ?? null;
-                  const dying = !!(instId && deathFxByInstance.has(instId));
-                  return (
+                {bottomSlots.map((s, i) => (
                   <CardSlot
                     key={`bottom-${revealTick}-${i}`}
                     card={s.card}
                     fallbackId={s.fallbackId}
-                    unit={displayUnit}
-                    attackFx={displayUnit?.instanceId ? attackFxByInstance[displayUnit.instanceId] : undefined}
-                    spawnFx={displayUnit?.instanceId ? spawnFxByInstance[displayUnit.instanceId] : undefined}
-                    damageFx={displayUnit?.instanceId ? damageFxByInstance[displayUnit.instanceId] : undefined}
-                    isDying={dying}
+                    unit={s.unit}
+                    attackFx={s.unit ? attackFxByInstance[s.unit.instanceId] : undefined}
+                    spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
+                    damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
+                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
                     revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
                   />
-                  );
-                })}
+                ))}
               </div>
             </div>
 
