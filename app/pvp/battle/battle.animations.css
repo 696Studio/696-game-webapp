@@ -9,7 +9,6 @@
    - CardArt remains an "atom".
    - FX lives in .bb-fx / pseudo-elements.
    ========================================================= */
-
    :root{
     /* tweak once — affects whole battle */
     --bb-ease-out: cubic-bezier(.18,.9,.22,1);
@@ -22,6 +21,80 @@
     --bb-fx-tint-bright: 1.05;
     --bb-fx-shadow: 0 0 14px rgba(120, 220, 255, .35);
   }
+
+/* === CARD BACK (so flip shows a real back, not transparency) === */
+.bb-card-inner{ position: relative; transform-style: preserve-3d; }
+.bb-face{ backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.bb-face.bb-back{
+  transform: rotateY(180deg);
+  background: radial-gradient(circle at 30% 20%, rgba(255,255,255,.08), rgba(0,0,0,0) 55%),
+              linear-gradient(135deg, rgba(20,20,25,.98), rgba(5,5,8,.98));
+  border: 1px solid rgba(255,255,255,.08);
+}
+.bb-face.bb-back .bb-mark{
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  letter-spacing: .12em;
+  opacity: .55;
+  text-shadow: 0 6px 20px rgba(0,0,0,.65);
+}
+
+/* === Death: flip card to back and KEEP it (no fade-to-transparent) === */
+.bb-slot.is-dying .bb-card{
+  animation: bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both;
+  transform-style: preserve-3d;
+}
+@keyframes bb_card_death_to_back{
+  0%   { transform: translate3d(0,0,0) rotateY(0deg) scale(1); filter: saturate(1) brightness(1); }
+  18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
+  45%  { transform: translate3d(0,6px,0) rotateY(70deg) scale(.96); filter: saturate(.8) brightness(.95); }
+}
+
+/* After unit is dead, force it to stay flipped (no transparency) */
+.bb-card.is-dead{
+  opacity: 1 !important;
+}
+.bb-card.is-dead .bb-card-inner{
+  transform: rotateY(180deg) !important;
+}
+
+
+
+/* === FX LAYER (sibling of card, NOT clipped by CardArt overflow) === */
+.bb-slot{ position: relative; overflow: visible; }
+.bb-fx-layer{
+  position: absolute;
+  inset: -18px; /* let burst spill outside card */
+  pointer-events: none;
+  z-index: 50;
+}
+.bb-death{
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.bb-slot.is-dying .bb-death::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background-image: url("/fx/death_burst.png");
+  background-repeat: no-repeat;
+  background-position: 0 50%;
+  background-size: auto 100%;
+  transform: translateZ(0) scale(1.05);
+  filter: contrast(1.15) brightness(1.1) saturate(1.1);
+  opacity: 1;
+  animation: bb_death_sprite 680ms steps(var(--bb-death-frames, 8)) both;
+}
+@keyframes bb_death_sprite{
+  from { background-position: 0 50%; opacity: 1; }
+  to   { background-position: 100% 50%; opacity: 0; }
+}
+
+
   
   
 /* STEP A FIX: ensure FX layer is above bb-overlay (page.tsx sets .bb-fx z-index:6) */
@@ -56,7 +129,6 @@
     0%   { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
     25%  { transform: translate3d(-2px,0,0) rotate(-0.6deg) scale(.995); }
     55%  { transform: translate3d( 2px,0,0) rotate( 0.6deg) scale(.995); }
-    100% { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
   }
   
   /* a clean flash overlay — cheap, but reads well */
@@ -74,7 +146,7 @@
   @keyframes bb_hit_flash{
     0%{ opacity:0; transform: scale(.96); }
     45%{ opacity:1; transform: scale(1.02); }
-    100%{ opacity:1; transform: scale(1.06); }
+    100%{ opacity:0; transform: scale(1.06); }
   }
   
   /* =========================================================
@@ -109,22 +181,6 @@
   }
 
 
-  /* Hearthstone-style card death: shake + flip + shrink (card only) */
-  .bb-slot.is-dying .bb-card{
-    transform-style: preserve-3d;
-    will-change: transform, filter, opacity;
-    animation: bb_card_death_flip 680ms var(--bb-ease-inout) both;
-  }
-
-  @keyframes bb_card_death_flip{
-    0%   { transform: translate3d(0,0,0) rotate(0deg) rotateY(0deg) scale(1); filter: saturate(1) brightness(1); }
-    12%  { transform: translate3d(0,-2px,0) rotate(-2deg) rotateY(0deg) scale(1.02); }
-    22%  { transform: translate3d(-3px,1px,0) rotate(2deg) rotateY(10deg) scale(1.01); }
-    36%  { transform: translate3d(3px,2px,0) rotate(-3deg) rotateY(-18deg) scale(.98); }
-    55%  { transform: translate3d(0,8px,0) rotate(6deg) rotateY(78deg) scale(.88); filter: saturate(.7) brightness(.95); }
-    100% { transform: translate3d(0,18px,0) rotate(10deg) rotateY(110deg) scale(.72); filter: saturate(.3) brightness(.9); opacity:1; }
-  }
-  
   /* ash overlay */
   .bb-slot.is-dying::before{
     content:"";
@@ -145,14 +201,13 @@
   @keyframes bb_ash{
     0%{ opacity:0; transform: scale(.98); }
     30%{ opacity:.55; transform: scale(1.02); }
-    100%{ opacity:1; transform: scale(1.12); }
+    100%{ opacity:0; transform: scale(1.12); }
   }
   
   @keyframes bb_death_collapse{
     0%   { opacity:1; transform: translate3d(0,0,0) rotate(0deg) scale(1); }
     18%  { opacity:1; transform: translate3d(0,0,0) rotate(-1.2deg) scale(1.01); } /* micro-freeze + tilt */
     55%  { opacity:.92; transform: translate3d(0,16px,0) rotate(3.5deg) scale(.92); } /* drop + squash */
-    100% { opacity:1; transform: translate3d(0,28px,0) rotate(7deg) scale(.82); }
   }
   
   /* =========================================================
@@ -217,7 +272,7 @@
   @keyframes bb_halo{
     0%{ opacity:0; transform: scale(.9); }
     25%{ opacity:.75; transform: scale(1.02); }
-    100%{ opacity:1; transform: scale(1.18); }
+    100%{ opacity:0; transform: scale(1.18); }
   }
   
   /* keep it safe on low-end devices */
@@ -233,19 +288,3 @@
     .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
   }
   
-
-/* ===== Card back (for death flip) ===== */
-.bb-card{ position: relative; }
-.bb-card-back{
-  position:absolute;
-  inset:0;
-  border-radius:18px;
-  background: url("/cards/back/card_back.png") center/cover no-repeat;
-  transform: rotateY(180deg);
-  backface-visibility:hidden;
-  opacity:0;
-  pointer-events:none;
-}
-/* during dying: show back, hide front content */
-.bb-slot.is-dying .bb-card-back{ opacity:1; }
-.bb-slot.is-dying .bb-card > :not(.bb-card-back){ opacity:0; }

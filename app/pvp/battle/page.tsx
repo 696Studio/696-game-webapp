@@ -1524,7 +1524,9 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     return (
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
-      <div
+      
+        <div className="bb-fx-layer">{isDying ? <div className="bb-death" /> : null}</div>
+<div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
         }}
@@ -1576,7 +1578,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                   </>
                 )}
 
-                {isDying && <div className="bb-death" />}
+                
               </div>
             )}
 
@@ -1720,7 +1722,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           }
         }
       `}</style>
-      <div className="bb-card-back" aria-hidden />
       </div>
 
     );
