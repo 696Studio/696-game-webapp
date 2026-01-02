@@ -104,8 +104,25 @@
      STEP 4A — DEATH (Collapse + Ash) — NO ASSET REQUIRED
      ========================================================= */
   .bb-slot.is-dying{
-    animation: bb_death_collapse 520ms var(--bb-ease-inout) both;
+    animation: bb_death_collapse 680ms var(--bb-ease-inout) both;
     filter: saturate(.35) brightness(.92) contrast(1.05);
+  }
+
+
+  /* Hearthstone-style card death: shake + flip + shrink (card only) */
+  .bb-slot.is-dying .bb-card{
+    transform-style: preserve-3d;
+    will-change: transform, filter, opacity;
+    animation: bb_card_death_flip 680ms var(--bb-ease-inout) both;
+  }
+
+  @keyframes bb_card_death_flip{
+    0%   { transform: translate3d(0,0,0) rotate(0deg) rotateY(0deg) scale(1); filter: saturate(1) brightness(1); }
+    12%  { transform: translate3d(0,-2px,0) rotate(-2deg) rotateY(0deg) scale(1.02); }
+    22%  { transform: translate3d(-3px,1px,0) rotate(2deg) rotateY(10deg) scale(1.01); }
+    36%  { transform: translate3d(3px,2px,0) rotate(-3deg) rotateY(-18deg) scale(.98); }
+    55%  { transform: translate3d(0,8px,0) rotate(6deg) rotateY(78deg) scale(.88); filter: saturate(.7) brightness(.95); }
+    100% { transform: translate3d(0,18px,0) rotate(10deg) rotateY(110deg) scale(.72); filter: saturate(.3) brightness(.9); opacity:0; }
   }
   
   /* ash overlay */
@@ -122,7 +139,7 @@
   
     mix-blend-mode: screen;
     opacity:0;
-    animation: bb_ash 520ms var(--bb-ease-inout) both;
+    animation: bb_ash 680ms var(--bb-ease-inout) both;
     filter: hue-rotate(var(--bb-fx-tint-hue)) saturate(var(--bb-fx-tint-sat)) brightness(var(--bb-fx-tint-bright));
   }
   @keyframes bb_ash{
@@ -161,8 +178,8 @@
     position:absolute;
     left:50%;
     top:50%;
-    width: 220px;
-    height: 220px;
+    width: 320px;
+    height: 320px;
     transform: translate(-50%,-55%);
     background-image: url("/fx/death_burst.png");
     background-repeat: no-repeat;
@@ -176,8 +193,9 @@
       brightness(var(--bb-fx-tint-bright))
       drop-shadow(var(--bb-fx-shadow));
   
-    opacity:.95;
-    animation: bb_sprite8 520ms steps(8) both;
+    opacity:1;
+    mix-blend-mode: screen;
+    animation: bb_sprite8 680ms steps(8) both;
   }
   
   /* glow halo behind sprite */
