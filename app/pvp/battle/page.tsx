@@ -2826,7 +2826,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
                     debugFxEnabled={DEBUG_FX}
                     onDebugDeath={s.unit?.instanceId ? () => triggerDebugDeath(s.unit!.instanceId) : undefined}
-                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
+                    isDying={!!(s.unit?.instanceId && (deathFxByInstance.has(s.unit.instanceId) || debugDyingId === s.unit.instanceId))}
                     revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
                   />
@@ -2859,7 +2859,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
                     debugFxEnabled={DEBUG_FX}
                     onDebugDeath={s.unit?.instanceId ? () => triggerDebugDeath(s.unit!.instanceId) : undefined}
-                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
+                    isDying={!!(s.unit?.instanceId && (deathFxByInstance.has(s.unit.instanceId) || debugDyingId === s.unit.instanceId))}
                     revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
                   />
