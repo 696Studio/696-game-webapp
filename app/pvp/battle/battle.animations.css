@@ -1,140 +1,212 @@
 /* =========================================================
-   696 GAME — PVP CARD ANIMATIONS
-   (container animations live on .bb-slot)
+   696 GAME — PVP CARD ANIMATIONS (SAFE)
    ---------------------------------------------------------
-   WHY .bb-slot:
-   - In page.tsx animation state classes (is-spawn / is-attack-*) are applied to .bb-slot
-   - .bb-card already uses its own animation (flipIn) and 3D transforms; we avoid conflicts
-   RULES:
-   - CardArt is NOT animated directly
-   - Only transforms/opacity (no layout: no left/top)
+   Animation state classes are applied to .bb-slot in:
+   app/pvp/battle/page.tsx
+
+   PRINCIPLES:
+   - Animate only containers (transform/opacity), never layout (no left/top).
+   - CardArt remains an "atom".
+   - FX lives in .bb-fx / pseudo-elements.
    ========================================================= */
 
-/* Base safety */
-.bb-slot {
+   :root{
+    /* tweak once — affects whole battle */
+    --bb-ease-out: cubic-bezier(.18,.9,.22,1);
+    --bb-ease-inout: cubic-bezier(.2,.0,.2,1);
+    --bb-hit-ease: cubic-bezier(.2,.8,.2,1);
+  
+    /* tint for cheap grayscale particles (smoke/dust) */
+    --bb-fx-tint-hue: 195deg;   /* blue/cyan */
+    --bb-fx-tint-sat: 1.6;
+    --bb-fx-tint-bright: 1.05;
+    --bb-fx-shadow: 0 0 14px rgba(120, 220, 255, .35);
+  }
+  
+  /* Base safety */
+  .bb-slot{
     will-change: transform, opacity;
     transform-origin: 50% 70%;
   }
   
-  /* ---------------------------------------------------------
-     STEP 1 — SPAWN (Hearthstone-like, clean)
-     Triggered by: .bb-slot.is-spawn
-  --------------------------------------------------------- */
-  
-  .bb-slot.is-spawn {
-    animation: bb-slot-spawn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* =========================================================
+     STEP 1 — SPAWN
+     ========================================================= */
+  .bb-slot.is-spawn{
+    animation: bb_spawn 420ms var(--bb-ease-out) both;
+    filter: saturate(1.02);
+  }
+  @keyframes bb_spawn{
+    0%   { opacity: 0; transform: translate3d(0,18px,0) scale(.92); }
+    55%  { opacity: 1; transform: translate3d(0,-2px,0) scale(1.02); }
+    100% { opacity: 1; transform: translate3d(0,0,0)  scale(1); }
   }
   
-  @keyframes bb-slot-spawn {
-    0% {
-      opacity: 0;
-      transform: translate3d(0, 18px, 0) scale(0.94);
-    }
-    55% {
-      opacity: 1;
-      transform: translate3d(0, -2px, 0) scale(1.04);
-    }
-    100% {
-      opacity: 1;
-      transform: translate3d(0, 0, 0) scale(1);
-    }
+  /* =========================================================
+     STEP 2 — HIT / DAMAGE
+     ========================================================= */
+  .bb-slot.is-damage{
+    animation: bb_hit_shake 140ms var(--bb-hit-ease) both;
+  }
+  @keyframes bb_hit_shake{
+    0%   { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
+    25%  { transform: translate3d(-2px,0,0) rotate(-0.6deg) scale(.995); }
+    55%  { transform: translate3d( 2px,0,0) rotate( 0.6deg) scale(.995); }
+    100% { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
   }
   
-  /* Spawn FX layer (already used by .bb-spawn in JSX) */
-  .bb-slot.is-spawn .bb-spawn {
-    animation: bb-spawn-flash 260ms ease-out both;
+  /* a clean flash overlay — cheap, but reads well */
+  .bb-slot.is-damage::after{
+    content:"";
+    position:absolute;
+    inset:-6px;
+    border-radius: 14px;
+    pointer-events:none;
+    background: radial-gradient(closest-side, rgba(255,80,80,.35), rgba(255,80,80,0) 70%);
+    mix-blend-mode: screen;
+    opacity:0;
+    animation: bb_hit_flash 160ms var(--bb-ease-out) both;
+  }
+  @keyframes bb_hit_flash{
+    0%{ opacity:0; transform: scale(.96); }
+    45%{ opacity:1; transform: scale(1.02); }
+    100%{ opacity:0; transform: scale(1.06); }
   }
   
-  @keyframes bb-spawn-flash {
-    0% {
-      opacity: 0;
-      box-shadow:
-        inset 0 0 0 9999px rgba(255,255,255,0.08),
-        0 0 0 rgba(255,255,255,0);
-    }
-    40% {
-      opacity: 1;
-      box-shadow:
-        inset 0 0 0 9999px rgba(255,255,255,0.05),
-        0 0 24px rgba(120,240,255,0.25);
-    }
-    100% {
-      opacity: 0;
-      box-shadow:
-        inset 0 0 0 9999px rgba(255,255,255,0),
-        0 0 0 rgba(255,255,255,0);
-    }
+  /* =========================================================
+     STEP 3 — ATTACK LUNGE
+     .is-attack-from  => attacker lunges forward
+     .is-attack-to    => victim gets tiny recoil + impact flash
+     ========================================================= */
+  .bb-slot.is-attack-from{
+    animation: bb_attack_lunge 240ms var(--bb-ease-out) both;
+  }
+  @keyframes bb_attack_lunge{
+    0%   { transform: translate3d(0,0,0) scale(1); }
+    55%  { transform: translate3d(0,-10px,0) scale(1.03); } /* up = toward center in our vertical arena */
+    100% { transform: translate3d(0,0,0) scale(1); }
   }
   
-  /* ---------------------------------------------------------
-     STEP 3 — ATTACK LUNGE (Hearthstone-like)
-     Triggered by:
-       .bb-slot.is-attack-from  : attacker lunge
-       .bb-slot.is-attack-to    : defender micro-impact
-  --------------------------------------------------------- */
-  
-  .bb-slot.is-attack-from {
-    animation: bb-slot-lunge 160ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  .bb-slot.is-attack-to{
+    animation: bb_attack_recoil 220ms var(--bb-ease-out) both;
+  }
+  @keyframes bb_attack_recoil{
+    0%   { transform: translate3d(0,0,0) scale(1); }
+    45%  { transform: translate3d(0,6px,0) scale(.99); }
+    100% { transform: translate3d(0,0,0) scale(1); }
   }
   
-  .bb-slot.is-attack-to {
-    animation: bb-slot-impact 140ms ease-out both;
+  /* =========================================================
+     STEP 4A — DEATH (Collapse + Ash) — NO ASSET REQUIRED
+     ========================================================= */
+  .bb-slot.is-dying{
+    animation: bb_death_collapse 520ms var(--bb-ease-inout) both;
+    filter: saturate(.35) brightness(.92) contrast(1.05);
   }
   
-  @keyframes bb-slot-lunge {
-    0%   { transform: translate3d(0, 0, 0) scale(1); }
-    65%  { transform: translate3d(0, -10px, 0) scale(1.06); }
-    100% { transform: translate3d(0, 0, 0) scale(1); }
+  /* ash overlay */
+  .bb-slot.is-dying::before{
+    content:"";
+    position:absolute;
+    inset:-6px;
+    border-radius: 14px;
+    pointer-events:none;
+  
+    background:
+      radial-gradient(closest-side, rgba(210,210,210,.22), rgba(210,210,210,0) 65%),
+      radial-gradient(closest-side, rgba(120,220,255,.10), rgba(120,220,255,0) 70%);
+  
+    mix-blend-mode: screen;
+    opacity:0;
+    animation: bb_ash 520ms var(--bb-ease-inout) both;
+    filter: hue-rotate(var(--bb-fx-tint-hue)) saturate(var(--bb-fx-tint-sat)) brightness(var(--bb-fx-tint-bright));
+  }
+  @keyframes bb_ash{
+    0%{ opacity:0; transform: scale(.98); }
+    30%{ opacity:.55; transform: scale(1.02); }
+    100%{ opacity:0; transform: scale(1.12); }
   }
   
-  @keyframes bb-slot-impact {
-    0%   { transform: scale(1); }
-    45%  { transform: scale(0.965); }
-    100% { transform: scale(1); }
+  @keyframes bb_death_collapse{
+    0%   { opacity:1; transform: translate3d(0,0,0) rotate(0deg) scale(1); }
+    18%  { opacity:1; transform: translate3d(0,0,0) rotate(-1.2deg) scale(1.01); } /* micro-freeze + tilt */
+    55%  { opacity:.92; transform: translate3d(0,16px,0) rotate(3.5deg) scale(.92); } /* drop + squash */
+    100% { opacity:0; transform: translate3d(0,28px,0) rotate(7deg) scale(.82); }
   }
-
-/* ---------------------------------------------------------
-   STEP 4A — DEATH V2 (Collapse + Ash) — NO ASSETS
-   Goal: readable "death" (freeze → collapse → ash) not just fade
-   Trigger: .bb-slot.is-dying
---------------------------------------------------------- */
-
-/* Make sure FX overlays can sit correctly without affecting layout */
-.bb-slot { position: relative; }
-
-.bb-slot.is-dying {
-  animation: bb-death-collapse 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  transform-origin: 50% 80%;
-}
-
-/* Freeze internal flip/hover transitions during death to avoid fighting transforms */
-.bb-slot.is-dying .bb-card-inner {
-  transition: none !important;
-  filter: grayscale(0.35) saturate(0.65) contrast(1.05);
-}
-
-/* Ash overlay using existing .bb-death layer (placeholder FX, still looks "gamey") */
-.bb-slot.is-dying .bb-death {
-  pointer-events: none;
-  opacity: 0;
-  animation: bb-ash-burst 560ms ease-out both;
-  background:
-    radial-gradient(closest-side, rgba(255,255,255,0.18), rgba(255,255,255,0) 65%),
-    radial-gradient(closest-side, rgba(160,220,255,0.12), rgba(160,220,255,0) 70%);
-  mix-blend-mode: screen;
-}
-
-@keyframes bb-death-collapse {
-  0%   { opacity: 1; transform: translate3d(0,0,0) rotate(0deg) scale3d(1,1,1); }
-  18%  { opacity: 1; transform: translate3d(0,0,0) rotate(0deg) scale3d(0.985,0.99,1); }
-  52%  { opacity: 0.98; transform: translate3d(0,10px,0) rotate(7deg) scale3d(0.96,0.88,1); }
-  78%  { opacity: 0.7; transform: translate3d(0,22px,0) rotate(11deg) scale3d(0.86,0.62,1); }
-  100% { opacity: 0; transform: translate3d(0,34px,0) rotate(14deg) scale3d(0.74,0.40,1); }
-}
-
-@keyframes bb-ash-burst {
-  0%   { opacity: 0; transform: scale(0.85); filter: blur(0px); }
-  20%  { opacity: 0.55; transform: scale(1.05); filter: blur(0px); }
-  55%  { opacity: 0.28; transform: scale(1.22); filter: blur(0.6px); }
-  100% { opacity: 0; transform: scale(1.32); filter: blur(1px); }
-}
+  
+  /* =========================================================
+     STEP 4B — OPTIONAL SPRITE POP (death_burst.png)
+     Put sprite here: public/fx/death_burst.png
+  
+     Expected:
+     - 8 frames in a row (horizontal)
+     - each frame square (e.g. 256x256)
+     ========================================================= */
+  .bb-slot.is-dying .bb-death{
+    position:absolute;
+    inset:-10px;
+    pointer-events:none;
+    border-radius: 16px;
+    opacity:1;
+  }
+  
+  /* sprite layer */
+  .bb-slot.is-dying .bb-death::before{
+    content:"";
+    position:absolute;
+    left:50%;
+    top:50%;
+    width: 220px;
+    height: 220px;
+    transform: translate(-50%,-55%);
+    background-image: url("/fx/death_burst.png");
+    background-repeat: no-repeat;
+    background-size: 800% 100%;
+    image-rendering: auto;
+  
+    /* make grayscale look "alive" */
+    filter:
+      hue-rotate(var(--bb-fx-tint-hue))
+      saturate(var(--bb-fx-tint-sat))
+      brightness(var(--bb-fx-tint-bright))
+      drop-shadow(var(--bb-fx-shadow));
+  
+    opacity:.95;
+    animation: bb_sprite8 520ms steps(8) both;
+  }
+  
+  /* glow halo behind sprite */
+  .bb-slot.is-dying .bb-death::after{
+    content:"";
+    position:absolute;
+    inset:0;
+    background: radial-gradient(circle at 50% 50%, rgba(120,220,255,.26), rgba(120,220,255,0) 65%);
+    mix-blend-mode: screen;
+    opacity:0;
+    animation: bb_halo 520ms var(--bb-ease-out) both;
+    pointer-events:none;
+  }
+  
+  @keyframes bb_sprite8{
+    from { background-position:   0% 50%; }
+    to   { background-position: 100% 50%; }
+  }
+  @keyframes bb_halo{
+    0%{ opacity:0; transform: scale(.9); }
+    25%{ opacity:.75; transform: scale(1.02); }
+    100%{ opacity:0; transform: scale(1.18); }
+  }
+  
+  /* keep it safe on low-end devices */
+  @media (prefers-reduced-motion: reduce){
+    .bb-slot.is-spawn,
+    .bb-slot.is-damage,
+    .bb-slot.is-attack-from,
+    .bb-slot.is-attack-to,
+    .bb-slot.is-dying{ animation: none !important; }
+    .bb-slot.is-damage::after,
+    .bb-slot.is-dying::before,
+    .bb-slot.is-dying .bb-death::before,
+    .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
+  }
+  
