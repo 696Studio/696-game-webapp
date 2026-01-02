@@ -23,7 +23,11 @@
     --bb-fx-shadow: 0 0 14px rgba(120, 220, 255, .35);
   }
   
-  /* Base safety */
+  
+/* STEP A FIX: ensure FX layer is above bb-overlay (page.tsx sets .bb-fx z-index:6) */
+.bb-fx{ z-index: 12 !important; }
+
+/* Base safety */
   .bb-slot{
     will-change: transform, opacity;
     transform-origin: 50% 70%;
