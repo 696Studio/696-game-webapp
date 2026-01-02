@@ -664,7 +664,9 @@ function BattleInner() {
     );
 
     return (
-      <svg
+      <>
+        <div className="bb-debug-banner">STEP-C: FX ANCHOR ACTIVE</div>
+        <svg
         className="dbg-grid"
         width={w}
         height={h}
@@ -673,6 +675,7 @@ function BattleInner() {
       >
         {nodes}
       </svg>
+      </>
     );
   }
 
@@ -1522,7 +1525,11 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [unit]);
 
     return (
-      <div className="bb-slot">
+      <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
+      <div className="bb-fx-anchor">
+        {isDying ? <div className="bb-death" /> : null}
+        <div className="bb-fx-debug">FX</div>
+      </div>
       <div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
