@@ -80,7 +80,7 @@
   content:"";
   position:absolute;
   inset:0;
-  background-image: url("/fx/death_burst.png");
+  background-image: url("/fx/retro/death_burst.png");
   background-repeat: no-repeat;
   background-position: 0 50%;
   background-size: auto 100%;
@@ -212,7 +212,7 @@
   
   /* =========================================================
      STEP 4B — OPTIONAL SPRITE POP (death_burst.png)
-     Put sprite here: public/fx/death_burst.png
+     Put sprite here: public/fx/retro/death_burst.png
   
      Expected:
      - 8 frames in a row (horizontal)
@@ -236,7 +236,7 @@
     width: 320px;
     height: 320px;
     transform: translate(-50%,-55%);
-    background-image: url("/fx/death_burst.png");
+    background-image: url("/fx/retro/death_burst.png");
     background-repeat: no-repeat;
     background-size: 800% 100%;
     image-rendering: auto;
