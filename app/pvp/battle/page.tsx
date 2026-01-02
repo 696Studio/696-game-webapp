@@ -1525,7 +1525,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return (
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
       
-        <div className="bb-fx-layer">{isDying ? <div className="bb-death" /> : null}</div>
+        <div className="bb-fx-anchor">{isDying ? <div className="bb-death" /> : null}</div>
 <div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;

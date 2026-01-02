@@ -9,6 +9,7 @@
    - CardArt remains an "atom".
    - FX lives in .bb-fx / pseudo-elements.
    ========================================================= */
+
    :root{
     /* tweak once — affects whole battle */
     --bb-ease-out: cubic-bezier(.18,.9,.22,1);
@@ -21,80 +22,6 @@
     --bb-fx-tint-bright: 1.05;
     --bb-fx-shadow: 0 0 14px rgba(120, 220, 255, .35);
   }
-
-/* === CARD BACK (so flip shows a real back, not transparency) === */
-.bb-card-inner{ position: relative; transform-style: preserve-3d; }
-.bb-face{ backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-.bb-face.bb-back{
-  transform: rotateY(180deg);
-  background: radial-gradient(circle at 30% 20%, rgba(255,255,255,.08), rgba(0,0,0,0) 55%),
-              linear-gradient(135deg, rgba(20,20,25,.98), rgba(5,5,8,.98));
-  border: 1px solid rgba(255,255,255,.08);
-}
-.bb-face.bb-back .bb-mark{
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  letter-spacing: .12em;
-  opacity: .55;
-  text-shadow: 0 6px 20px rgba(0,0,0,.65);
-}
-
-/* === Death: flip card to back and KEEP it (no fade-to-transparent) === */
-.bb-slot.is-dying .bb-card{
-  animation: bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both;
-  transform-style: preserve-3d;
-}
-@keyframes bb_card_death_to_back{
-  0%   { transform: translate3d(0,0,0) rotateY(0deg) scale(1); filter: saturate(1) brightness(1); }
-  18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
-  45%  { transform: translate3d(0,6px,0) rotateY(70deg) scale(.96); filter: saturate(.8) brightness(.95); }
-}
-
-/* After unit is dead, force it to stay flipped (no transparency) */
-.bb-card.is-dead{
-  opacity: 1 !important;
-}
-.bb-card.is-dead .bb-card-inner{
-  transform: rotateY(180deg) !important;
-}
-
-
-
-/* === FX LAYER (sibling of card, NOT clipped by CardArt overflow) === */
-.bb-slot{ position: relative; overflow: visible; }
-.bb-fx-layer{
-  position: absolute;
-  inset: -18px; /* let burst spill outside card */
-  pointer-events: none;
-  z-index: 50;
-}
-.bb-death{
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.bb-slot.is-dying .bb-death::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  background-image: url("/fx/retro/death_burst.png");
-  background-repeat: no-repeat;
-  background-position: 0 50%;
-  background-size: auto 100%;
-  transform: translateZ(0) scale(1.05);
-  filter: contrast(1.15) brightness(1.1) saturate(1.1);
-  opacity: 1;
-  animation: bb_death_sprite 680ms steps(var(--bb-death-frames, 8)) both;
-}
-@keyframes bb_death_sprite{
-  from { background-position: 0 50%; opacity: 1; }
-  to   { background-position: 100% 50%; opacity: 0; }
-}
-
-
   
   
 /* STEP A FIX: ensure FX layer is above bb-overlay (page.tsx sets .bb-fx z-index:6) */
@@ -102,9 +29,25 @@
 
 /* Base safety */
   .bb-slot{
-    will-change: transform, opacity;
+    
+    position: relative;
+    isolation: isolate;
+will-change: transform, opacity;
     transform-origin: 50% 70%;
   }
+
+  /* =========================================================
+     FX ANCHOR — lives as a sibling layer to the card inside .bb-slot
+     (Not clipped by CardArt overflow)
+     ========================================================= */
+  .bb-fx-anchor{
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 999;
+    overflow: visible;
+  }
+
   
   /* =========================================================
      STEP 1 — SPAWN
@@ -129,6 +72,7 @@
     0%   { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
     25%  { transform: translate3d(-2px,0,0) rotate(-0.6deg) scale(.995); }
     55%  { transform: translate3d( 2px,0,0) rotate( 0.6deg) scale(.995); }
+    100% { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
   }
   
   /* a clean flash overlay — cheap, but reads well */
@@ -176,11 +120,10 @@
      STEP 4A — DEATH (Collapse + Ash) — NO ASSET REQUIRED
      ========================================================= */
   .bb-slot.is-dying{
-    animation: bb_death_collapse 680ms var(--bb-ease-inout) both;
+    animation: bb_death_collapse 520ms var(--bb-ease-inout) both;
     filter: saturate(.35) brightness(.92) contrast(1.05);
   }
-
-
+  
   /* ash overlay */
   .bb-slot.is-dying::before{
     content:"";
@@ -195,7 +138,7 @@
   
     mix-blend-mode: screen;
     opacity:0;
-    animation: bb_ash 680ms var(--bb-ease-inout) both;
+    animation: bb_ash 520ms var(--bb-ease-inout) both;
     filter: hue-rotate(var(--bb-fx-tint-hue)) saturate(var(--bb-fx-tint-sat)) brightness(var(--bb-fx-tint-bright));
   }
   @keyframes bb_ash{
@@ -208,11 +151,12 @@
     0%   { opacity:1; transform: translate3d(0,0,0) rotate(0deg) scale(1); }
     18%  { opacity:1; transform: translate3d(0,0,0) rotate(-1.2deg) scale(1.01); } /* micro-freeze + tilt */
     55%  { opacity:.92; transform: translate3d(0,16px,0) rotate(3.5deg) scale(.92); } /* drop + squash */
+    100% { opacity:0; transform: translate3d(0,28px,0) rotate(7deg) scale(.82); }
   }
   
   /* =========================================================
      STEP 4B — OPTIONAL SPRITE POP (death_burst.png)
-     Put sprite here: public/fx/retro/death_burst.png
+     Put sprite here: public/fx/death_burst.png
   
      Expected:
      - 8 frames in a row (horizontal)
@@ -233,10 +177,10 @@
     position:absolute;
     left:50%;
     top:50%;
-    width: 320px;
-    height: 320px;
+    width: 220px;
+    height: 220px;
     transform: translate(-50%,-55%);
-    background-image: url("/fx/retro/death_burst.png");
+    background-image: url("/fx/death_burst.png");
     background-repeat: no-repeat;
     background-size: 800% 100%;
     image-rendering: auto;
@@ -248,9 +192,8 @@
       brightness(var(--bb-fx-tint-bright))
       drop-shadow(var(--bb-fx-shadow));
   
-    opacity:1;
-    mix-blend-mode: screen;
-    animation: bb_sprite8 680ms steps(8) both;
+    opacity:.95;
+    animation: bb_sprite8 520ms steps(8) both;
   }
   
   /* glow halo behind sprite */
@@ -288,3 +231,35 @@
     .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
   }
   
+
+/* =========================================================
+   OVERRIDES — make sure death FX is visible and centered on card slot
+   ========================================================= */
+.bb-slot.is-dying .bb-death{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 180%;
+  height: 180%;
+  transform: translate(-50%, -55%);
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.bb-slot.is-dying .bb-death::before{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("/fx/retro/death_burst.png");
+  background-repeat: no-repeat;
+  background-size: auto 100%;
+  background-position: 0 50%;
+  image-rendering: pixelated;
+  opacity: 1;
+  animation: bb_death_burst 750ms steps(var(--bb-death-frames, 12)) forwards;
+}
+
+@keyframes bb_death_burst{
+  from { background-position-x: 0%; }
+  to   { background-position-x: 100%; }
+}
