@@ -1523,7 +1523,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [unit]);
 
     return (
-      <div className="bb-slot">
+      <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
       <div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
@@ -1536,8 +1536,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           isDead ? "is-dead" : "",
           isActive ? "is-active" : "",
           spawned ? "is-spawn" : "",
-          dmg ? "is-damage" : "",
-          isDying ? "is-dying" : "",
+          dmg ? "is-damage" : ""
         ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
