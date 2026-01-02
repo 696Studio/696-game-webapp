@@ -1248,18 +1248,23 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   }, [timeline, t]);
 
   const deathFxByInstance = useMemo(() => {
-    const windowSec = 0.65;
+    // Keep death FX visible a bit longer so it's actually readable in UI
+    const windowSec = 1.2;
     const fromT = Math.max(0, t - windowSec);
-    const set = new Set<string>();
+
+    // Store last death timestamp per instance to (a) keep FX alive and (b) restart animation via key
+    const map = new Map<string, number>();
+
     for (const e of timeline) {
       if (e.t < fromT) continue;
       if (e.t > t) break;
       if (e.type === "death") {
         const ref = readUnitRefFromEvent(e, "unit");
-        if (ref?.instanceId) set.add(ref.instanceId);
+        if (ref?.instanceId) map.set(ref.instanceId, e.t);
       }
     }
-    return set;
+
+    return map;
   }, [timeline, t]);
 
   function getCenterInArena(instanceId: string) {
@@ -1466,7 +1471,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     attackFx,
     spawnFx,
     damageFx,
-    isDying,
+    deathFxAt,
   }: {
     card?: CardMeta | null;
     fallbackId?: string | null;
@@ -1476,9 +1481,12 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     attackFx?: AttackFx[];
     spawnFx?: SpawnFx[];
     damageFx?: DamageFx[];
-    isDying?: boolean;
+    deathFxAt?: number;
   }) {
     const id = card?.id || fallbackId || "";
+    const isDying = typeof deathFxAt === "number";
+    const deathKey = isDying ? `death-${unit?.instanceId || id}-${deathFxAt}` : undefined;
+
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
     const r = (card?.rarity || "common") as string;
     const power = typeof card?.base_power === "number" ? card.base_power : null;
@@ -1583,7 +1591,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                   </>
                 )}
 
-                {isDying && <div className="bb-death" />}
+                {isDying && <div key={deathKey} className="bb-death" />}
               </div>
             )}
 
@@ -2810,7 +2818,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     attackFx={s.unit ? attackFxByInstance[s.unit.instanceId] : undefined}
                     spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
-                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
+                    deathFxAt={s.unit?.instanceId ? deathFxByInstance.get(s.unit.instanceId) : undefined}
                     revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
                   />
@@ -2841,7 +2849,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     attackFx={s.unit ? attackFxByInstance[s.unit.instanceId] : undefined}
                     spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
-                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
+                    deathFxAt={s.unit?.instanceId ? deathFxByInstance.get(s.unit.instanceId) : undefined}
                     revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
                   />
