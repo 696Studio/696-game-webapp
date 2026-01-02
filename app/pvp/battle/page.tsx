@@ -297,6 +297,7 @@ const BOARD_IMG_H = 2796;
 
 const DEBUG_ARENA = true; // debug overlay for arena sizing
 const DEBUG_GRID = true; // mirrored A/B measurement grid (dev only)
+const DEBUG_FX = true; // dev: click card to test death burst
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -435,6 +436,24 @@ function BattleInner() {
   const prevEndSigRef = useRef<string>("");
 
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
+    // DEV: force-show death FX on any card by clicking it
+  const [debugDyingId, setDebugDyingId] = useState<string | null>(null);
+  const debugDyingTimerRef = useRef<number | null>(null);
+
+  const triggerDebugDeath = (instanceId: string) => {
+    if (!DEBUG_FX) return;
+    if (debugDyingTimerRef.current) window.clearTimeout(debugDyingTimerRef.current);
+    setDebugDyingId(instanceId);
+    debugDyingTimerRef.current = window.setTimeout(() => setDebugDyingId(null), 800);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (debugDyingTimerRef.current) window.clearTimeout(debugDyingTimerRef.current);
+    };
+  }, []);
+
+
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
@@ -1464,6 +1483,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     spawnFx,
     damageFx,
     isDying,
+    onDebugDeath,
+    debugFxEnabled,
   }: {
     card?: CardMeta | null;
     fallbackId?: string | null;
@@ -1474,6 +1495,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     spawnFx?: SpawnFx[];
     damageFx?: DamageFx[];
     isDying?: boolean;
+    onDebugDeath?: () => void;
+    debugFxEnabled?: boolean;
   }) {
     const id = card?.id || fallbackId || "";
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
@@ -1522,11 +1545,12 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [unit]);
 
     return (
-      <div className="bb-slot">
+      <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
       <div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
         }}
+        onClick={debugFxEnabled && unit?.instanceId ? onDebugDeath : undefined}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
@@ -1538,7 +1562,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
         ].join(" ")}
-        style={{ animationDelay: `${delayMs}ms` }}
+        style={{
+          ...(debugFxEnabled && unit?.instanceId ? { cursor: "pointer" } : {}),
+          animationDelay: `${delayMs}ms`,
+        }}
       >
         <div className="bb-card-inner">
           <div className="bb-face bb-back">
@@ -2800,6 +2827,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     attackFx={s.unit ? attackFxByInstance[s.unit.instanceId] : undefined}
                     spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
+                    debugFxEnabled={DEBUG_FX}
+                    onDebugDeath={s.unit?.instanceId ? () => triggerDebugDeath(s.unit!.instanceId) : undefined}
                     isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
                     revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
@@ -2831,6 +2860,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     attackFx={s.unit ? attackFxByInstance[s.unit.instanceId] : undefined}
                     spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
+                    debugFxEnabled={DEBUG_FX}
+                    onDebugDeath={s.unit?.instanceId ? () => triggerDebugDeath(s.unit!.instanceId) : undefined}
                     isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
                     revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
