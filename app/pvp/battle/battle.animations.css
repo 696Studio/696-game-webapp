@@ -148,7 +148,7 @@
     pointer-events:none;
     border-radius: 16px;
     opacity:1;
-    z-index: 50;
+    z-index: 10;
   }
   
   /* sprite layer */
@@ -157,8 +157,8 @@
     position:absolute;
     left:50%;
     top:50%;
-    width: clamp(160px, 150%, 260px);
-    height: clamp(160px, 150%, 260px);
+    width: 220px;
+    height: 220px;
     transform: translate(-50%,-55%);
     background-image: url("/fx/death_burst.png");
     background-repeat: no-repeat;
@@ -211,3 +211,20 @@
     .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
   }
   
+
+/* STEP A DEBUG: visible label so we KNOW is-dying is applied */
+.bb-debug-dying-label{
+  position:absolute;
+  left:6px;
+  top:6px;
+  z-index: 9999;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  color: #fff;
+  background: rgba(255,0,120,.85);
+  border-radius: 8px;
+  box-shadow: 0 0 16px rgba(255,0,120,.6);
+  pointer-events:none;
+}
