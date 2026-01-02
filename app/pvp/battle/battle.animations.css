@@ -136,7 +136,7 @@
   
   /* =========================================================
      STEP 4B — OPTIONAL SPRITE POP (death_burst.png)
-     Put sprite here: public/fx/retro/death_burst.png
+     Put sprite here: public/fx/death_burst.png
   
      Expected:
      - 8 frames in a row (horizontal)
@@ -160,7 +160,7 @@
     width: 220px;
     height: 220px;
     transform: translate(-50%,-55%);
-    background-image: url("/fx/retro/death_burst.png");
+    background-image: url("/fx/death_burst.png");
     background-repeat: no-repeat;
     background-size: 800% 100%;
     image-rendering: auto;
@@ -211,41 +211,3 @@
     .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
   }
   
-
-/* ===========================
-   FX Anchor (CardSlot sibling)
-   =========================== */
-
-.bb-slot { position: relative; }
-
-.bb-fx-anchor{
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9999;
-  overflow: visible;
-}
-
-/* Death burst sprite (horizontal strip) */
-.bb-death{
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 180%;
-  height: 180%;
-  transform: translate(-50%, -50%);
-  background-image: url("/fx/retro/death_burst.png");
-  background-repeat: no-repeat;
-  /* default: 8 frames horizontally */
-  background-size: 800% 100%;
-  background-position: 0% 50%;
-  opacity: 1;
-  filter: drop-shadow(0 0 16px rgba(180,240,255,.65));
-  mix-blend-mode: normal;
-  animation: bb-death-sprite 850ms steps(8) forwards;
-}
-
-@keyframes bb-death-sprite{
-  from { background-position-x: 0%; }
-  to   { background-position-x: 100%; }
-}
