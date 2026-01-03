@@ -69,7 +69,7 @@
   position: absolute;
   inset: -18px; /* let burst spill outside card */
   pointer-events: none;
-  z-index: 50;
+  z-index: 120;
 }
 .bb-death{
   position: absolute;
@@ -80,14 +80,14 @@
   content:"";
   position:absolute;
   inset:0;
-  background-image: url("/fx/death_burst.png");
+  background-image: url("/fx/retro/death_burst_strip.png");
   background-repeat: no-repeat;
   background-position: 0 50%;
-  background-size: auto 100%;
+  background-size: calc(var(--bb-death-frames, 4) * 100%) 100%;
   transform: translateZ(0) scale(1.05);
   filter: contrast(1.15) brightness(1.1) saturate(1.1);
   opacity: 1;
-  animation: bb_death_sprite 680ms steps(var(--bb-death-frames, 8)) both;
+  animation: bb_death_sprite var(--bb-death-ms, 520ms) steps(var(--bb-death-frames, 4)) both;
 }
 @keyframes bb_death_sprite{
   from { background-position: 0 50%; opacity: 1; }
@@ -236,7 +236,7 @@
     width: 320px;
     height: 320px;
     transform: translate(-50%,-55%);
-    background-image: url("/fx/death_burst.png");
+    background-image: url("/fx/retro/death_burst_strip.png");
     background-repeat: no-repeat;
     background-size: 800% 100%;
     image-rendering: auto;
