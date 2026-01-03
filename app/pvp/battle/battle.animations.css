@@ -390,36 +390,28 @@
   100%{ transform: translate(-50%, -52%) scale(1.06); opacity: 0; }
 }
 
-/* --- Death vanish (UI only) --- */
-/* Triggered by CardSlot setting .bb-slot.is-vanish, then CardSlot unmounts card (is-hidden) */
+/* ===== 696 Death → Vanish (SAFE, does NOT touch death FX) ===== */
 .bb-slot.is-vanish .bb-card {
-  pointer-events: none;
-}
-
-.bb-slot.is-vanish .bb-card-inner {
-  animation: bbVanish 360ms cubic-bezier(.2,.8,.2,1) forwards;
-  transform-origin: 50% 55%;
+  animation: bb_vanish 340ms ease-out forwards;
+  transform-origin: 50% 60%;
   will-change: transform, opacity, filter;
 }
 
-@keyframes bbVanish {
+@keyframes bb_vanish {
   0% {
     opacity: 1;
-    transform: translateY(0) scale(1);
-    filter: blur(0px);
-  }
-  60% {
-    opacity: 0.35;
-    transform: translateY(6px) scale(0.92);
-    filter: blur(0.6px);
+    transform: translateZ(0) scale(1);
+    filter: none;
   }
   100% {
     opacity: 0;
-    transform: translateY(14px) scale(0.78);
-    filter: blur(1.2px);
+    transform: translateZ(0) scale(0.86) rotateZ(-2deg);
+    filter: blur(1px);
   }
 }
 
-.bb-slot.is-hidden {
-  visibility: hidden;
+/* When we finally remove the unit, keep the slot but hide any card remnants */
+.bb-slot.is-hidden .bb-card {
+  display: none !important;
 }
+
