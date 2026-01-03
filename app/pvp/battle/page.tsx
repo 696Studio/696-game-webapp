@@ -1573,6 +1573,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     // long enough to play the vanish animation, then we remove the card from DOM.
     const [ghostUnit, setGhostUnit] = useState<UnitView | null>(null);
     const activeUnit = unit ?? ghostUnit;
+    const renderUnit = activeUnit;
 
     const [isVanish, setIsVanish] = useState(false);
     const [isHidden, setIsHidden] = useState(false);
@@ -1587,30 +1588,46 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       if (unit) setGhostUnit(unit);
     }, [unit?.instanceId]);
 
-    // Start vanish sequence when unit becomes dead (even if it disappears from battle state immediately)
-    useEffect(() => {
-      const id = activeUnit?.instanceId ?? null;
-
-      // Clear timers when instance changes/unmounts
+    // Start vanish sequence when death starts.
+// IMPORTANT: battle state may remove `unit` immediately; we keep `ghostUnit` so the death FX can play.
+// We trigger on (isDying || isDead) and we DO NOT clear timers on every render.
+    const clearVanishTimers = () => {
       vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
       vanishTimersRef.current = [];
+    };
+
+    // Clear timers on unmount
+    useEffect(() => {
+      return () => clearVanishTimers();
+    }, []);
+
+    useEffect(() => {
+      const instId = activeUnit?.instanceId ?? null;
 
       // No unit at all => reset
-      if (!id) {
+      if (!instId) {
         vanishStartedForRef.current = null;
+        clearVanishTimers();
         setIsVanish(false);
         setIsHidden(false);
         return;
       }
 
-      // If already vanished for this instance, do nothing
-      if (vanishStartedForRef.current === id) return;
+      // If instance changed, reset vanish state/timers
+      if (vanishStartedForRef.current && vanishStartedForRef.current !== instId) {
+        clearVanishTimers();
+        setIsVanish(false);
+        setIsHidden(false);
+      }
 
-      // Only start vanish when the unit is dead
-      if (isDead) {
-        vanishStartedForRef.current = id;
+      // If already started for this instance, do nothing
+      if (vanishStartedForRef.current === instId) return;
 
-        // Let the death burst FX play first (css animation ~500ms), then vanish card UI
+      // Start vanish when death starts (prefer isDying signal; fallback to isDead)
+      if (isDying || isDead) {
+        vanishStartedForRef.current = instId;
+
+        // Let the death burst FX play first, then vanish the card UI
         vanishTimersRef.current.push(
           window.setTimeout(() => {
             setIsVanish(true);
@@ -1625,12 +1642,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           }, 860)
         );
       }
-
-      return () => {
-        vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
-        vanishTimersRef.current = [];
-      };
-    }, [activeUnit?.instanceId, isDead]);
+    }, [activeUnit?.instanceId, isDying, isDead]);
 
     if (isHidden) {
       return <div className="bb-slot is-hidden" />;
@@ -1649,23 +1661,23 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [activeUnit?.instanceId, activeUnit?.shield, activeUnit?.maxHp]);
 
     const atk = useMemo(() => {
-      if (!unit || !attackFx || attackFx.length === 0) return null;
+      if (!renderUnit || !attackFx || attackFx.length === 0) return null;
       const last = attackFx[attackFx.length - 1];
-      const isFrom = last.fromId === unit.instanceId;
-      const isTo = last.toId === unit.instanceId;
+      const isFrom = last.fromId === renderUnit.instanceId;
+      const isTo = last.toId === renderUnit.instanceId;
       if (!isFrom && !isTo) return null;
       return { ...last, isFrom, isTo };
-    }, [unit, attackFx]);
+    }, [renderUnit?.instanceId, attackFx]);
 
     const spawned = useMemo(() => {
-      if (!unit || !spawnFx || spawnFx.length === 0) return null;
+      if (!renderUnit || !spawnFx || spawnFx.length === 0) return null;
       return spawnFx[spawnFx.length - 1];
-    }, [unit, spawnFx]);
+    }, [renderUnit?.instanceId, spawnFx]);
 
     const dmg = useMemo(() => {
-      if (!unit || !damageFx || damageFx.length === 0) return null;
+      if (!renderUnit || !damageFx || damageFx.length === 0) return null;
       return damageFx[damageFx.length - 1];
-    }, [unit, damageFx]);
+    }, [renderUnit?.instanceId, damageFx]);
 
     const tags = useMemo(() => {
       if (!activeUnit) return [];
@@ -1674,8 +1686,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [activeUnit?.instanceId]);
 
     const isActive = !!activeUnit && activeInstance ? activeUnit.instanceId === activeInstance : false;
-    const renderUnit = activeUnit;
-    const instanceKey = renderUnit?.instanceId ?? fallbackId ?? "slot";
     const isDyingUi = !!renderUnit && (isDying || isDead);
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}>
@@ -1718,19 +1728,19 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
             />
             {renderUnit && (
               <div className="bb-fx">
-                {spawned && <div key={`spawn-${spawned.t}-${instanceKey}`} className="bb-spawn" />}
+                {spawned && <div key={`spawn-${spawned.t}-${renderUnit.instanceId}`} className="bb-spawn" />}
 
                 {atk && (
                   <div className="bb-atkfx">
-                    {atk.isFrom && <div key={`slash-${atk.t}-${instanceKey}`} className="bb-slash" />}
-                    {atk.isTo && <div key={`impact-${atk.t}-${instanceKey}`} className="bb-impact" />}
+                    {atk.isFrom && <div key={`slash-${atk.t}-${renderUnit.instanceId}`} className="bb-slash" />}
+                    {atk.isTo && <div key={`impact-${atk.t}-${renderUnit.instanceId}`} className="bb-impact" />}
                   </div>
                 )}
 
-                {dmg && (
+                {renderUnit && dmg && (
                   <>
-                    <div key={`dmgflash-${dmg.t}-${instanceKey}`} className="bb-dmgflash" />
-                    <div key={`dmgfloat-${dmg.t}-${instanceKey}`} className="bb-dmgfloat">
+                    <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
+                    <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
                       {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
                     </div>
                   </>
@@ -2983,10 +2993,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
-                    attackFx={s.unit ? attackFxByInstance[s.unit.instanceId] : undefined}
-                    spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
-                    damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
-                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
+                    attackFx={(() => { const inst = s.unit?.instanceId; return inst ? attackFxByInstance[inst] : undefined; })()}
+                    spawnFx={(() => { const inst = s.unit?.instanceId; return inst ? spawnFxByInstance[inst] : undefined; })()}
+                    damageFx={(() => { const inst = s.unit?.instanceId; return inst ? damageFxByInstance[inst] : undefined; })()}
+                    isDying={(() => { const inst = s.unit?.instanceId; return !!(inst && deathFxByInstance.has(inst)); })()}
                     revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
                   />
@@ -3014,10 +3024,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
-                    attackFx={s.unit ? attackFxByInstance[s.unit.instanceId] : undefined}
-                    spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
-                    damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
-                    isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
+                    attackFx={(() => { const inst = s.unit?.instanceId; return inst ? attackFxByInstance[inst] : undefined; })()}
+                    spawnFx={(() => { const inst = s.unit?.instanceId; return inst ? spawnFxByInstance[inst] : undefined; })()}
+                    damageFx={(() => { const inst = s.unit?.instanceId; return inst ? damageFxByInstance[inst] : undefined; })()}
+                    isDying={(() => { const inst = s.unit?.instanceId; return !!(inst && deathFxByInstance.has(inst)); })()}
                     revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
                   />
