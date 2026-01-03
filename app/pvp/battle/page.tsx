@@ -1581,7 +1581,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       return clamp((unit.shield / maxHp) * 100, 0, 100);
     }, [unit]);
 
-    const isDead = unit ? !unit.alive : false;
     const isActive = unit && activeInstance ? unitKey === activeInstance : false;
 
     const atk = useMemo(() => {
@@ -1613,17 +1612,36 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const [isVanish, setIsVanish] = useState(false);
     const [isHidden, setIsHidden] = useState(false);
     const vanishTimersRef = useRef<number[]>([]);
+    const vanishStartedForRef = useRef<string | null>(null);
+
+    const isDead = !!unit && (!unit.alive || unit.hp <= 0);
 
     useEffect(() => {
-      // reset when unit changes or death flag resets
+      // Clear any prior timers when unit changes/unmounts
       vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
       vanishTimersRef.current = [];
-      setIsVanish(false);
-      setIsHidden(false);
 
-      if (!unit || !isDying) return;
+      // If there's no unit, reset and bail
+      if (!unit) {
+        vanishStartedForRef.current = null;
+        setIsVanish(false);
+        setIsHidden(false);
+        return;
+      }
 
-      // Start vanish a bit after death FX begins, then hide from DOM
+      // Start vanish ONCE per unit instance when it becomes dead.
+      if (!isDead) {
+        // Alive again (e.g., slot reused) → reset
+        vanishStartedForRef.current = null;
+        setIsVanish(false);
+        setIsHidden(false);
+        return;
+      }
+
+      if (vanishStartedForRef.current === unit.instanceId) return;
+      vanishStartedForRef.current = unit.instanceId;
+
+      // Let death FX play first, then vanish, then hide from DOM.
       vanishTimersRef.current.push(window.setTimeout(() => setIsVanish(true), 520));
       vanishTimersRef.current.push(window.setTimeout(() => setIsHidden(true), 860));
 
@@ -1631,7 +1649,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
         vanishTimersRef.current = [];
       };
-    }, [isDying, unit?.instanceId]);
+    }, [unit?.instanceId, isDead]);
 
     const renderUnit = isHidden ? null : unit;
 

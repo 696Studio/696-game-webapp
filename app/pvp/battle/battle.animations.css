@@ -48,7 +48,8 @@
   transform-style: preserve-3d;
 }
 /* Vanish after death (separate, does NOT affect FX Manager) */
-.bb-slot.is-dying.is-vanish .bb-card{
+.bb-slot.is-dying.is-vanish .bb-card,
+.bb-slot.is-vanish .bb-card{
   animation:
     bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both,
     bb_card_vanish 260ms cubic-bezier(.2,.9,.2,1) forwards;
