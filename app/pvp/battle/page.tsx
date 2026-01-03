@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
 import CardArt from "../../components/CardArt";
@@ -440,6 +440,25 @@ function BattleInner() {
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
+  // === GLOBAL FX MANAGER (reliable: does not depend on card DOM state) ===
+  type FxEvent = { id: string; kind: "death"; left: number; top: number; size: number };
+  const [fxQueue, setFxQueue] = useState<FxEvent[]>([]);
+  const spawnDeathFx = useCallback((instanceId: string) => {
+    const arenaEl = arenaRef.current;
+    const cardEl = unitElByIdRef.current[instanceId];
+    if (!arenaEl || !cardEl) return;
+    const a = arenaEl.getBoundingClientRect();
+    const r = cardEl.getBoundingClientRect();
+    const size = Math.max(r.width, r.height) * 1.55;
+    const left = r.left - a.left + r.width / 2 - size / 2;
+    const top = r.top - a.top + r.height / 2 - size / 2;
+    const id = `${instanceId}-${Date.now()}`;
+    setFxQueue((q) => [...q, { id, kind: "death", left, top, size }]);
+    window.setTimeout(() => {
+      setFxQueue((q) => q.filter((e) => e.id !== id));
+    }, 700);
+  }, []);
+
   const [layoutTick, setLayoutTick] = useState(0);
 
   const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
@@ -1464,6 +1483,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     spawnFx,
     damageFx,
     isDying,
+    spawnDeathFx,
   }: {
     card?: CardMeta | null;
     fallbackId?: string | null;
@@ -1474,6 +1494,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     spawnFx?: SpawnFx[];
     damageFx?: DamageFx[];
     isDying?: boolean;
+    spawnDeathFx: (instanceId: string) => void;
   }) {
     const id = card?.id || fallbackId || "";
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
@@ -1481,43 +1502,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const power = typeof card?.base_power === "number" ? card.base_power : null;
     const img = resolveCardArtUrl(card?.image_url || null);
 
-    // --- Death FX trigger (local): if hp drops from >0 to 0, play death FX even if battle log didn't emit deathFx.
-    const [localIsDying, setLocalIsDying] = useState(false);
-const prevRef = useRef<{ id: string | null; hp: number | null; t?: any }>({ id: null, hp: null });
-
-    useEffect(() => {
-      // reset when unit changes / disappears
-      if (!unit) {
-        if (prevRef.current.t) clearTimeout(prevRef.current.t);
-        prevRef.current = { id: null, hp: null };
-        setLocalIsDying(false);
-        return;
-      }
-
-      const curId = unit.instanceId;
-      const curHp = unit.hp;
-
-      if (prevRef.current.id !== curId) {
-        if (prevRef.current.t) clearTimeout(prevRef.current.t);
-        prevRef.current = { id: curId, hp: curHp };
-        setLocalIsDying(false);
-        return;
-      }
-
-      const prevHp = prevRef.current.hp;
-      prevRef.current.hp = curHp;
-
-      if (typeof prevHp === "number" && prevHp > 0 && curHp <= 0) {
-        // trigger death FX
-        if (prevRef.current.t) clearTimeout(prevRef.current.t);
-        setLocalIsDying(true);
-prevRef.current.t = setTimeout(() => {
-          setLocalIsDying(false);
-        }, 760);
-      }
-    }, [unit?.instanceId, unit?.hp]);
-
-    // if external deathFx is wired, also restart sprite on that signal
     const hpPct = useMemo(() => {
       if (!unit) return 100;
       const maxHp = Math.max(1, unit.maxHp);
@@ -1558,18 +1542,25 @@ prevRef.current.t = setTimeout(() => {
       return arr.slice(0, 3);
     }, [unit]);
 
+
+    // Detect actual death (hp > 0 -> hp <= 0) and spawn global FX (reliable even if unit disappears fast)
+    const prevHpRef = useRef<number | null>(null);
+    useEffect(() => {
+      if (!unit?.instanceId) return;
+      const prev = prevHpRef.current;
+      const cur = typeof unit.hp === "number" ? unit.hp : 0;
+      if (prev !== null && prev > 0 && cur <= 0) {
+        spawnDeathFx(unit.instanceId);
+      }
+      prevHpRef.current = cur;
+    }, [unit?.instanceId, unit?.hp, spawnDeathFx]);
     return (
-      <div className={["bb-slot", (localIsDying || isDying) ? "is-dying" : ""].join(" ")}>
-      <div className="bb-fx-layer" aria-hidden>
-  <div
-    className="bb-death"
-style={{
-      ["--bb-death-frames" as any]: 4,
-      ["--bb-death-ms" as any]: "520ms",
-    }}
-  />
-</div>
-<div
+      <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
+      <div className="bb-fx-anchor">
+        
+        {isDying ? <div className="bb-death" /> : null}
+      </div>
+      <div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
         }}
@@ -1621,7 +1612,9 @@ style={{
                     </div>
                   </>
                 )}
-</div>
+
+                {isDying && <div className="bb-death" />}
+              </div>
             )}
 
             <div className="bb-overlay">
@@ -2753,6 +2746,18 @@ style={{
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
+          <div className="bb-global-fx-layer" aria-hidden>
+            {fxQueue.map((e) =>
+              e.kind === "death" ? (
+                <div
+                  key={e.id}
+                  className="bb-global-death"
+                  style={{ left: e.left, top: e.top, width: e.size, height: e.size }}
+                />
+              ) : null
+            )}
+          </div>
+
           {DEBUG_ARENA && debugCover && (
             <>
               <div className="dbg-panel">
@@ -2847,6 +2852,7 @@ style={{
                     isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
                     revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
+                    spawnDeathFx={spawnDeathFx}
                   />
                 ))}
               </div>
@@ -2878,6 +2884,7 @@ style={{
                     isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
                     revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
+                    spawnDeathFx={spawnDeathFx}
                   />
                 ))}
               </div>

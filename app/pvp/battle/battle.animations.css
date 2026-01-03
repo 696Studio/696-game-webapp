@@ -277,24 +277,16 @@
   
   /* keep it safe on low-end devices */
   @media (prefers-reduced-motion: reduce){
-  .bb-slot.is-spawn,
-  .bb-slot.is-damage,
-  .bb-slot.is-attack-from,
-  .bb-slot.is-attack-to,
-  .bb-slot.is-dying{ animation: none !important; }
-
-  .bb-slot.is-damage::after,
-  .bb-slot.is-dying::before{ animation: none !important; opacity: 0 !important; }
-
-  /* Keep death FX visible even with reduced motion (static first frame) */
-  .bb-slot.is-dying .bb-death::before{
-    animation: none !important;
-    opacity: 1 !important;
-    background-position: 0% 50% !important;
+    .bb-slot.is-spawn,
+    .bb-slot.is-damage,
+    .bb-slot.is-attack-from,
+    .bb-slot.is-attack-to,
+    .bb-slot.is-dying{ animation: none !important; }
+    .bb-slot.is-damage::after,
+    .bb-slot.is-dying::before,
+    .bb-slot.is-dying .bb-death::before,
+    .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
   }
-  .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
-}
-
 
 
 /* STEP D: Real death FX (sprite) anchored to each card slot */
@@ -343,89 +335,29 @@
 
 
 
-
-/* =========================================================
-   DEATH FX — STRIP (SOURCE OF TRUTH)
-   Uses: /public/fx/retro/death_burst_strip.png  (served as /fx/retro/death_burst_strip.png)
-   This block intentionally overrides any older death_burst / atlas rules above.
-   ========================================================= */
-
-/* Put FX above the card + HUD */
-.bb-slot{ position: relative; overflow: visible; }
-.bb-fx-layer{
+/* === GLOBAL FX MANAGER (reliable) === */
+.board.arena { position: relative; }
+.bb-global-fx-layer {
   position: absolute;
-  inset: -18px;
+  inset: 0;
   pointer-events: none;
-  z-index: 999;
+  z-index: 9999;
 }
-.bb-death{ position: absolute; inset: 0; pointer-events: none; }
-
-/* Kill the old ash/smoke overlay while strip is enabled */
-.bb-slot.is-dying::before{ display: none !important; }
-
-/* Animate the strip (4 frames). If you later export 6/8 frames, update:
-   - background-size (e.g. 600% / 800%)
-   - steps(N)
-*/
-.bb-slot.is-dying .bb-death::before{
-  content: "";
+.bb-global-death {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 280px;
-  height: 280px;
-  transform: translate(-50%, -55%) scale(.92);
-  background-image: url("/fx/retro/death_burst_strip.png") !important;
+  transform: translateZ(0);
+  background-image: url("/fx/retro/death_burst_strip.png");
   background-repeat: no-repeat;
-  background-position: 0% 50% !important;
-  background-size: 400% 100% !important; /* 4 frames */
-  opacity: 1;
-  mix-blend-mode: screen;
-  filter: drop-shadow(0 0 16px rgba(0,0,0,.55));
-  will-change: background-position, transform, opacity;
-  animation: bb_death_strip var(--bb-death-ms, 520ms) steps(4) both !important;
-}
-
-@keyframes bb_death_strip{
-  0%   { background-position: 0% 50%;   opacity: 0; transform: translate(-50%, -55%) scale(.88); }
-  12%  { opacity: 1; }
-  100% { background-position: 100% 50%; opacity: 0; transform: translate(-50%, -55%) scale(1.18); }
-}
-
-
-/* =========================================================
-   FINAL OVERRIDE — DEATH STRIP (guaranteed)
-   This wins the cascade and makes sure the strip is visible.
-   Asset must exist at: public/fx/retro/death_burst_strip.png
-   ========================================================= */
-.bb-fx-layer{ z-index: 9999 !important; }
-.bb-death{ position: absolute; inset: 0; pointer-events:none; }
-
-/* Disable ash overlay so it doesn't read as "only darken" */
-.bb-slot.is-dying::before{ display:none !important; }
-
-/* Death strip animation (4 frames) */
-.bb-slot.is-dying .bb-death::before{
-  content:"";
-  position:absolute;
-  left:50%;
-  top:50%;
-  width: 260px;
-  height: 260px;
-  transform: translate(-50%,-55%) scale(0.95);
-  background-image: url("/fx/retro/death_burst_strip.png") !important;
-  background-repeat:no-repeat;
   background-position: 0% 50%;
   background-size: 400% 100%;
-  opacity:1;
-  mix-blend-mode: screen;
-  filter: drop-shadow(0 0 18px rgba(0,0,0,.65));
-  animation: bb_death_strip_final var(--bb-death-ms, 520ms) steps(var(--bb-death-frames, 4)) both;
-  will-change: background-position, transform, opacity;
+  will-change: background-position, opacity, transform;
+  animation: bb-death-strip 650ms steps(4) forwards;
 }
-
-@keyframes bb_death_strip_final{
-  0%{ background-position: 0% 50%; opacity: 0; transform: translate(-50%,-55%) scale(.88); }
-  12%{ opacity: 1; }
-  100%{ background-position: 100% 50%; opacity: 0; transform: translate(-50%,-55%) scale(1.18); }
+@keyframes bb-death-strip {
+  0% { background-position: 0% 50%; opacity: 1; transform: scale(0.95); }
+  60% { opacity: 1; transform: scale(1.05); }
+  100% { background-position: 100% 50%; opacity: 0; transform: scale(1.15); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bb-global-death { animation: none; opacity: 1; }
 }
