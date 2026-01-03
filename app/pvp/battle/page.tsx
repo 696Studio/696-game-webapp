@@ -263,6 +263,10 @@ function pickAvatarUrl(p?: PlayerProfile | null, seed?: string) {
 
 const CARD_FRAME_SRC = "/cards/frame/frame_common.png";
 
+// Death FX atlas tuning (used as CSS vars on .bb-fx-anchor)
+const DEATH_ATLAS_FRAMES = 8;
+const DEATH_ATLAS_DURATION_MS = 700;
+
 /**
  * Normalize card art urls after migration from /items/* to /cards/art/*.
  * - keeps absolute URLs (http/https/data/blob)
@@ -1245,18 +1249,20 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   }, [timeline, t]);
 
   const deathFxByInstance = useMemo(() => {
-    const windowSec = 0.65;
+    // Keep death FX alive long enough to be visible (units can be removed quickly)
+    const windowSec = 1.25;
     const fromT = Math.max(0, t - windowSec);
-    const set = new Set<string>();
+    const map = new Map<string, number>();
+
     for (const e of timeline) {
       if (e.t < fromT) continue;
       if (e.t > t) break;
       if (e.type === "death") {
         const ref = readUnitRefFromEvent(e, "unit");
-        if (ref?.instanceId) set.add(ref.instanceId);
+        if (ref?.instanceId) map.set(ref.instanceId, e.t);
       }
     }
-    return set;
+    return map;
   }, [timeline, t]);
 
   function getCenterInArena(instanceId: string) {
@@ -1464,6 +1470,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     spawnFx,
     damageFx,
     isDying,
+    deathTick,
   }: {
     card?: CardMeta | null;
     fallbackId?: string | null;
@@ -1474,6 +1481,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     spawnFx?: SpawnFx[];
     damageFx?: DamageFx[];
     isDying?: boolean;
+    deathTick?: number;
   }) {
     const id = card?.id || fallbackId || "";
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
@@ -1523,7 +1531,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     return (
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
-            <div
+      <div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
         }}
@@ -1540,15 +1548,23 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
-        <div className="bb-fx-anchor">
-          {isDying ? <div className="bb-death" /> : null}
-        </div>
         <div className="bb-card-inner">
           <div className="bb-face bb-back">
             <div className="bb-mark">696</div>
           </div>
 
           <div className={["bb-face bb-front", rarityFxClass(r)].join(" ")}>
+            <div
+              className="bb-fx-anchor"
+              style={
+                {
+                  ["--bb-death-frames" as any]: DEATH_ATLAS_FRAMES,
+                  ["--bb-death-duration" as any]: `${DEATH_ATLAS_DURATION_MS}ms`,
+                } as React.CSSProperties
+              }
+            >
+              {isDying ? <div key={`death-${deathTick ?? 0}`} className="bb-death" /> : null}
+            </div>
             <CardArt
               variant="pvp"
               src={img}
@@ -1579,7 +1595,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                   </>
                 )}
 
-                {isDying && <div className="bb-death" />}
+                {/* death FX lives in .bb-fx-anchor (above) */}
               </div>
             )}
 
@@ -2804,6 +2820,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
                     isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
+                    deathTick={s.unit?.instanceId ? deathFxByInstance.get(s.unit.instanceId) : undefined}
                     revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
                   />
@@ -2835,6 +2852,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     spawnFx={s.unit ? spawnFxByInstance[s.unit.instanceId] : undefined}
                     damageFx={s.unit ? damageFxByInstance[s.unit.instanceId] : undefined}
                     isDying={!!(s.unit?.instanceId && deathFxByInstance.has(s.unit.instanceId))}
+                    deathTick={s.unit?.instanceId ? deathFxByInstance.get(s.unit.instanceId) : undefined}
                     revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
                   />
