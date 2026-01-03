@@ -299,7 +299,7 @@
   overflow: visible;
 }
 
-/* Sprite burst: expects /public/fx/retro/deathy_burst.png (horizontal strip, 8 frames) */
+/* Sprite burst: expects /public/fx/retro/death_burst.png (horizontal strip, 8 frames) */
 .bb-death{
   position:absolute;
   left:50%;
@@ -307,7 +307,7 @@
   width: 190%;
   height: 190%;
   transform: translate(-50%, -50%);
-  background-image: url("/fx/retro/deathy_burst.png");
+  background-image: url("/fx/retro/death_burst.png");
   background-repeat: no-repeat;
   background-position: 0% 50%;
   background-size: 800% 100%; /* 8 frames horizontally */
@@ -333,231 +333,78 @@
   to{ background-position: 100% 50%; opacity:0; }
 }
 
-/* =========================================================
-   STEP 2 — SPRITE TUNING (override, single source of truth)
-   Goal: make /fx/retro/deathy_burst.png animate reliably.
-   Assumption: horizontal strip, 8 frames.
-   ========================================================= */
 
-/* Anchor must sit above card */
-.bb-fx-anchor{
-  position: absolute;
-  inset: 0;
-  z-index: 999;
-  pointer-events: none;
+
+/* =========================================================
+   PATH A — ATLAS PICK (death_burst.png is an FX ATLAS, not a strip)
+   We animate by sliding within a chosen atlas region.
+   TUNE HERE ONLY if you want a different death look.
+   ========================================================= */
+:root{
+  /* Atlas-tuned defaults (best-guess for the "death burst" row you highlighted) */
+  --bb-death-atlas-frames: 6;
+  --bb-death-atlas-size-x: 800%;
+  --bb-death-atlas-size-y: 800%;
+  --bb-death-atlas-y: 74%;
+  --bb-death-atlas-x-start: 68%;
+  --bb-death-atlas-x-end: 92%;
+  --bb-death-atlas-ms: 720ms;
+}
+
+/* Kill ash/smoke overlay while we use atlas death */
+.bb-slot.is-dying::before{ display:none !important; }
+
+/* Anchor is now INSIDE .bb-card (page.tsx), so pin to card bounds */
+.bb-card{ position: relative; }
+.bb-card .bb-fx-anchor{
+  position:absolute;
+  inset:0;
+  z-index: 9999;
+  pointer-events:none;
   overflow: visible;
 }
 
-/* Base sprite */
-.bb-death{
+/* Base container (no radial smoke / no legacy animation) */
+.bb-card .bb-fx-anchor .bb-death{
   position:absolute;
   left:50%;
   top:50%;
-  width: 190%;
-  height: 190%;
-  transform: translate(-50%, -50%);
-  background-image: url("/fx/retro/deathy_burst.png");
-  background-repeat: no-repeat;
-  background-position: 0% 50%;
-  background-size: calc(var(--bb-death-frames, 8) * 100%) 100%;
-  opacity: 1;
-  will-change: background-position, transform, opacity;
-  pointer-events: none;
-  filter: drop-shadow(0 0 10px rgba(0,0,0,0.55));
-}
-
-/* FORCE mode (renders even without death): loop forever so we can see motion */
-.bb-death.bb-death--force{
-  animation: bbDeathSprite 820ms steps(var(--bb-death-frames, 8)) infinite;
-}
-
-/* Real death: play once and fade out */
-.bb-slot.is-dying .bb-death{
-  animation: bbDeathSpriteFade 820ms steps(var(--bb-death-frames, 8)) forwards;
-}
-
-@keyframes bbDeathSprite{
-  from{ background-position: 0% 50%; }
-  to{ background-position: 100% 50%; }
-}
-
-@keyframes bbDeathSpriteFade{
-  0%  { background-position: 0% 50%; opacity: 1; }
-  85% { background-position: 100% 50%; opacity: 1; }
-  100%{ background-position: 100% 50%; opacity: 0; }
-}
-
-/* =========================================================
-   STEP 2.1 — SPRITE ALIGNMENT + DE-CONFLICT (TEMP)
-   Goal: See REAL sprite frame motion centered on the CARD (not slot+HUD).
-   - FX anchor is now inside .bb-card in page.tsx (so inset matches card box).
-   - Temporarily disable ash/collapse so it can't mask the sprite.
-   ========================================================= */
-
-/* Disable ash + collapse while we tune the sprite */
-.bb-slot.is-dying::before{ display: none !important; }
-.bb-slot.is-dying{ animation: none !important; filter: none !important; }
-
-/* Make card the positioning context for FX */
-.bb-card{ position: relative; overflow: visible; }
-
-/* Anchor bounds = card bounds (with small bleed) */
-.bb-fx-anchor{
-  position: absolute;
-  inset: -10px;
-  z-index: 999;
-  pointer-events: none;
-  overflow: visible;
-}
-
-/* Sprite burst (tuned size & center) */
-.bb-death{
-  position: absolute;
-  left: 50%;
-  top: 50%;
   width: 140%;
   height: 140%;
-  transform: translate(-50%, -50%);
-  background-image: url("/fx/retro/deathy_burst.png");
-  background-repeat: no-repeat;
-  background-position: 0% 50%;
-  background-size: calc(var(--bb-death-frames, 8) * 100%) 100%;
-  opacity: 1;
-  pointer-events: none;
-  will-change: background-position, transform, opacity;
-  filter: drop-shadow(0 0 10px rgba(0,0,0,0.55));
-}
-
-/* FORCE tuning: loop so motion is obvious */
-.bb-death.bb-death--force{
-  animation: bbDeathSprite 720ms steps(var(--bb-death-frames, 8)) infinite;
-}
-
-/* Real death: play once and fade out */
-.bb-slot.is-dying .bb-death{
-  animation: bbDeathSpriteFade 720ms steps(var(--bb-death-frames, 8)) forwards;
-}
-
-
-
-/* =========================================================
-   STEP 2.2 — FINAL SPRITE RENDER (SINGLE SOURCE OF TRUTH)
-   This block intentionally overrides previous experiments.
-   It uses CSS vars set on .bb-fx-anchor in page.tsx:
-   --bb-death-frames (number)
-   --bb-death-row (e.g. 0% / 50% / 100%)
-   --bb-death-duration (e.g. 820ms)
-   --bb-death-scale (number)
-   ========================================================= */
-
-.bb-card{ position: relative; overflow: visible; }
-
-/* Anchor is a sibling of .bb-card-inner so it's NOT clipped by .bb-face overflow */
-.bb-fx-anchor{
-  position: absolute !important;
-  inset: -10px !important; /* slight bleed beyond card */
-  z-index: 999 !important;
-  pointer-events: none;
-  overflow: visible !important;
-}
-
-/* Sprite layer */
-.bb-death{
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: calc(var(--bb-death-scale, 1.45) * 100%);
-  height: calc(var(--bb-death-scale, 1.45) * 100%);
-  transform: translate(-50%, -50%);
-  background-image: url("/fx/retro/deathy_burst.png");
-  background-repeat: no-repeat;
-  background-position: 0% var(--bb-death-row, 50%);
-  background-size: calc(var(--bb-death-frames, 8) * 100%) 100%;
-  opacity: 1;
-  will-change: background-position, opacity, transform;
-  pointer-events: none;
-  filter:
-    hue-rotate(var(--bb-fx-tint-hue, 195deg))
-    saturate(var(--bb-fx-tint-sat, 1.6))
-    brightness(var(--bb-fx-tint-bright, 1.05))
-    drop-shadow(0 0 10px rgba(0,0,0,0.55));
-  mix-blend-mode: screen;
-}
-
-/* FORCE tuning: infinite loop so we can SEE frame motion */
-.bb-death.bb-death--force{
-  animation: bbDeathSprite var(--bb-death-duration, 820ms) steps(var(--bb-death-frames, 8)) infinite !important;
-}
-
-/* Real death: play once + fade out */
-.bb-slot.is-dying .bb-death{
-  animation: bbDeathSpriteFade var(--bb-death-duration, 820ms) steps(var(--bb-death-frames, 8)) forwards !important;
-}
-
-@keyframes bbDeathSprite{
-  from { background-position:   0% var(--bb-death-row, 50%); }
-  to   { background-position: 100% var(--bb-death-row, 50%); }
-}
-
-@keyframes bbDeathSpriteFade{
-  0%   { background-position:   0% var(--bb-death-row, 50%); opacity: 1; }
-  85%  { background-position: 100% var(--bb-death-row, 50%); opacity: 1; }
-  100% { background-position: 100% var(--bb-death-row, 50%); opacity: 0; }
-}
-
-/* =========================================================
-   STEP 2.3 — ATLAS SAFE MODE (deathy_burst.png is an FX ATLAS, not a 1×N strip)
-   Goal: no "smoke", correct centering, and visible animated burst even with atlas.
-   ========================================================= */
-
-/* Disable ash/smoke overlay that looks like a static dust */
-.bb-slot.is-dying::before{
-  display: none !important;
+  transform: translate(-50%, -52%);
+  border-radius: 18px;
+  background: none !important;
   animation: none !important;
-  opacity: 0 !important;
+  pointer-events:none;
 }
 
-/* Keep anchor bound to the card box, not the slot+HUD */
-.bb-card{ position: relative; overflow: visible; }
-.bb-fx-anchor{
-  inset: 0 !important;
-}
-
-/* Use a single chosen region of the atlas (tweak via vars if needed) */
-.bb-death{
-  left: 50% !important;
-  top: 50% !important;
-  width: 135% !important;
-  height: 135% !important;
-  transform: translate(-50%, -50%) scale(var(--bb-death-scale, 1)) !important;
-
-  /* Atlas (single image) */
-  background-image: url("/fx/retro/deathy_burst.png") !important;
-  background-repeat: no-repeat !important;
-
-  /* Crop/zoom into a burst-looking area of the atlas.
-     If you later upload a proper strip, we will switch back to steps(). */
-  background-size: 220% 220% !important;
-  background-position: 86% 18% !important;
-
+/* Atlas-driven burst */
+.bb-card .bb-fx-anchor .bb-death::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background-image: url("/fx/retro/death_burst.png");
+  background-repeat: no-repeat;
+  background-size: var(--bb-death-atlas-size-x) var(--bb-death-atlas-size-y);
+  background-position: var(--bb-death-atlas-x-start) var(--bb-death-atlas-y);
   mix-blend-mode: screen;
-  filter:
-    drop-shadow(0 0 14px rgba(80, 200, 255, .35))
-    brightness(1.05)
-    contrast(1.05);
-
-  /* Fallback animation (works even if atlas isn't a strip) */
-  animation: bbDeathAtlasPulse var(--bb-death-duration, 700ms) ease-out forwards !important;
+  opacity: 1;
+  filter: hue-rotate(var(--bb-fx-tint-hue)) saturate(var(--bb-fx-tint-sat)) brightness(var(--bb-fx-tint-bright))
+          drop-shadow(0 0 14px rgba(0,0,0,.55));
+  animation: bbDeathAtlas var(--bb-death-atlas-ms) steps(var(--bb-death-atlas-frames)) both;
+  will-change: background-position, transform, opacity;
 }
 
-/* FORCE mode loops so you can see it clearly */
-.bb-death.bb-death--force{
-  animation: bbDeathAtlasPulse 900ms ease-out infinite !important;
-}
-
-@keyframes bbDeathAtlasPulse{
-  0%   { opacity: 0; transform: translate(-50%, -50%) scale(calc(var(--bb-death-scale, 1) * .75)); }
-  18%  { opacity: .95; transform: translate(-50%, -50%) scale(calc(var(--bb-death-scale, 1) * 1.05)); }
-  55%  { opacity: .85; transform: translate(-50%, -50%) scale(calc(var(--bb-death-scale, 1) * 1.15)); }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(calc(var(--bb-death-scale, 1) * 1.28)); }
+@keyframes bbDeathAtlas{
+  0%{
+    background-position: var(--bb-death-atlas-x-start) var(--bb-death-atlas-y);
+    opacity: 0;
+    transform: scale(.88);
+  }
+  15%{ opacity: 1; transform: scale(1); }
+  100%{
+    background-position: var(--bb-death-atlas-x-end) var(--bb-death-atlas-y);
+    opacity: 0;
+    transform: scale(1.18);
+  }
 }

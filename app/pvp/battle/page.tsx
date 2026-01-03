@@ -297,14 +297,6 @@ const BOARD_IMG_H = 2796;
 
 const DEBUG_ARENA = true; // debug overlay for arena sizing
 const DEBUG_GRID = true; // mirrored A/B measurement grid (dev only)
-
-// STEP E — FORCE SPRITE PROBE (FX visibility test)
-const FORCE_DEATH_SPRITE = false;
-const DEATH_SPRITE_FRAMES = 8; // tune: 6 / 8 / 10 / 12
-const DEATH_SPRITE_ROW_PCT = 50; // tune: 0 / 50 / 100 (sprite rows), 50 = middle row
-const DEATH_SPRITE_DURATION_MS = 820; // tune: 600–1200
-const DEATH_SPRITE_SCALE = 1.45; // tune: 1.2–1.8 (relative to card)
-
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -1531,7 +1523,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     return (
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
-<div
+            <div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
         }}
@@ -1548,23 +1540,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
-  <div
-    className="bb-fx-anchor"
-    style={
-      {
-        ["--bb-death-frames" as any]: DEATH_SPRITE_FRAMES,
-        ["--bb-death-row" as any]: `${DEATH_SPRITE_ROW_PCT}%`,
-        ["--bb-death-duration" as any]: `${DEATH_SPRITE_DURATION_MS}ms`,
-        ["--bb-death-scale" as any]: DEATH_SPRITE_SCALE,
-      } as any
-    }
-  >
-    {(FORCE_DEATH_SPRITE || isDying) ? (
-      <div className={["bb-death", FORCE_DEATH_SPRITE ? "bb-death--force" : ""].join(" ")} />
-    ) : null}
-  </div>
-  <div className="bb-card-inner">
-
+        <div className="bb-fx-anchor">
+          {isDying ? <div className="bb-death" /> : null}
+        </div>
+        <div className="bb-card-inner">
           <div className="bb-face bb-back">
             <div className="bb-mark">696</div>
           </div>
@@ -1580,7 +1559,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
               shield={unit?.shield ?? 0}
               showCorner={false}
             />
-{unit && (
+            {unit && (
               <div className="bb-fx">
                 {spawned && <div key={`spawn-${spawned.t}-${unit.instanceId}`} className="bb-spawn" />}
 
@@ -1599,7 +1578,9 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     </div>
                   </>
                 )}
-</div>
+
+                {isDying && <div className="bb-death" />}
+              </div>
             )}
 
             <div className="bb-overlay">
