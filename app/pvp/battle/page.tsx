@@ -1483,8 +1483,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     // --- Death FX trigger (local): if hp drops from >0 to 0, play death FX even if battle log didn't emit deathFx.
     const [localIsDying, setLocalIsDying] = useState(false);
-    const [deathTick, setDeathTick] = useState(0);
-    const prevRef = useRef<{ id: string | null; hp: number | null; t?: any }>({ id: null, hp: null });
+const prevRef = useRef<{ id: string | null; hp: number | null; t?: any }>({ id: null, hp: null });
 
     useEffect(() => {
       // reset when unit changes / disappears
@@ -1512,18 +1511,13 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         // trigger death FX
         if (prevRef.current.t) clearTimeout(prevRef.current.t);
         setLocalIsDying(true);
-        setDeathTick((x) => x + 1);
-        prevRef.current.t = setTimeout(() => {
+prevRef.current.t = setTimeout(() => {
           setLocalIsDying(false);
         }, 760);
       }
     }, [unit?.instanceId, unit?.hp]);
 
     // if external deathFx is wired, also restart sprite on that signal
-    useEffect(() => {
-      if (isDying) setDeathTick((x) => x + 1);
-    }, [isDying]);
-
     const hpPct = useMemo(() => {
       if (!unit) return 100;
       const maxHp = Math.max(1, unit.maxHp);
@@ -1569,8 +1563,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       <div className="bb-fx-layer" aria-hidden>
   <div
     className="bb-death"
-    key={`death-${deathTick}`}
-    style={{
+style={{
       ["--bb-death-frames" as any]: 4,
       ["--bb-death-ms" as any]: "520ms",
     }}
@@ -1628,9 +1621,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     </div>
                   </>
                 )}
-
-                {isDying && <div className="bb-death" />}
-              </div>
+</div>
             )}
 
             <div className="bb-overlay">

@@ -277,16 +277,24 @@
   
   /* keep it safe on low-end devices */
   @media (prefers-reduced-motion: reduce){
-    .bb-slot.is-spawn,
-    .bb-slot.is-damage,
-    .bb-slot.is-attack-from,
-    .bb-slot.is-attack-to,
-    .bb-slot.is-dying{ animation: none !important; }
-    .bb-slot.is-damage::after,
-    .bb-slot.is-dying::before,
-    .bb-slot.is-dying .bb-death::before,
-    .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
+  .bb-slot.is-spawn,
+  .bb-slot.is-damage,
+  .bb-slot.is-attack-from,
+  .bb-slot.is-attack-to,
+  .bb-slot.is-dying{ animation: none !important; }
+
+  .bb-slot.is-damage::after,
+  .bb-slot.is-dying::before{ animation: none !important; opacity: 0 !important; }
+
+  /* Keep death FX visible even with reduced motion (static first frame) */
+  .bb-slot.is-dying .bb-death::before{
+    animation: none !important;
+    opacity: 1 !important;
+    background-position: 0% 50% !important;
   }
+  .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
+}
+
 
 
 /* STEP D: Real death FX (sprite) anchored to each card slot */
