@@ -1573,10 +1573,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const activeUnit = unit ?? ghostUnit;
 
     // Vanish + remove after death (UI-only; FX is handled by FxLayer)
-    const [isVanish, setIsVanish] = useState(false);
     const [isHidden, setIsHidden] = useState(false);
-    const vanishTimersRef = useRef<number[]>([]);
-    const vanishStartedForRef = useRef<string | null>(null);
 
     const hpPct = useMemo(() => {
       if (!activeUnit) return 100;
@@ -1593,43 +1590,43 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const isDead = !!activeUnit && (!activeUnit.alive || activeUnit.hp <= 0);
     const isActive = !!activeUnit && !!activeInstance ? activeUnit.instanceId === activeInstance : false;
 
+        // After death animation finishes, remove the card from the table (do NOT touch death FX/CSS).
+    const hideStartedForRef = useRef<string | null>(null);
+
     useEffect(() => {
-      // Always remember the last real unit so we can animate it out
+      // Always remember the last real unit so we can keep it visible during death even if battle state removes it.
       if (unit) setGhostUnit(unit);
 
-      // If we have no unit at all, reset everything.
-      if (!activeUnit) {
-        vanishStartedForRef.current = null;
-        setIsVanish(false);
+      const id = activeUnit?.instanceId ?? null;
+
+      // New unit (or empty slot) resets hidden state.
+      if (!id) {
+        hideStartedForRef.current = null;
         setIsHidden(false);
         return;
       }
 
-      // Start vanish ONCE per unit instance when it becomes dead.
-      if (!isDead) {
-        vanishStartedForRef.current = null;
-        setIsVanish(false);
+      // If we are not dying anymore and a fresh/live unit appears, allow it to render again.
+      if (!isDying && !isDead) {
+        hideStartedForRef.current = null;
         setIsHidden(false);
         return;
       }
 
-      if (vanishStartedForRef.current === activeUnit.instanceId) return;
-      vanishStartedForRef.current = activeUnit.instanceId;
+      // Start "remove from DOM" ONCE per instance when death starts.
+      if (isDying && hideStartedForRef.current !== id) {
+        hideStartedForRef.current = id;
 
-      // Let death FX play first, then vanish, then hide from DOM.
-      // NOTE: do not tie this to short-lived isDying; tie to stable isDead.
-      vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
-      vanishTimersRef.current = [];
-      vanishTimersRef.current.push(window.setTimeout(() => setIsVanish(true), 520));
-      vanishTimersRef.current.push(window.setTimeout(() => setIsHidden(true), 900));
+        // Match CSS: .bb-slot.is-dying { animation: bb_death_collapse 680ms ... }
+        const t = window.setTimeout(() => {
+          setIsHidden(true);
+        }, 720);
 
-      return () => {
-        vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
-        vanishTimersRef.current = [];
-      };
-    }, [unit?.instanceId, activeUnit?.instanceId, isDead]);
+        return () => window.clearTimeout(t);
+      }
+    }, [unit?.instanceId, activeUnit?.instanceId, isDying, isDead]);
 
-    const atk = useMemo(() => {
+const atk = useMemo(() => {
       if (!unit || !attackFx || attackFx.length === 0) return null;
       const last = attackFx[attackFx.length - 1];
       const isFrom = last.fromId === unit.instanceId;
