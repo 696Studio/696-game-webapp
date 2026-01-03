@@ -69,7 +69,7 @@
   position: absolute;
   inset: -18px; /* let burst spill outside card */
   pointer-events: none;
-  z-index: 120;
+  z-index: 50;
 }
 .bb-death{
   position: absolute;
@@ -80,14 +80,14 @@
   content:"";
   position:absolute;
   inset:0;
-  background-image: url("/fx/retro/death_burst_strip.png");
+  background-image: url("/fx/death_burst.png");
   background-repeat: no-repeat;
   background-position: 0 50%;
-  background-size: calc(var(--bb-death-frames, 4) * 100%) 100%;
+  background-size: auto 100%;
   transform: translateZ(0) scale(1.05);
   filter: contrast(1.15) brightness(1.1) saturate(1.1);
   opacity: 1;
-  animation: bb_death_sprite var(--bb-death-ms, 520ms) steps(var(--bb-death-frames, 4)) both;
+  animation: bb_death_sprite 680ms steps(var(--bb-death-frames, 8)) both;
 }
 @keyframes bb_death_sprite{
   from { background-position: 0 50%; opacity: 1; }
@@ -236,7 +236,7 @@
     width: 320px;
     height: 320px;
     transform: translate(-50%,-55%);
-    background-image: url("/fx/retro/death_burst_strip.png");
+    background-image: url("/fx/death_burst.png");
     background-repeat: no-repeat;
     background-size: 800% 100%;
     image-rendering: auto;
@@ -382,4 +382,42 @@
   0%   { background-position: 0% 50%;   opacity: 0; transform: translate(-50%, -55%) scale(.88); }
   12%  { opacity: 1; }
   100% { background-position: 100% 50%; opacity: 0; transform: translate(-50%, -55%) scale(1.18); }
+}
+
+
+/* =========================================================
+   FINAL OVERRIDE — DEATH STRIP (guaranteed)
+   This wins the cascade and makes sure the strip is visible.
+   Asset must exist at: public/fx/retro/death_burst_strip.png
+   ========================================================= */
+.bb-fx-layer{ z-index: 9999 !important; }
+.bb-death{ position: absolute; inset: 0; pointer-events:none; }
+
+/* Disable ash overlay so it doesn't read as "only darken" */
+.bb-slot.is-dying::before{ display:none !important; }
+
+/* Death strip animation (4 frames) */
+.bb-slot.is-dying .bb-death::before{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:50%;
+  width: 260px;
+  height: 260px;
+  transform: translate(-50%,-55%) scale(0.95);
+  background-image: url("/fx/retro/death_burst_strip.png") !important;
+  background-repeat:no-repeat;
+  background-position: 0% 50%;
+  background-size: 400% 100%;
+  opacity:1;
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 18px rgba(0,0,0,.65));
+  animation: bb_death_strip_final var(--bb-death-ms, 520ms) steps(var(--bb-death-frames, 4)) both;
+  will-change: background-position, transform, opacity;
+}
+
+@keyframes bb_death_strip_final{
+  0%{ background-position: 0% 50%; opacity: 0; transform: translate(-50%,-55%) scale(.88); }
+  12%{ opacity: 1; }
+  100%{ background-position: 100% 50%; opacity: 0; transform: translate(-50%,-55%) scale(1.18); }
 }

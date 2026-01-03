@@ -1481,6 +1481,49 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const power = typeof card?.base_power === "number" ? card.base_power : null;
     const img = resolveCardArtUrl(card?.image_url || null);
 
+    // --- Death FX trigger (local): if hp drops from >0 to 0, play death FX even if battle log didn't emit deathFx.
+    const [localIsDying, setLocalIsDying] = useState(false);
+    const [deathTick, setDeathTick] = useState(0);
+    const prevRef = useRef<{ id: string | null; hp: number | null; t?: any }>({ id: null, hp: null });
+
+    useEffect(() => {
+      // reset when unit changes / disappears
+      if (!unit) {
+        if (prevRef.current.t) clearTimeout(prevRef.current.t);
+        prevRef.current = { id: null, hp: null };
+        setLocalIsDying(false);
+        return;
+      }
+
+      const curId = unit.instanceId;
+      const curHp = unit.hp;
+
+      if (prevRef.current.id !== curId) {
+        if (prevRef.current.t) clearTimeout(prevRef.current.t);
+        prevRef.current = { id: curId, hp: curHp };
+        setLocalIsDying(false);
+        return;
+      }
+
+      const prevHp = prevRef.current.hp;
+      prevRef.current.hp = curHp;
+
+      if (typeof prevHp === "number" && prevHp > 0 && curHp <= 0) {
+        // trigger death FX
+        if (prevRef.current.t) clearTimeout(prevRef.current.t);
+        setLocalIsDying(true);
+        setDeathTick((x) => x + 1);
+        prevRef.current.t = setTimeout(() => {
+          setLocalIsDying(false);
+        }, 760);
+      }
+    }, [unit?.instanceId, unit?.hp]);
+
+    // if external deathFx is wired, also restart sprite on that signal
+    useEffect(() => {
+      if (isDying) setDeathTick((x) => x + 1);
+    }, [isDying]);
+
     const hpPct = useMemo(() => {
       if (!unit) return 100;
       const maxHp = Math.max(1, unit.maxHp);
@@ -1522,10 +1565,11 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [unit]);
 
     return (
-      <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
+      <div className={["bb-slot", (localIsDying || isDying) ? "is-dying" : ""].join(" ")}>
       <div className="bb-fx-layer" aria-hidden>
   <div
     className="bb-death"
+    key={`death-${deathTick}`}
     style={{
       ["--bb-death-frames" as any]: 4,
       ["--bb-death-ms" as any]: "520ms",
