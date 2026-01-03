@@ -1521,45 +1521,14 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       return arr.slice(0, 3);
     }, [unit]);
 
-    
-    // --- Death FX placement (stable): compute position based on card rect, not slot
-    const cardRef = useRef<HTMLDivElement | null>(null);
-    const fxAnchorRef = useRef<HTMLDivElement | null>(null);
-    const [deathStyle, setDeathStyle] = useState<React.CSSProperties | null>(null);
-
-    useEffect(() => {
-      if (!isDying) {
-        setDeathStyle(null);
-        return;
-      }
-      const cardEl = cardRef.current;
-      const anchorEl = fxAnchorRef.current;
-      if (!cardEl || !anchorEl) return;
-
-      const a = anchorEl.getBoundingClientRect();
-      const c = cardEl.getBoundingClientRect();
-
-      const cx = (c.left + c.right) / 2 - a.left;
-      const cy = (c.top + c.bottom) / 2 - a.top;
-
-      const size = Math.round(Math.min(c.width, c.height) * 1.15);
-      const yNudge = Math.round(c.height * 0.06);
-
-      setDeathStyle({
-        left: `${cx}px`,
-        top: `${cy - yNudge}px`,
-        width: `${size}px`,
-        height: `${size}px`,
-      });
-    }, [isDying, unit?.instanceId, unit?.hp]);
-return (
+    return (
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
-      <div className="bb-fx-anchor" ref={fxAnchorRef}>
+      <div className="bb-fx-anchor">
         
         {isDying ? (
-          <div className="bb-death" style={deathStyle ?? undefined}>
+          <div className="bb-fx-death" aria-hidden="true">
             <img
-              className="bb-death-strip"
+              className="bb-fx-death__img"
               src="/fx/retro/death_burst_strip.png"
               alt=""
               draggable={false}
@@ -1569,7 +1538,6 @@ return (
       </div>
       <div
         ref={(el) => {
-          cardRef.current = el;
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
         }}
         className={[
@@ -1621,7 +1589,7 @@ return (
                   </>
                 )}
 
-                {isDying && <div className="bb-death" />}
+                {/* death FX rendered in bb-fx-anchor */}
               </div>
             )}
 

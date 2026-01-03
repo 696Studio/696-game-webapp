@@ -332,52 +332,40 @@
   from{ background-position: 0% 50%; opacity:1; }
   to{ background-position: 100% 50%; opacity:0; }
 }
-
-/* =========================================================
-   DEATH FX (SPRITE STRIP) — FINAL OVERRIDE
-   Uses: /public/fx/retro/death_burst_strip.png
-   Renders via <img> translateX + steps() to avoid background bleeding.
-========================================================= */
-
-.bb-fx-anchor {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 50;
-}
-
-/* Kill any legacy smoke/ash overlay that makes it look like "only darkening" */
-.bb-slot.is-dying::before {
+/* ==== FINAL DEATH FX (strip, no bleeding) ==== */
+/* Disable legacy death implementations */
+.bb-death,
+.bb-slot.is-dying .bb-death::before{
+  display: none !important;
   content: none !important;
+  background: none !important;
 }
 
-.bb-slot.is-dying .bb-death {
+/* New death burst using an <img> strip masked by overflow:hidden */
+.bb-fx-death{
   position: absolute;
-  /* left/top/width/height are injected inline from page.tsx (card rect) */
-  transform: translate(-50%, -50%);
+  left: 50%;
+  top: 50%;
+  width: 120%;
+  height: 120%;
+  transform: translate(-50%, -52%); /* slight up-bias looks centered */
+  pointer-events: none;
+  z-index: 999;
   overflow: hidden;
+  border-radius: 18px; /* match card rounding */
   opacity: 1 !important;
   filter: none !important;
-  pointer-events: none;
-  z-index: 60;
-  --bb-death-frames: 4;
-  --bb-death-ms: 520ms;
 }
 
-.bb-slot.is-dying .bb-death-strip {
-  display: block;
+.bb-fx-death__img{
   height: 100%;
-  width: calc(var(--bb-death-frames) * 100%);
-  transform: translate3d(0, 0, 0);
+  width: 400%;           /* 4 frames */
+  object-fit: cover;
+  transform: translateX(0);
   will-change: transform;
-  animation: bb-death-strip var(--bb-death-ms) steps(var(--bb-death-frames)) 1 forwards;
+  animation: bbDeathStripX 520ms steps(4) 1 both;
 }
 
-@keyframes bb-death-strip {
-  from {
-    transform: translate3d(0, 0, 0);
-  }
-  to {
-    transform: translate3d(calc(-100% * (var(--bb-death-frames) - 1) / var(--bb-death-frames)), 0, 0);
-  }
+@keyframes bbDeathStripX{
+  to { transform: translateX(-75%); } /* (frames-1)/frames = 3/4 */
 }
