@@ -1528,7 +1528,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
       <div className="bb-fx-anchor">
         {(FORCE_DEATH_SPRITE || isDying) ? (
-          <div className={["bb-death", FORCE_DEATH_SPRITE ? "bb-death--probe" : ""].join(" ")} />
+          <div className={["bb-death", FORCE_DEATH_SPRITE ? "bb-death--force" : ""].join(" ")} />
         ) : null}
       </div>
       <div
