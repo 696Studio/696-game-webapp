@@ -1608,21 +1608,28 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       return arr.slice(0, 3);
     }, [unit]);
 
+    // Keep last seen unit so we can animate it out even if battle state removes it immediately.
+    const [ghostUnit, setGhostUnit] = useState<UnitView | null>(null);
+    const activeUnit = unit ?? ghostUnit;
+
 // Vanish + remove after death (UI-only; FX is handled by FxLayer)
     const [isVanish, setIsVanish] = useState(false);
     const [isHidden, setIsHidden] = useState(false);
     const vanishTimersRef = useRef<number[]>([]);
     const vanishStartedForRef = useRef<string | null>(null);
 
-    const isDead = !!unit && (!unit.alive || unit.hp <= 0);
+    const isDead = !!activeUnit && (!activeUnit.alive || activeUnit.hp <= 0);
 
     useEffect(() => {
-      // Clear any prior timers when unit changes/unmounts
+      // Always remember the last real unit so we can animate it out
+      if (unit) setGhostUnit(unit);
+
+      // Clear any prior timers when the identity changes
       vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
       vanishTimersRef.current = [];
 
-      // If there's no unit, reset and bail
-      if (!unit) {
+      // If we have neither a live unit nor a ghost, reset and bail
+      if (!activeUnit) {
         vanishStartedForRef.current = null;
         setIsVanish(false);
         setIsHidden(false);
@@ -1638,32 +1645,38 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         return;
       }
 
-      if (vanishStartedForRef.current === unit.instanceId) return;
-      vanishStartedForRef.current = unit.instanceId;
+      if (vanishStartedForRef.current === activeUnit.instanceId) return;
+      vanishStartedForRef.current = activeUnit.instanceId;
 
       // Let death FX play first, then vanish, then hide from DOM.
       vanishTimersRef.current.push(window.setTimeout(() => setIsVanish(true), 520));
-      vanishTimersRef.current.push(window.setTimeout(() => setIsHidden(true), 860));
+      vanishTimersRef.current.push(
+        window.setTimeout(() => {
+          setIsHidden(true);
+          setGhostUnit(null);
+        }, 860)
+      );
 
       return () => {
         vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
         vanishTimersRef.current = [];
       };
-    }, [unit?.instanceId, isDead]);
+    }, [unit?.instanceId, activeUnit?.instanceId, isDead]);
 
-    const renderUnit = isHidden ? null : unit;
+    const renderUnit = isHidden ? null : activeUnit;
+    const isDyingUi = !!renderUnit && isDead && !isHidden;
 
 
 
     return (
-      <div className={["bb-slot", isDying && !isHidden ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}>
       <div className="bb-fx-anchor">
         
-        {isDying && !isHidden ? <div className="bb-death" /> : null}
+        {isDyingUi ? <div className="bb-death" /> : null}
       </div>
       <div
         ref={(el) => {
-          if (unit?.instanceId) unitElByIdRef.current[unitKey] = el;
+          if (renderUnit?.instanceId) unitElByIdRef.current[unitKey] = el;
         }}
         className={[
           "bb-card",
@@ -1674,7 +1687,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           isActive ? "is-active" : "",
           spawned ? "is-spawn" : "",
           dmg ? "is-damage" : "",
-          isDying ? "is-dying" : "",
+          isDyingUi ? "is-dying" : "",
         ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
