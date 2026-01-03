@@ -396,3 +396,50 @@
   to{ transform: translate(-50%, -55%) scale(1.08); }
 }
 
+/* =========================================================
+   DEATH FX — STRIP (exported from atlas)
+   File: public/fx/retro/death_burst_strip.png
+   Frames: 4 (horizontal strip)
+   ========================================================= */
+
+/* Kill legacy ash/smoke overlay so death reads as burst, not fog */
+.bb-slot.is-dying::before{ display:none !important; }
+
+/* Make sure FX layer is above card and not clipped */
+.bb-slot{ position: relative; overflow: visible; }
+.bb-fx-anchor{
+  position:absolute;
+  inset: 0;
+  z-index: 9999;
+  pointer-events:none;
+  overflow: visible;
+}
+
+/* The burst itself */
+.bb-fx-anchor .bb-death{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width: 140%;
+  height: 140%;
+  transform: translate(-50%,-55%);
+  background-image: url("/fx/retro/death_burst_strip.png");
+  background-repeat: no-repeat;
+  background-position: 0% 50%;
+  background-size: calc(var(--bb-death-frames, 4) * 100%) 100%;
+  mix-blend-mode: screen;
+  opacity: 1;
+  will-change: background-position, transform, opacity;
+  filter:
+    hue-rotate(var(--bb-fx-tint-hue, 195deg))
+    saturate(var(--bb-fx-tint-sat, 1.6))
+    brightness(var(--bb-fx-tint-bright, 1.05))
+    drop-shadow(0 0 14px rgba(0,0,0,.55));
+  animation: bbDeathStrip var(--bb-death-ms, 520ms) steps(var(--bb-death-frames, 4)) both;
+}
+
+@keyframes bbDeathStrip{
+  0%   { background-position: 0% 50%;   opacity: 0; transform: translate(-50%,-55%) scale(.9); }
+  15%  { opacity: 1; transform: translate(-50%,-55%) scale(1); }
+  100% { background-position: 100% 50%; opacity: 0; transform: translate(-50%,-55%) scale(1.18); }
+}

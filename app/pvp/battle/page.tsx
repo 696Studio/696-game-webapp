@@ -441,7 +441,6 @@ function BattleInner() {
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
   const [layoutTick, setLayoutTick] = useState(0);
-  const [deathTick, setDeathTick] = useState(0);
 
   const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
 
@@ -1260,11 +1259,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return set;
   }, [timeline, t]);
 
-  useEffect(() => {
-    if (deathFxByInstance.size === 0) return;
-    setDeathTick((t) => t + 1);
-  }, [deathFxByInstance.size]);
-
   function getCenterInArena(instanceId: string) {
     const arenaEl = arenaRef.current;
     const el = unitElByIdRef.current[instanceId];
@@ -1538,12 +1532,11 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         className="bb-fx-anchor"
         style={
           {
-            ["--bb-death-atlas-frames" as any]: DEATH_ATLAS_FRAMES,
-            ["--bb-death-atlas-ms" as any]: `${DEATH_ATLAS_DURATION_MS}ms`,
+            ["--bb-death-frames" as any]: 4,
+            ["--bb-death-ms" as any]: "520ms",
           } as React.CSSProperties
-        }
-      >
-        {isDying ? <div key={`death-${deathTick ?? 0}`} className="bb-death" /> : null}
+        }>
+        {isDying ? <div key={`death-${unit?.instanceId ?? "x"}`} className="bb-death" /> : null}
       </div>
       <div
         ref={(el) => {
