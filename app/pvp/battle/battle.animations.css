@@ -71,7 +71,7 @@
 
 /* After unit is dead, force it to stay flipped (no transparency) */
 .bb-card.is-dead{
-  opacity: 1 !important;
+  opacity: 1;
 }
 .bb-card.is-dead .bb-card-inner{
   transform: rotateY(180deg) !important;

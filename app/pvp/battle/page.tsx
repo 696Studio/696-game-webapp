@@ -1653,7 +1653,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       vanishTimersRef.current.push(
         window.setTimeout(() => {
           setIsHidden(true);
-          setGhostUnit(null);
         }, 860)
       );
 
