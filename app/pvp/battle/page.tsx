@@ -2811,16 +2811,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                   top: b.y,
                   width: b.size,
                   height: b.size,
+                  ["--bb-strip-scale" as any]: b.size / 59,
                 }}
               >
-                {b.kind === "death" && (
-                  <img
-                    className="bb-fx-burst__img"
-                    src="/fx/retro/death_burst_strip.png"
-                    alt=""
-                    draggable={false}
-                  />
-                )}
+                {b.kind === "death" && <div className="bb-fx-burst__atlas" />}
               </div>
             ))}
           </div>
