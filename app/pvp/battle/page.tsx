@@ -297,6 +297,9 @@ const BOARD_IMG_H = 2796;
 
 const DEBUG_ARENA = true; // debug overlay for arena sizing
 const DEBUG_GRID = true; // mirrored A/B measurement grid (dev only)
+
+// STEP E — FORCE SPRITE PROBE (FX visibility test)
+const FORCE_DEATH_SPRITE = true;
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -1524,8 +1527,9 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return (
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
       <div className="bb-fx-anchor">
-        
-        {isDying ? <div className="bb-death" /> : null}
+        {(FORCE_DEATH_SPRITE || isDying) ? (
+          <div className={["bb-death", FORCE_DEATH_SPRITE ? "bb-death--probe" : ""].join(" ")} />
+        ) : null}
       </div>
       <div
         ref={(el) => {
@@ -1579,9 +1583,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     </div>
                   </>
                 )}
-
-                {isDying && <div className="bb-death" />}
-              </div>
+</div>
             )}
 
             <div className="bb-overlay">

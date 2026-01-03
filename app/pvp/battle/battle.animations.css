@@ -333,3 +333,56 @@
   to{ background-position: 100% 50%; opacity:0; }
 }
 
+
+
+/* =========================================================
+   STEP E — FORCE SPRITE PROBE (override)
+   Goal: prove .bb-death renders ABOVE cards (even without death)
+   ========================================================= */
+.bb-fx-anchor{
+  position: absolute;
+  inset: 0;
+  z-index: 999;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* PROBE: loud, impossible-to-miss */
+.bb-death.bb-death--probe{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 220%;
+  height: 220%;
+  transform: translate(-50%, -50%);
+  border-radius: 18px;
+
+  /* visible even if image fails */
+  background-color: rgba(255, 0, 170, 0.55);
+  border: 4px solid rgba(255, 230, 0, 0.95);
+  box-shadow: 0 0 0 6px rgba(0,0,0,0.25), 0 0 40px rgba(255, 0, 170, 0.55);
+
+  /* try sprite too (optional in STEP 1) */
+  background-image: url("/fx/retro/death_burst.png");
+  background-repeat: no-repeat;
+  background-position: 0% 50%;
+  background-size: 800% 100%;
+
+  mix-blend-mode: screen;
+  opacity: 1;
+
+  animation:
+    bbProbePulse 900ms ease-in-out infinite,
+    bbProbeSprite 1100ms steps(8) infinite;
+}
+
+@keyframes bbProbePulse{
+  0%{ transform: translate(-50%, -50%) scale(0.96); filter: saturate(1.2) brightness(1.05); }
+  50%{ transform: translate(-50%, -50%) scale(1.03); filter: saturate(1.6) brightness(1.15); }
+  100%{ transform: translate(-50%, -50%) scale(0.96); filter: saturate(1.2) brightness(1.05); }
+}
+
+@keyframes bbProbeSprite{
+  from{ background-position: 0% 50%; }
+  to{ background-position: 100% 50%; }
+}
