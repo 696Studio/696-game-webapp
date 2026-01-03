@@ -504,3 +504,106 @@
   85%  { background-position: 100% var(--bb-death-row, 50%); opacity: 1; }
   100% { background-position: 100% var(--bb-death-row, 50%); opacity: 0; }
 }
+
+/* =========================================================
+   STEP FINAL — DEATH FX RENDER (SINGLE SOURCE OF TRUTH)
+   - Keeps existing UI/HUD intact.
+   - Adds procedural burst (always animated) + optional sprite strip.
+   - Sprite strip EXPECTATION (if you ever replace the asset):
+     /public/fx/retro/death_burst.png = 1 row, N frames horizontally.
+   ========================================================= */
+
+/* Make card a safe positioning context for FX */
+.bb-card{ position: relative; overflow: visible; }
+
+/* Anchor bound to the card box (NOT the HUD row) */
+.bb-fx-anchor{
+  position: absolute !important;
+  inset: -6px !important;
+  z-index: 999 !important;
+  pointer-events: none !important;
+  overflow: visible !important;
+}
+
+/* --- Procedural burst (works even if sprite sheet is an atlas) --- */
+.bb-burst{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 120%;
+  height: 120%;
+  transform: translate(-50%, -50%) scale(.7);
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+
+  /* layered energy + particles */
+  background-image:
+    radial-gradient(circle at 50% 50%, rgba(140,240,255,.85), rgba(140,240,255,0) 58%),
+    radial-gradient(circle at 35% 40%, rgba(255,255,255,.55), rgba(255,255,255,0) 34%),
+    radial-gradient(circle at 60% 65%, rgba(120,220,255,.45), rgba(120,220,255,0) 40%),
+    radial-gradient(circle at 18% 58%, rgba(140,240,255,.35), rgba(140,240,255,0) 26%),
+    radial-gradient(circle at 78% 38%, rgba(140,240,255,.35), rgba(140,240,255,0) 26%);
+  filter: blur(.2px) drop-shadow(0 0 16px rgba(120,220,255,.35));
+  mix-blend-mode: screen;
+  will-change: transform, opacity;
+}
+
+.bb-slot.is-dying .bb-burst{
+  animation: bbBurst 520ms var(--bb-ease-out, cubic-bezier(.18,.9,.22,1)) both;
+}
+
+@keyframes bbBurst{
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(.55) rotate(0deg); }
+  18%  { opacity: .95; transform: translate(-50%, -50%) scale(1.02) rotate(8deg); }
+  60%  { opacity: .55; transform: translate(-50%, -50%) scale(1.28) rotate(18deg); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.52) rotate(26deg); }
+}
+
+/* --- Optional sprite strip layer (plays if asset is a strip; otherwise harmless) --- */
+.bb-death{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--bb-death-scale, 1.25) * 100%);
+  height: calc(var(--bb-death-scale, 1.25) * 100%);
+  transform: translate(-50%, -50%);
+
+  background-image: url("/fx/retro/death_burst.png");
+  background-repeat: no-repeat;
+  background-position: 0% var(--bb-death-row, 50%);
+  background-size: calc(var(--bb-death-frames, 8) * 100%) 100%;
+
+  opacity: 0;
+  pointer-events: none;
+  will-change: background-position, opacity, transform;
+  filter:
+    hue-rotate(var(--bb-fx-tint-hue, 195deg))
+    saturate(var(--bb-fx-tint-sat, 1.6))
+    brightness(var(--bb-fx-tint-bright, 1.05))
+    drop-shadow(0 0 10px rgba(0,0,0,0.55));
+  mix-blend-mode: screen;
+}
+
+/* FORCE tuning: infinite loop so motion is obvious (dev only) */
+.bb-death.bb-death--force{
+  opacity: 1;
+  animation: bbDeathSprite var(--bb-death-duration, 820ms) steps(var(--bb-death-frames, 8)) infinite !important;
+}
+
+/* Real death: play once + fade out */
+.bb-slot.is-dying .bb-death{
+  opacity: 1;
+  animation: bbDeathSpriteFade var(--bb-death-duration, 820ms) steps(var(--bb-death-frames, 8)) forwards !important;
+}
+
+@keyframes bbDeathSprite{
+  from { background-position:   0% var(--bb-death-row, 50%); }
+  to   { background-position: 100% var(--bb-death-row, 50%); }
+}
+
+@keyframes bbDeathSpriteFade{
+  0%   { background-position:   0% var(--bb-death-row, 50%); opacity: 1; }
+  85%  { background-position: 100% var(--bb-death-row, 50%); opacity: 1; }
+  100% { background-position: 100% var(--bb-death-row, 50%); opacity: 0; }
+}
