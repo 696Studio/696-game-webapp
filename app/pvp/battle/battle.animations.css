@@ -334,95 +334,153 @@
 }
 
 
-/* =========================================================
-   DEATH FX — ATLAS MODE (OVERRIDE)
-   death_burst.png is an FX ATLAS (many icons), NOT a simple strip.
-   We render the burst via ::before and animate within a chosen region.
-   Tuning variables are set from page.tsx on .bb-fx-anchor.
-   ========================================================= */
 
-/* Disable legacy strip-on-element animation */
-.bb-fx-anchor .bb-death{
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: none !important;
-  animation: none !important;
-  filter: none !important;
+/* =========================================================
+   PATH A — ATLAS PICK (death_burst.png is an FX ATLAS, not a strip)
+   We animate by sliding within a chosen atlas region.
+   TUNE HERE ONLY if you want a different death look.
+   ========================================================= */
+:root{
+  /* Atlas-tuned defaults (best-guess for the "death burst" row you highlighted) */
+  --bb-death-atlas-frames: 6;
+  --bb-death-atlas-size-x: 800%;
+  --bb-death-atlas-size-y: 800%;
+  --bb-death-atlas-y: 74%;
+  --bb-death-atlas-x-start: 68%;
+  --bb-death-atlas-x-end: 92%;
+  --bb-death-atlas-ms: 720ms;
 }
 
-/* Keep FX above CardArt + overlays */
+/* Kill ash/smoke overlay while we use atlas death */
+.bb-slot.is-dying::before{ display:none !important; }
+
+/* Anchor is now INSIDE .bb-card (page.tsx), so pin to card bounds */
 .bb-card{ position: relative; }
 .bb-card .bb-fx-anchor{
   position:absolute;
   inset:0;
-  z-index: 60;
+  z-index: 9999;
   pointer-events:none;
   overflow: visible;
 }
 
-/* Actual atlas burst */
-.bb-card .bb-fx-anchor .bb-death::before{
-  content:"";
+/* Base container (no radial smoke / no legacy animation) */
+.bb-card .bb-fx-anchor .bb-death{
   position:absolute;
   left:50%;
   top:50%;
-  width: 170%;
-  height: 170%;
-  transform: translate(-50%,-56%);
-
-  background-image: url("/fx/retro/death_burst.png");
-  background-repeat: no-repeat;
-
-  /* Assume ~8x8 atlas grid (works as a solid baseline) */
-  background-size: 800% 800%;
-
-  /* Default region (tuned to a "burst"-ish row on your screenshot)
-     You can tweak these 3 values if we want a different death look. */
-  --bb-death-x-start: 62%;
-  --bb-death-x-end: 92%;
-  --bb-death-y: 74%;
-
-  background-position: var(--bb-death-x-start) var(--bb-death-y);
-
-  mix-blend-mode: screen;
-  opacity: 0;
-  filter:
-    hue-rotate(var(--bb-fx-tint-hue, 195deg))
-    saturate(var(--bb-fx-tint-sat, 1.6))
-    brightness(var(--bb-fx-tint-bright, 1.05))
-    drop-shadow(0 0 14px rgba(0,0,0,.55));
-
-  animation: bbDeathAtlas var(--bb-death-duration, 820ms)
-             steps(var(--bb-death-frames, 8)) both;
-  will-change: background-position, transform, opacity;
-}
-
-/* Halo so even transparent frames read as impact */
-.bb-card .bb-fx-anchor .bb-death::after{
-  content:"";
-  position:absolute;
-  left:50%;
-  top:50%;
-  width: 145%;
-  height: 145%;
-  transform: translate(-50%,-56%);
-  background: radial-gradient(circle at 50% 50%, rgba(120,220,255,.28), rgba(120,220,255,0) 64%);
-  mix-blend-mode: screen;
-  opacity:0;
-  animation: bbDeathHalo 520ms var(--bb-ease-out, cubic-bezier(.18,.9,.22,1)) both;
+  width: 140%;
+  height: 140%;
+  transform: translate(-50%, -52%);
+  border-radius: 18px;
+  background: none !important;
+  animation: none !important;
   pointer-events:none;
 }
 
+/* Atlas-driven burst */
+.bb-card .bb-fx-anchor .bb-death::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background-image: url("/fx/retro/death_burst.png");
+  background-repeat: no-repeat;
+  background-size: var(--bb-death-atlas-size-x) var(--bb-death-atlas-size-y);
+  background-position: var(--bb-death-atlas-x-start) var(--bb-death-atlas-y);
+  mix-blend-mode: screen;
+  opacity: 1;
+  filter: hue-rotate(var(--bb-fx-tint-hue)) saturate(var(--bb-fx-tint-sat)) brightness(var(--bb-fx-tint-bright))
+          drop-shadow(0 0 14px rgba(0,0,0,.55));
+  animation: bbDeathAtlas var(--bb-death-atlas-ms) steps(var(--bb-death-atlas-frames)) both;
+  will-change: background-position, transform, opacity;
+}
+
 @keyframes bbDeathAtlas{
-  0%{ background-position: var(--bb-death-x-start) var(--bb-death-y); opacity:0; transform: translate(-50%,-56%) scale(.88); }
-  15%{ opacity:1; transform: translate(-50%,-56%) scale(1.02); }
-  100%{ background-position: var(--bb-death-x-end) var(--bb-death-y); opacity:0; transform: translate(-50%,-56%) scale(1.18); }
+  0%{
+    background-position: var(--bb-death-atlas-x-start) var(--bb-death-atlas-y);
+    opacity: 0;
+    transform: scale(.88);
+  }
+  15%{ opacity: 1; transform: scale(1); }
+  100%{
+    background-position: var(--bb-death-atlas-x-end) var(--bb-death-atlas-y);
+    opacity: 0;
+    transform: scale(1.18);
+  }
 }
 
-@keyframes bbDeathHalo{
-  0%{ opacity:0; transform: translate(-50%,-56%) scale(.92); }
-  25%{ opacity:.8; transform: translate(-50%,-56%) scale(1.02); }
-  100%{ opacity:0; transform: translate(-50%,-56%) scale(1.2); }
+/* =========================================================
+   2026-01-03 — PATH A (ATLAS) DEATH FX — AUTHORITATIVE OVERRIDE
+   - Uses FX atlas: /public/fx/retro/deathy_burst.png
+   - FX is anchored to .bb-slot sibling layer (NOT inside .bb-card),
+     so card darkening/filters do not kill the FX.
+   ========================================================= */
+:root{
+  /* Tune these to pick the exact burst region in the atlas */
+  --bb-death-atlas-frames: 6;
+  --bb-death-atlas-size-x: 800%;
+  --bb-death-atlas-size-y: 800%;
+  --bb-death-atlas-y: 74%;
+  --bb-death-atlas-x-start: 68%;
+  --bb-death-atlas-x-end: 92%;
+  --bb-death-atlas-ms: 720ms;
 }
 
+/* Disable the legacy ash/smoke overlay so it doesn't read as "smoke" death */
+.bb-slot.is-dying::before{ display: none !important; }
+
+/* FX sibling layer (outside the card) */
+.bb-slot{ position: relative; overflow: visible; }
+.bb-slot > .bb-fx-anchor{
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  overflow: visible;
+}
+
+/* Center burst on the card area (not HUD) */
+.bb-slot > .bb-fx-anchor .bb-death{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 140%;
+  height: 140%;
+  transform: translate(-50%, -55%);
+  border-radius: 18px;
+  pointer-events: none;
+}
+
+/* Atlas-driven animation */
+.bb-slot.is-dying > .bb-fx-anchor .bb-death::before{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("/fx/retro/deathy_burst.png") !important;
+  background-repeat: no-repeat;
+  background-size: var(--bb-death-atlas-size-x) var(--bb-death-atlas-size-y);
+  background-position: var(--bb-death-atlas-x-start) var(--bb-death-atlas-y);
+  mix-blend-mode: screen;
+  opacity: 1;
+  filter:
+    hue-rotate(var(--bb-fx-tint-hue))
+    saturate(var(--bb-fx-tint-sat))
+    brightness(var(--bb-fx-tint-bright))
+    drop-shadow(0 0 14px rgba(0,0,0,.55));
+  animation: bbDeathAtlas var(--bb-death-atlas-ms) steps(var(--bb-death-atlas-frames)) both;
+  will-change: background-position, transform, opacity;
+}
+
+@keyframes bbDeathAtlas{
+  0%{
+    background-position: var(--bb-death-atlas-x-start) var(--bb-death-atlas-y);
+    opacity: 0;
+    transform: scale(.88);
+  }
+  15%{ opacity: 1; transform: scale(1); }
+  100%{
+    background-position: var(--bb-death-atlas-x-end) var(--bb-death-atlas-y);
+    opacity: 0;
+    transform: scale(1.18);
+  }
+}
