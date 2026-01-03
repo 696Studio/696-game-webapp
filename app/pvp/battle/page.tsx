@@ -467,12 +467,9 @@ function BattleInner() {
     const r = targetEl?.getBoundingClientRect();
     if (!r) return;
 
-    const base = Math.max(r.width, r.height);
-    const size = Math.max(72, Math.min(160, base * 0.95));
-    const FX_OFFSET_X = 0;
-    const FX_OFFSET_Y = 0;
-    const x = (r.left - arenaRect.left) + r.width / 2 + FX_OFFSET_X;
-    const y = (r.top - arenaRect.top) + r.height / 2 + FX_OFFSET_Y;
+    const size = Math.max(96, Math.min(220, Math.max(r.width, r.height) * 1.25));
+    const x = (r.left - arenaRect.left) + r.width / 2;
+    const y = (r.top - arenaRect.top) + r.height / 2;
 
     const id = `${instanceId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const burst: FxBurst = {
