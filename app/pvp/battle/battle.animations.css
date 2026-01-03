@@ -335,29 +335,42 @@
 
 
 
-/* === GLOBAL FX MANAGER (reliable) === */
-.board.arena { position: relative; }
-.bb-global-fx-layer {
+/* =========================================================
+   FX MANAGER (GUARANTEED) — DEATH BURST STRIP
+   This layer is independent from card DOM (opacity/filter/overflow).
+   Asset must exist at: /public/fx/retro/death_burst_strip.png
+   Served as: /fx/retro/death_burst_strip.png
+========================================================= */
+
+.bb-fx-layer{
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 9999;
 }
-.bb-global-death {
+
+.bb-fx-burst{
   position: absolute;
-  transform: translateZ(0);
-  background-image: url("/fx/retro/death_burst_strip.png");
+  transform: translate(-50%, -50%);
   background-repeat: no-repeat;
   background-position: 0% 50%;
   background-size: 400% 100%;
-  will-change: background-position, opacity, transform;
-  animation: bb-death-strip 650ms steps(4) forwards;
+  image-rendering: auto;
+  will-change: background-position, transform, opacity;
 }
-@keyframes bb-death-strip {
-  0% { background-position: 0% 50%; opacity: 1; transform: scale(0.95); }
-  60% { opacity: 1; transform: scale(1.05); }
-  100% { background-position: 100% 50%; opacity: 0; transform: scale(1.15); }
+
+.bb-fx-burst--death{
+  background-image: url("/fx/retro/death_burst_strip.png");
+  animation: bb-death-strip 520ms steps(4) forwards, bb-death-pop 520ms ease-out forwards;
 }
-@media (prefers-reduced-motion: reduce) {
-  .bb-global-death { animation: none; opacity: 1; }
+
+@keyframes bb-death-strip{
+  from{ background-position: 0% 50%; }
+  to{ background-position: 100% 50%; }
+}
+
+@keyframes bb-death-pop{
+  0%{ transform: translate(-50%, -50%) scale(0.85); opacity: 0.0; }
+  10%{ opacity: 1; }
+  100%{ transform: translate(-50%, -50%) scale(1.15); opacity: 0; }
 }
