@@ -441,6 +441,7 @@ function BattleInner() {
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
   const [layoutTick, setLayoutTick] = useState(0);
+  const [deathTick, setDeathTick] = useState(0);
 
   const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
 
@@ -1259,6 +1260,11 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return set;
   }, [timeline, t]);
 
+  useEffect(() => {
+    if (deathFxByInstance.size === 0) return;
+    setDeathTick((t) => t + 1);
+  }, [deathFxByInstance.size]);
+
   function getCenterInArena(instanceId: string) {
     const arenaEl = arenaRef.current;
     const el = unitElByIdRef.current[instanceId];
@@ -1481,6 +1487,11 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const power = typeof card?.base_power === "number" ? card.base_power : null;
     const img = resolveCardArtUrl(card?.image_url || null);
 
+    // PATH A (ATLAS): keep these constants defined so TypeScript never breaks.
+    // Visual selection (x/y/atlas scale) is configured in battle.animations.css.
+    const DEATH_ATLAS_FRAMES = 6;
+    const DEATH_ATLAS_DURATION_MS = 720;
+
     const hpPct = useMemo(() => {
       if (!unit) return 100;
       const maxHp = Math.max(1, unit.maxHp);
@@ -1523,11 +1534,18 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     return (
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
-            
-        <div className="bb-fx-anchor">
-          {isDying ? <div className="bb-death" /> : null}
-        </div>
-        <div
+      <div
+        className="bb-fx-anchor"
+        style={
+          {
+            ["--bb-death-atlas-frames" as any]: DEATH_ATLAS_FRAMES,
+            ["--bb-death-atlas-ms" as any]: `${DEATH_ATLAS_DURATION_MS}ms`,
+          } as React.CSSProperties
+        }
+      >
+        {isDying ? <div key={`death-${deathTick ?? 0}`} className="bb-death" /> : null}
+      </div>
+      <div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
         }}
