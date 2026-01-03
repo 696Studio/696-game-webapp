@@ -1602,14 +1602,45 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       return damageFx[damageFx.length - 1];
     }, [unit, damageFx]);
 
+    const [vanishPhase, setVanishPhase] = useState<0 | 1 | 2 | 3>(0);
+
+    // Reset vanish when a new unit/card shows up in this slot
+    useEffect(() => {
+      setVanishPhase(0);
+    }, [unit?.instanceId, id]);
+
+    // Death timeline: (1) dying -> (2) vanish anim -> (3) remove from DOM
+    useEffect(() => {
+      if (!isDying) return;
+
+      setVanishPhase(1);
+
+      const tVanish = window.setTimeout(() => setVanishPhase(2), 650);
+      const tRemove = window.setTimeout(() => setVanishPhase(3), 650 + 240);
+
+      return () => {
+        window.clearTimeout(tVanish);
+        window.clearTimeout(tRemove);
+      };
+    }, [isDying]);
+
     const tags = useMemo(() => {
       if (!unit) return [];
       const arr = Array.from(unit.tags || []);
       return arr.slice(0, 3);
     }, [unit]);
 
+
+    if (vanishPhase === 3) {
+      return (
+        <div className={["bb-slot", "is-empty"].join(" ")}>
+          <div className="bb-fx-anchor" />
+        </div>
+      );
+    }
+
     return (
-      <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
+      <div className={["bb-slot", isDying ? "is-dying" : "", vanishPhase >= 2 ? "is-vanish" : ""].join(" ")}>
       <div className="bb-fx-anchor">
         
         {isDying ? <div className="bb-death" /> : null}
@@ -1628,6 +1659,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           spawned ? "is-spawn" : "",
           dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
+          vanishPhase >= 2 ? "is-vanish" : "",
         ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
@@ -2811,10 +2843,16 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                   top: b.y,
                   width: b.size,
                   height: b.size,
-                  ["--bb-strip-scale" as any]: b.size / 59,
                 }}
               >
-                {b.kind === "death" && <div className="bb-fx-burst__atlas" />}
+                {b.kind === "death" && (
+                  <img
+                    className="bb-fx-burst__img"
+                    src="/fx/retro/death_burst_strip.png"
+                    alt=""
+                    draggable={false}
+                  />
+                )}
               </div>
             ))}
           </div>

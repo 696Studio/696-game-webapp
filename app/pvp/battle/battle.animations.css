@@ -53,6 +53,15 @@
   45%  { transform: translate3d(0,6px,0) rotateY(70deg) scale(.96); filter: saturate(.8) brightness(.95); }
 }
 
+/* Vanish after death FX (stage 2). Keep minimal and avoid touching HUD/CardArt. */
+.bb-slot.is-vanish .bb-card{
+  animation: bb_card_vanish 240ms ease-out forwards !important;
+}
+@keyframes bb_card_vanish{
+  0%   { opacity: 1; transform: translate3d(0,0,0) scale(.98); filter: saturate(.9) brightness(.95); }
+  100% { opacity: 0; transform: translate3d(0,6px,0) scale(.90); filter: saturate(.6) brightness(.8); }
+}
+
 /* After unit is dead, force it to stay flipped (no transparency) */
 .bb-card.is-dead{
   opacity: 1 !important;
