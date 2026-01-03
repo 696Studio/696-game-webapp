@@ -71,7 +71,7 @@
 
 /* After unit is dead, force it to stay flipped (no transparency) */
 .bb-card.is-dead{
-  opacity: 1;
+  opacity: 1 !important;
 }
 .bb-card.is-dead .bb-card-inner{
   transform: rotateY(180deg) !important;
@@ -435,3 +435,7 @@
   70%{ opacity: 1; }
   100%{ transform: translate(-50%, -52%) scale(1.06); opacity: 0; }
 }
+
+
+/* Vanish: when the card is removed from render, keep slot layout but hide visuals */
+.bb-slot.is-hidden{ opacity:0; pointer-events:none; }
