@@ -440,6 +440,93 @@ function BattleInner() {
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // =========================================================
+  // FX MANAGER (GUARANTEED): death bursts are rendered in an
+  // arena-level overlay, independent of card DOM/lifecycle.
+  // =========================================================
+  type FxBurst = {
+    id: string;
+    x: number; // px relative to arena
+    y: number; // px relative to arena
+    size: number; // px
+    createdAt: number; // ms
+    kind: "death";
+  };
+
+  const [fxBursts, setFxBursts] = useState<FxBurst[]>([]);
+  const prevHpByInstanceRef = useRef<Record<string, number>>({});
+  const prevPresentRef = useRef<Set<string>>(new Set());
+
+  const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
+    const arenaEl = arenaRef.current;
+    if (!arenaEl) return;
+
+    const arenaRect = arenaEl.getBoundingClientRect();
+    const targetEl = unitElByIdRef.current[instanceId];
+    const r = targetEl?.getBoundingClientRect();
+    if (!r) return;
+
+    const size = Math.max(84, Math.min(170, Math.max(r.width, r.height) * 1.05));
+const x = (r.left - arenaRect.left) + r.width / 2;
+    const y = (r.top - arenaRect.top) + r.height / 2;
+
+    const id = `${instanceId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const burst: FxBurst = {
+      id,
+      x,
+      y,
+      size: Number.isFinite(size) ? size : fallbackSize,
+      createdAt: Date.now(),
+      kind: "death",
+    };
+
+    setFxBursts((prev) => [...prev, burst]);
+
+    // Auto-remove after animation window
+    window.setTimeout(() => {
+      setFxBursts((prev) => prev.filter((b) => b.id !== id));
+    }, 900);
+  };
+
+  // Detect deaths robustly:
+  // - hp drops from >0 to <=0
+  // - or instance disappears from slots (removal)
+  useEffect(() => {
+    const current: Record<string, number> = {};
+    const present = new Set<string>();
+
+    const allUnits: (UnitView | null | undefined)[] = [
+      ...Object.values(p1UnitsBySlot || {}),
+      ...Object.values(p2UnitsBySlot || {}),
+    ];
+
+    for (const u of allUnits) {
+      if (!u?.instanceId) continue;
+      present.add(u.instanceId);
+      current[u.instanceId] = (u.hp ?? 0);
+    }
+
+    const prevHp = prevHpByInstanceRef.current;
+    for (const [id, hp] of Object.entries(current)) {
+      const before = prevHp[id];
+      if (typeof before === "number" && before > 0 && hp <= 0) {
+        spawnDeathBurst(id);
+      }
+    }
+
+    // Disappearances (unit removed from slots)
+    const prevPresent = prevPresentRef.current;
+    for (const id of prevPresent) {
+      if (!present.has(id)) {
+        // If we still have a DOM ref, spawn at last known position
+        spawnDeathBurst(id);
+      }
+    }
+
+    prevHpByInstanceRef.current = current;
+    prevPresentRef.current = present;
+  }, [p1UnitsBySlot, p2UnitsBySlot]);
   const [layoutTick, setLayoutTick] = useState(0);
 
   const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
@@ -1525,16 +1612,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
       <div className="bb-fx-anchor">
         
-        {isDying ? (
-          <div className="bb-fx-death" aria-hidden="true">
-            <img
-              className="bb-fx-death__img"
-              src="/fx/retro/death_burst_strip.png"
-              alt=""
-              draggable={false}
-            />
-          </div>
-        ) : null}
+        {isDying ? <div className="bb-death" /> : null}
       </div>
       <div
         ref={(el) => {
@@ -1589,7 +1667,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                   </>
                 )}
 
-                {/* death FX rendered in bb-fx-anchor */}
+                {isDying && <div className="bb-death" />}
               </div>
             )}
 
@@ -2722,6 +2800,31 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
+          {/* FX overlay (independent from card DOM) */}
+          <div className="bb-fx-layer" aria-hidden="true">
+            {fxBursts.map((b) => (
+              <div
+                key={b.id}
+                className={`bb-fx-burst bb-fx-burst--${b.kind}`}
+                style={{
+                  left: b.x,
+                  top: b.y,
+                  width: b.size,
+                  height: b.size,
+                }}
+              >
+                {b.kind === "death" && (
+                  <img
+                    className="bb-fx-burst__img"
+                    src="/fx/retro/death_burst_strip.png"
+                    alt=""
+                    draggable={false}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
           {DEBUG_ARENA && debugCover && (
             <>
               <div className="dbg-panel">

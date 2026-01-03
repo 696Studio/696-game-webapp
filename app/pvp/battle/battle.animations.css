@@ -332,40 +332,60 @@
   from{ background-position: 0% 50%; opacity:1; }
   to{ background-position: 100% 50%; opacity:0; }
 }
-/* ==== FINAL DEATH FX (strip, no bleeding) ==== */
-/* Disable legacy death implementations */
-.bb-death,
-.bb-slot.is-dying .bb-death::before{
-  display: none !important;
-  content: none !important;
-  background: none !important;
-}
 
-/* New death burst using an <img> strip masked by overflow:hidden */
-.bb-fx-death{
+
+
+/* =========================================================
+   FX MANAGER (GUARANTEED) — DEATH BURST STRIP
+   This layer is independent from card DOM (opacity/filter/overflow).
+   Asset must exist at: /public/fx/retro/death_burst_strip.png
+   Served as: /fx/retro/death_burst_strip.png
+========================================================= */
+
+.bb-fx-layer{
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 120%;
-  height: 120%;
-  transform: translate(-50%, -52%); /* slight up-bias looks centered */
+  inset: 0;
   pointer-events: none;
-  z-index: 999;
-  overflow: hidden;
-  border-radius: 18px; /* match card rounding */
-  opacity: 1 !important;
-  filter: none !important;
+  z-index: 9999;
 }
 
-.bb-fx-death__img{
+.bb-fx-burst{
+  position: absolute;
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  pointer-events: none;
+  /* keep it crisp and prevent edge sampling artifacts */
+  image-rendering: auto;
+  will-change: transform, opacity;
+}
+
+.bb-fx-burst__img{
   height: 100%;
-  width: 400%;           /* 4 frames */
-  object-fit: cover;
+  width: 400%;
+  max-width: none;
+  display: block;
   transform: translateX(0);
   will-change: transform;
-  animation: bbDeathStripX 520ms steps(4) 1 both;
 }
 
-@keyframes bbDeathStripX{
-  to { transform: translateX(-75%); } /* (frames-1)/frames = 3/4 */
+.bb-fx-burst--death{
+  opacity: 1;
+  animation: bb-death-pop 560ms ease-out forwards;
+}
+
+.bb-fx-burst--death .bb-fx-burst__img{
+  animation: bb-strip-move 520ms steps(4) forwards;
+}
+
+@keyframes bb-strip-move{
+  from{ transform: translateX(0); }
+  /* 4 frames => move left by 3/4 of the strip width */
+  to{ transform: translateX(-75%); }
+}
+
+@keyframes bb-death-pop{
+  0%{ transform: translate(-50%, -52%) scale(0.92); opacity: 0; }
+  8%{ opacity: 1; }
+  70%{ opacity: 1; }
+  100%{ transform: translate(-50%, -52%) scale(1.06); opacity: 0; }
 }
