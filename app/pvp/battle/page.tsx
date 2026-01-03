@@ -1563,6 +1563,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     isDying?: boolean;
   }) {
     const id = card?.id || fallbackId || "";
+    const unitKey = unit?.instanceId ?? "no-unit";
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
     const r = (card?.rarity || "common") as string;
     const power = typeof card?.base_power === "number" ? card.base_power : null;
@@ -1581,13 +1582,13 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [unit]);
 
     const isDead = unit ? !unit.alive : false;
-    const isActive = unit && activeInstance ? unit.instanceId === activeInstance : false;
+    const isActive = unit && activeInstance ? unitKey === activeInstance : false;
 
     const atk = useMemo(() => {
       if (!unit || !attackFx || attackFx.length === 0) return null;
       const last = attackFx[attackFx.length - 1];
-      const isFrom = last.fromId === unit.instanceId;
-      const isTo = last.toId === unit.instanceId;
+      const isFrom = last.fromId === unitKey;
+      const isTo = last.toId === unitKey;
       if (!isFrom && !isTo) return null;
       return { ...last, isFrom, isTo };
     }, [unit, attackFx]);
@@ -1608,15 +1609,43 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       return arr.slice(0, 3);
     }, [unit]);
 
+// Vanish + remove after death (UI-only; FX is handled by FxLayer)
+    const [isVanish, setIsVanish] = useState(false);
+    const [isHidden, setIsHidden] = useState(false);
+    const vanishTimersRef = useRef<number[]>([]);
+
+    useEffect(() => {
+      // reset when unit changes or death flag resets
+      vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
+      vanishTimersRef.current = [];
+      setIsVanish(false);
+      setIsHidden(false);
+
+      if (!unit || !isDying) return;
+
+      // Start vanish a bit after death FX begins, then hide from DOM
+      vanishTimersRef.current.push(window.setTimeout(() => setIsVanish(true), 520));
+      vanishTimersRef.current.push(window.setTimeout(() => setIsHidden(true), 860));
+
+      return () => {
+        vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
+        vanishTimersRef.current = [];
+      };
+    }, [isDying, unit?.instanceId]);
+
+    const renderUnit = isHidden ? null : unit;
+
+
+
     return (
-      <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
+      <div className={["bb-slot", isDying && !isHidden ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}>
       <div className="bb-fx-anchor">
         
-        {isDying ? <div className="bb-death" /> : null}
+        {isDying && !isHidden ? <div className="bb-death" /> : null}
       </div>
       <div
         ref={(el) => {
-          if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
+          if (unit?.instanceId) unitElByIdRef.current[unitKey] = el;
         }}
         className={[
           "bb-card",
@@ -1647,21 +1676,21 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
               shield={unit?.shield ?? 0}
               showCorner={false}
             />
-            {unit && (
+            {renderUnit && (
               <div className="bb-fx">
-                {spawned && <div key={`spawn-${spawned.t}-${unit.instanceId}`} className="bb-spawn" />}
+                {spawned && <div key={`spawn-${spawned.t}-${unitKey}`} className="bb-spawn" />}
 
                 {atk && (
                   <div className="bb-atkfx">
-                    {atk.isFrom && <div key={`slash-${atk.t}-${unit.instanceId}`} className="bb-slash" />}
-                    {atk.isTo && <div key={`impact-${atk.t}-${unit.instanceId}`} className="bb-impact" />}
+                    {atk.isFrom && <div key={`slash-${atk.t}-${unitKey}`} className="bb-slash" />}
+                    {atk.isTo && <div key={`impact-${atk.t}-${unitKey}`} className="bb-impact" />}
                   </div>
                 )}
 
                 {dmg && (
                   <>
-                    <div key={`dmgflash-${dmg.t}-${unit.instanceId}`} className="bb-dmgflash" />
-                    <div key={`dmgfloat-${dmg.t}-${unit.instanceId}`} className="bb-dmgfloat">
+                    <div key={`dmgflash-${dmg.t}-${unitKey}`} className="bb-dmgflash" />
+                    <div key={`dmgfloat-${dmg.t}-${unitKey}`} className="bb-dmgfloat">
                       {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
                     </div>
                   </>
@@ -1682,22 +1711,22 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                 )}
               </div>
 
-              {unit && (
+              {renderUnit && (
                 <div className="bb-bars">
                   <div className="bb-bar bb-bar--hp">
                     <div style={{ width: `${hpPct}%` }} />
                   </div>
-                  {unit.shield > 0 && (
+                  {(renderUnit?.shield ?? 0) > 0 && (
                     <div className="bb-bar bb-bar--shield">
                       <div style={{ width: `${shieldPct}%` }} />
                     </div>
                   )}
                   <div className="bb-hptext">
-                    <span className="tabular-nums">{unit.hp}</span> / <span className="tabular-nums">{unit.maxHp}</span>
-                    {unit.shield > 0 ? (
+                    <span className="tabular-nums">{renderUnit?.hp ?? 0}</span> / <span className="tabular-nums">{renderUnit?.maxHp ?? 0}</span>
+                    {(renderUnit?.shield ?? 0) > 0 ? (
                       <span className="bb-shieldnum">
                         {" "}
-                        +<span className="tabular-nums">{unit.shield}</span>
+                        +<span className="tabular-nums">{renderUnit?.shield ?? 0}</span>
                       </span>
                     ) : null}
                   </div>
@@ -1716,7 +1745,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
             </div>
         </div>
       </div>
-      {unit && (
+      {renderUnit && (
         <div className="bb-hud" aria-hidden="true">
           <span className="bb-hud-item">
             <span className="bb-hud-icon" role="img" aria-label="Attack">⚔</span>
@@ -3002,7 +3031,7 @@ export default function BattlePage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+        <main className="min-h-[100dvh] flex items-center justify-center p-6">
           <div className="w-full max-w-md ui-card p-5 text-center">
             <div className="text-sm font-semibold">Загрузка…</div>
             <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
