@@ -458,61 +458,6 @@ function BattleInner() {
   const prevHpByInstanceRef = useRef<Record<string, number>>({});
   const prevPresentRef = useRef<Set<string>>(new Set());
 
-  // =========================================================
-  // VANISH ON DEATH (UI polish): after death FX plays, the card fades out
-  // and is then removed from DOM so the slot becomes empty.
-  // This is purely a render-layer behavior; battle logic is untouched.
-  // =========================================================
-  const [vanishingById, setVanishingById] = useState<Record<string, true>>({});
-  const [hiddenById, setHiddenById] = useState<Record<string, true>>({});
-  const vanishTimersRef = useRef<Record<string, { vanish?: number; hide?: number }>>({});
-
-  const scheduleVanish = (id: string) => {
-    if (!id) return;
-    const existing = vanishTimersRef.current[id];
-    if (existing?.vanish || existing?.hide) return;
-
-    // Wait a bit so the burst reads first, then fade card out
-    const FX_LEAD_MS = 430;
-    const VANISH_MS = 260;
-
-    const vanishT = window.setTimeout(() => {
-      setVanishingById((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
-    }, FX_LEAD_MS);
-
-    const hideT = window.setTimeout(() => {
-      setHiddenById((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
-      setVanishingById((prev) => {
-        if (!prev[id]) return prev;
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-      delete vanishTimersRef.current[id];
-    }, FX_LEAD_MS + VANISH_MS);
-
-    vanishTimersRef.current[id] = { vanish: vanishT, hide: hideT };
-  };
-
-  const clearVanish = (id: string) => {
-    const t = vanishTimersRef.current[id];
-    if (t?.vanish) window.clearTimeout(t.vanish);
-    if (t?.hide) window.clearTimeout(t.hide);
-    delete vanishTimersRef.current[id];
-    setVanishingById((prev) => {
-      if (!prev[id]) return prev;
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-    setHiddenById((prev) => {
-      if (!prev[id]) return prev;
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  };
-
   const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
     const arenaEl = arenaRef.current;
     if (!arenaEl) return;
@@ -567,7 +512,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       const before = prevHp[id];
       if (typeof before === "number" && before > 0 && hp <= 0) {
         spawnDeathBurst(id);
-        scheduleVanish(id);
       }
     }
 
@@ -582,43 +526,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     prevHpByInstanceRef.current = current;
     prevPresentRef.current = present;
-  }, [p1UnitsBySlot, p2UnitsBySlot, hiddenById, vanishingById]);
-
-  // Cleanup vanish states when units leave or respawn
-  useEffect(() => {
-    const present = new Set<string>();
-    const allUnits = [
-      ...Object.values(p1UnitsBySlot || {}),
-      ...Object.values(p2UnitsBySlot || {}),
-    ];
-    for (const u of allUnits) {
-      if (u?.instanceId) present.add(u.instanceId);
-      // If a unit is alive again, ensure it is visible
-      if (u?.instanceId && (u.hp ?? 0) > 0 && (hiddenById[u.instanceId] || vanishingById[u.instanceId])) {
-        clearVanish(u.instanceId);
-      }
-    }
-    // Drop stale ids to avoid unbounded growth
-    for (const id of Object.keys(hiddenById)) {
-      if (!present.has(id)) {
-        setHiddenById((prev) => {
-          if (!prev[id]) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-      }
-    }
-    for (const id of Object.keys(vanishingById)) {
-      if (!present.has(id)) {
-        setVanishingById((prev) => {
-          if (!prev[id]) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-      }
-    }
   }, [p1UnitsBySlot, p2UnitsBySlot]);
   const [layoutTick, setLayoutTick] = useState(0);
 
@@ -1659,10 +1566,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
     const r = (card?.rarity || "common") as string;
     const power = typeof card?.base_power === "number" ? card.base_power : null;
-    const instanceId = unit?.instanceId || "";
-    const isHidden = instanceId ? !!hiddenById[instanceId] : false;
-    const isVanishing = instanceId ? !!vanishingById[instanceId] : false;
-    if (isHidden) return <div className="bb-slot" />;
     const img = resolveCardArtUrl(card?.image_url || null);
 
     const hpPct = useMemo(() => {
@@ -1706,7 +1609,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [unit]);
 
     return (
-    <div className={["bb-slot", isDying ? "is-dying" : "", isVanishing ? "is-vanishing" : ""].join(" ")}>
+      <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
       <div className="bb-fx-anchor">
         
         {isDying ? <div className="bb-death" /> : null}
@@ -2911,11 +2814,12 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                 }}
               >
                 {b.kind === "death" && (
-                  <img
-                    className="bb-fx-burst__img"
-                    src="/fx/retro/death_burst_strip.png"
-                    alt=""
-                    draggable={false}
+                  <div
+                    className="bb-fx-burst__atlas"
+                    style={{
+                      // death_burst_strip.png is 194x59 (3 frames with padding)
+                      ["--bb-strip-scale" as any]: (b.size / 59).toFixed(4),
+                    }}
                   />
                 )}
               </div>

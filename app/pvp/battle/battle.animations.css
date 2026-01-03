@@ -71,6 +71,35 @@
   pointer-events: none;
   z-index: 50;
 }
+/* --- Death FX (atlas-style): no sliding, no bleeding ---
+   Asset: /fx/retro/death_burst_strip.png (194x59) — 3 frames with padding.
+   We animate background-position with HOLD segments to avoid interpolation "sliding left".
+*/
+.bb-fx-burst--death .bb-fx-burst__atlas{
+  width: 100%;
+  height: 100%;
+  background-image: url("/fx/retro/death_burst_strip.png");
+  background-repeat: no-repeat;
+  background-size: calc(194px * var(--bb-strip-scale, 2)) calc(59px * var(--bb-strip-scale, 2));
+  background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%;
+  will-change: background-position, opacity;
+  image-rendering: auto;
+  animation: bb-death-atlas-3 520ms linear forwards;
+}
+
+/* If old strip-based img exists somewhere, don't animate it for death */
+.bb-fx-burst--death .bb-fx-burst__img{
+  animation: none !important;
+}
+
+@keyframes bb-death-atlas-3{
+  /* Hold each frame — no in-between positions */
+  0%, 32.9%  { background-position: calc(-2px   * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+  33%, 65.9% { background-position: calc(-66px  * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+  66%, 92.9% { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+  100%       { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 0; }
+}
+
 .bb-death{
   position: absolute;
   inset: 0;
@@ -336,18 +365,10 @@
 
 
 /* =========================================================
-   FX MANAGER (GUARANTEED) — DEATH BURST ATLAS STRIP (3 frames, padded)
-   ---------------------------------------------------------------
+   FX MANAGER (GUARANTEED) — DEATH BURST STRIP
    This layer is independent from card DOM (opacity/filter/overflow).
-
-   Asset:
-   - Place file at: /public/fx/retro/death_burst_strip.png
-   - Served as:     /fx/retro/death_burst_strip.png
-   - Current strip size (native): 194 x 59
-   - Frames are NOT evenly tiled; we use explicit background offsets.
-
-   NOTE:
-   page.tsx passes CSS var --bb-strip-scale = (burstSize / 59)
+   Asset must exist at: /public/fx/retro/death_burst_strip.png
+   Served as: /fx/retro/death_burst_strip.png
 ========================================================= */
 
 .bb-fx-layer{
@@ -362,22 +383,18 @@
   transform: translate(-50%, -50%);
   overflow: hidden;
   pointer-events: none;
+  /* keep it crisp and prevent edge sampling artifacts */
+  image-rendering: auto;
   will-change: transform, opacity;
 }
 
-/* Death burst driven by background offsets (no bleeding, no steps strip-move) */
-.bb-fx-burst__atlas{
-  position: absolute;
-  inset: 0;
-  background-image: url("/fx/retro/death_burst_strip.png");
-  background-repeat: no-repeat;
-  background-position: 0px 50%;
-  /* scale native strip using var from page.tsx */
-  background-size:
-    calc(194px * var(--bb-strip-scale, 2))
-    calc(59px  * var(--bb-strip-scale, 2));
-  will-change: background-position, transform, opacity;
-  opacity: 1;
+.bb-fx-burst__img{
+  height: 100%;
+  width: 400%;
+  max-width: none;
+  display: block;
+  transform: translateX(0);
+  will-change: transform;
 }
 
 .bb-fx-burst--death{
@@ -385,22 +402,14 @@
   animation: bb-death-pop 560ms ease-out forwards;
 }
 
-.bb-fx-burst--death .bb-fx-burst__atlas{
-  animation: bb-death-atlas-3 520ms linear forwards;
+.bb-fx-burst--death .bb-fx-burst__img{
+  animation: bb-strip-move 520ms steps(4) forwards;
 }
 
-/* Frame centers (native, px):
-   F1 center ≈ 31px  => bgX ≈ -2px
-   F2 center ≈ 95.5  => bgX ≈ -66px
-   F3 center ≈ 159.5 => bgX ≈ -130px
-   Multiply by --bb-strip-scale so it stays correct at any size.
-*/
-@keyframes bb-death-atlas-3{
-  /* Hold each frame so it DOESN'T "slide left" between positions */
-  0%, 32.9%  { background-position: calc(-2px   * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-  33%, 65.9% { background-position: calc(-66px  * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-  66%, 92.9% { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-  100%       { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 0; }
+@keyframes bb-strip-move{
+  from{ transform: translateX(0); }
+  /* 4 frames => move left by 3/4 of the strip width */
+  to{ transform: translateX(-75%); }
 }
 
 @keyframes bb-death-pop{
@@ -408,12 +417,4 @@
   8%{ opacity: 1; }
   70%{ opacity: 1; }
   100%{ transform: translate(-50%, -52%) scale(1.06); opacity: 0; }
-}
-
-/* === VANISH ON DEATH (CardSlot) === */
-.bb-slot.is-vanishing{
-  opacity: 0;
-  transform: scale(0.94);
-  transition: opacity 260ms ease-out, transform 260ms ease-out;
-  transform-origin: 50% 50%;
 }
