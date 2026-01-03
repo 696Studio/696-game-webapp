@@ -1526,12 +1526,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     return (
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
-      <div className="bb-fx-anchor">
-        {(FORCE_DEATH_SPRITE || isDying) ? (
-          <div className={["bb-death", FORCE_DEATH_SPRITE ? "bb-death--force" : ""].join(" ")} />
-        ) : null}
-      </div>
-      <div
+<div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
         }}
@@ -1564,6 +1559,12 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
               shield={unit?.shield ?? 0}
               showCorner={false}
             />
+
+            <div className="bb-fx-anchor">
+              {(FORCE_DEATH_SPRITE || isDying) ? (
+                <div className={["bb-death", FORCE_DEATH_SPRITE ? "bb-death--force" : ""].join(" ")} />
+              ) : null}
+            </div>
             {unit && (
               <div className="bb-fx">
                 {spawned && <div key={`spawn-${spawned.t}-${unit.instanceId}`} className="bb-spawn" />}

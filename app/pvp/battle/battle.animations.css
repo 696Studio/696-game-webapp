@@ -386,3 +386,55 @@
   85% { background-position: 100% 50%; opacity: 1; }
   100%{ background-position: 100% 50%; opacity: 0; }
 }
+
+/* =========================================================
+   STEP 2.1 — SPRITE ALIGNMENT + DE-CONFLICT (TEMP)
+   Goal: See REAL sprite frame motion centered on the CARD (not slot+HUD).
+   - FX anchor is now inside .bb-card in page.tsx (so inset matches card box).
+   - Temporarily disable ash/collapse so it can't mask the sprite.
+   ========================================================= */
+
+/* Disable ash + collapse while we tune the sprite */
+.bb-slot.is-dying::before{ display: none !important; }
+.bb-slot.is-dying{ animation: none !important; filter: none !important; }
+
+/* Make card the positioning context for FX */
+.bb-card{ position: relative; overflow: visible; }
+
+/* Anchor bounds = card bounds (with small bleed) */
+.bb-fx-anchor{
+  position: absolute;
+  inset: -10px;
+  z-index: 999;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* Sprite burst (tuned size & center) */
+.bb-death{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 140%;
+  height: 140%;
+  transform: translate(-50%, -50%);
+  background-image: url("/fx/retro/death_burst.png");
+  background-repeat: no-repeat;
+  background-position: 0% 50%;
+  background-size: calc(var(--bb-death-frames, 8) * 100%) 100%;
+  opacity: 1;
+  pointer-events: none;
+  will-change: background-position, transform, opacity;
+  filter: drop-shadow(0 0 10px rgba(0,0,0,0.55));
+}
+
+/* FORCE tuning: loop so motion is obvious */
+.bb-death.bb-death--force{
+  animation: bbDeathSprite 720ms steps(var(--bb-death-frames, 8)) infinite;
+}
+
+/* Real death: play once and fade out */
+.bb-slot.is-dying .bb-death{
+  animation: bbDeathSpriteFade 720ms steps(var(--bb-death-frames, 8)) forwards;
+}
+
