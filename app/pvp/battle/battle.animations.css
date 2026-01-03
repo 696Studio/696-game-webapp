@@ -361,8 +361,7 @@
 
 .bb-fx-burst--death{
   background-image: url("/fx/retro/death_burst_strip.png");
-  background-size: 300% 100%;
-  animation: bb-death-strip 520ms steps(3) forwards, bb-death-pop 520ms ease-out forwards;
+  animation: bb-death-strip 520ms steps(4) forwards, bb-death-pop 520ms ease-out forwards;
 }
 
 @keyframes bb-death-strip{
