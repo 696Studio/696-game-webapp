@@ -334,54 +334,52 @@
 }
 
 
+
+
 /* =========================================================
-   DEATH FX — STRIP OVERRIDE (FINAL)
+   DEATH FX — STRIP (SOURCE OF TRUTH)
    Uses: /public/fx/retro/death_burst_strip.png  (served as /fx/retro/death_burst_strip.png)
-   This block is intentionally LAST to win cascade.
+   This block intentionally overrides any older death_burst / atlas rules above.
    ========================================================= */
-.bb-slot.is-dying::before{ display:none !important; } /* disable ash overlay so it doesn't read as "smoke" */
 
+/* Put FX above the card + HUD */
 .bb-slot{ position: relative; overflow: visible; }
-.bb-fx-anchor{
-  position:absolute;
-  inset:0;
-  z-index: 9999;
-  pointer-events:none;
-  overflow: visible;
+.bb-fx-layer{
+  position: absolute;
+  inset: -18px;
+  pointer-events: none;
+  z-index: 999;
 }
+.bb-death{ position: absolute; inset: 0; pointer-events: none; }
 
-.bb-slot.is-dying .bb-death{
-  position:absolute;
-  left:50%;
-  top:50%;
-  width: 140%;
-  aspect-ratio: 1 / 1;
-  height: auto;
-  transform: translate(-50%, -55%);
-  border-radius: 18px;
-  background: none !important;
-  animation: none !important;
-  pointer-events:none;
-}
+/* Kill the old ash/smoke overlay while strip is enabled */
+.bb-slot.is-dying::before{ display: none !important; }
 
+/* Animate the strip (4 frames). If you later export 6/8 frames, update:
+   - background-size (e.g. 600% / 800%)
+   - steps(N)
+*/
 .bb-slot.is-dying .bb-death::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  background-image: url("/fx/retro/death_burst_strip.png");
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 280px;
+  height: 280px;
+  transform: translate(-50%, -55%) scale(.92);
+  background-image: url("/fx/retro/death_burst_strip.png") !important;
   background-repeat: no-repeat;
-  background-position: 0% 50%;
-  background-size: calc(var(--bb-death-frames, 4) * 100%) 100%;
-  mix-blend-mode: screen;
+  background-position: 0% 50% !important;
+  background-size: 400% 100% !important; /* 4 frames */
   opacity: 1;
-  filter: drop-shadow(0 0 18px rgba(120,220,255,.55));
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 16px rgba(0,0,0,.55));
   will-change: background-position, transform, opacity;
-  animation: bbDeathStrip var(--bb-death-ms, 520ms) steps(var(--bb-death-frames, 4)) both;
+  animation: bb_death_strip var(--bb-death-ms, 520ms) steps(4) both !important;
 }
 
-@keyframes bbDeathStrip{
-  0%{ background-position: 0% 50%; opacity: 0; transform: scale(.88); }
-  15%{ opacity: 1; transform: scale(1); }
-  100%{ background-position: 100% 50%; opacity: 0; transform: scale(1.18); }
+@keyframes bb_death_strip{
+  0%   { background-position: 0% 50%;   opacity: 0; transform: translate(-50%, -55%) scale(.88); }
+  12%  { opacity: 1; }
+  100% { background-position: 100% 50%; opacity: 0; transform: translate(-50%, -55%) scale(1.18); }
 }
-

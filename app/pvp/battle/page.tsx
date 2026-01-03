@@ -1521,19 +1521,18 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       return arr.slice(0, 3);
     }, [unit]);
 
-    // Death FX tick: bump when isDying flips true so the sprite restarts reliably
-    const [deathTick, setDeathTick] = useState(0);
-    useEffect(() => {
-      if (isDying) setDeathTick((t) => t + 1);
-    }, [isDying]);
-
     return (
       <div className={["bb-slot", isDying ? "is-dying" : ""].join(" ")}>
-      <div className="bb-fx-anchor">
-        
-        {isDying ? <div className="bb-death" /> : null}
-      </div>
-      <div
+      <div className="bb-fx-layer" aria-hidden>
+  <div
+    className="bb-death"
+    style={{
+      ["--bb-death-frames" as any]: 4,
+      ["--bb-death-ms" as any]: "520ms",
+    }}
+  />
+</div>
+<div
         ref={(el) => {
           if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
         }}
