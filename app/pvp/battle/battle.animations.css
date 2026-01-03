@@ -438,3 +438,69 @@
   animation: bbDeathSpriteFade 720ms steps(var(--bb-death-frames, 8)) forwards;
 }
 
+
+
+/* =========================================================
+   STEP 2.2 — FINAL SPRITE RENDER (SINGLE SOURCE OF TRUTH)
+   This block intentionally overrides previous experiments.
+   It uses CSS vars set on .bb-fx-anchor in page.tsx:
+   --bb-death-frames (number)
+   --bb-death-row (e.g. 0% / 50% / 100%)
+   --bb-death-duration (e.g. 820ms)
+   --bb-death-scale (number)
+   ========================================================= */
+
+.bb-card{ position: relative; overflow: visible; }
+
+/* Anchor is a sibling of .bb-card-inner so it's NOT clipped by .bb-face overflow */
+.bb-fx-anchor{
+  position: absolute !important;
+  inset: -10px !important; /* slight bleed beyond card */
+  z-index: 999 !important;
+  pointer-events: none;
+  overflow: visible !important;
+}
+
+/* Sprite layer */
+.bb-death{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--bb-death-scale, 1.45) * 100%);
+  height: calc(var(--bb-death-scale, 1.45) * 100%);
+  transform: translate(-50%, -50%);
+  background-image: url("/fx/retro/death_burst.png");
+  background-repeat: no-repeat;
+  background-position: 0% var(--bb-death-row, 50%);
+  background-size: calc(var(--bb-death-frames, 8) * 100%) 100%;
+  opacity: 1;
+  will-change: background-position, opacity, transform;
+  pointer-events: none;
+  filter:
+    hue-rotate(var(--bb-fx-tint-hue, 195deg))
+    saturate(var(--bb-fx-tint-sat, 1.6))
+    brightness(var(--bb-fx-tint-bright, 1.05))
+    drop-shadow(0 0 10px rgba(0,0,0,0.55));
+  mix-blend-mode: screen;
+}
+
+/* FORCE tuning: infinite loop so we can SEE frame motion */
+.bb-death.bb-death--force{
+  animation: bbDeathSprite var(--bb-death-duration, 820ms) steps(var(--bb-death-frames, 8)) infinite !important;
+}
+
+/* Real death: play once + fade out */
+.bb-slot.is-dying .bb-death{
+  animation: bbDeathSpriteFade var(--bb-death-duration, 820ms) steps(var(--bb-death-frames, 8)) forwards !important;
+}
+
+@keyframes bbDeathSprite{
+  from { background-position:   0% var(--bb-death-row, 50%); }
+  to   { background-position: 100% var(--bb-death-row, 50%); }
+}
+
+@keyframes bbDeathSpriteFade{
+  0%   { background-position:   0% var(--bb-death-row, 50%); opacity: 1; }
+  85%  { background-position: 100% var(--bb-death-row, 50%); opacity: 1; }
+  100% { background-position: 100% var(--bb-death-row, 50%); opacity: 0; }
+}
