@@ -1568,12 +1568,73 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const power = typeof card?.base_power === "number" ? card.base_power : null;
     const img = resolveCardArtUrl(card?.image_url || null);
 
-        // Keep last seen unit so we can animate it out even if battle state removes it immediately.
+    // Vanish + remove after death (UI-only; FX is handled by FxLayer)
+    // IMPORTANT: battle state may remove `unit` immediately on death, so we keep a ghost snapshot
+    // long enough to play the vanish animation, then we remove the card from DOM.
     const [ghostUnit, setGhostUnit] = useState<UnitView | null>(null);
     const activeUnit = unit ?? ghostUnit;
 
-    // Vanish + remove after death (UI-only; FX is handled by FxLayer)
+    const [isVanish, setIsVanish] = useState(false);
     const [isHidden, setIsHidden] = useState(false);
+
+    const vanishStartedForRef = useRef<string | null>(null);
+    const vanishTimersRef = useRef<number[]>([]);
+
+    const isDead = !!activeUnit && (!activeUnit.alive || activeUnit.hp <= 0);
+
+    // Keep latest live unit snapshot for ghost rendering
+    useEffect(() => {
+      if (unit) setGhostUnit(unit);
+    }, [unit?.instanceId]);
+
+    // Start vanish sequence when unit becomes dead (even if it disappears from battle state immediately)
+    useEffect(() => {
+      const id = activeUnit?.instanceId ?? null;
+
+      // Clear timers when instance changes/unmounts
+      vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
+      vanishTimersRef.current = [];
+
+      // No unit at all => reset
+      if (!id) {
+        vanishStartedForRef.current = null;
+        setIsVanish(false);
+        setIsHidden(false);
+        return;
+      }
+
+      // If already vanished for this instance, do nothing
+      if (vanishStartedForRef.current === id) return;
+
+      // Only start vanish when the unit is dead
+      if (isDead) {
+        vanishStartedForRef.current = id;
+
+        // Let the death burst FX play first (css animation ~500ms), then vanish card UI
+        vanishTimersRef.current.push(
+          window.setTimeout(() => {
+            setIsVanish(true);
+          }, 520)
+        );
+
+        // After vanish ends, remove from DOM
+        vanishTimersRef.current.push(
+          window.setTimeout(() => {
+            setIsHidden(true);
+            setGhostUnit(null);
+          }, 860)
+        );
+      }
+
+      return () => {
+        vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
+        vanishTimersRef.current = [];
+      };
+    }, [activeUnit?.instanceId, isDead]);
+
+    if (isHidden) {
+      return <div className="bb-slot is-hidden" />;
+    }
 
     const hpPct = useMemo(() => {
       if (!activeUnit) return 100;
@@ -1587,46 +1648,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       return clamp((activeUnit.shield / maxHp) * 100, 0, 100);
     }, [activeUnit?.instanceId, activeUnit?.shield, activeUnit?.maxHp]);
 
-    const isDead = !!activeUnit && (!activeUnit.alive || activeUnit.hp <= 0);
-    const isActive = !!activeUnit && !!activeInstance ? activeUnit.instanceId === activeInstance : false;
-
-        // After death animation finishes, remove the card from the table (do NOT touch death FX/CSS).
-    const hideStartedForRef = useRef<string | null>(null);
-
-    useEffect(() => {
-      // Always remember the last real unit so we can keep it visible during death even if battle state removes it.
-      if (unit) setGhostUnit(unit);
-
-      const id = activeUnit?.instanceId ?? null;
-
-      // New unit (or empty slot) resets hidden state.
-      if (!id) {
-        hideStartedForRef.current = null;
-        setIsHidden(false);
-        return;
-      }
-
-      // If we are not dying anymore and a fresh/live unit appears, allow it to render again.
-      if (!isDying && !isDead) {
-        hideStartedForRef.current = null;
-        setIsHidden(false);
-        return;
-      }
-
-      // Start "remove from DOM" ONCE per instance when death starts.
-      if (isDying && hideStartedForRef.current !== id) {
-        hideStartedForRef.current = id;
-
-        // Match CSS: .bb-slot.is-dying { animation: bb_death_collapse 680ms ... }
-        const t = window.setTimeout(() => {
-          setIsHidden(true);
-        }, 720);
-
-        return () => window.clearTimeout(t);
-      }
-    }, [unit?.instanceId, activeUnit?.instanceId, isDying, isDead]);
-
-const atk = useMemo(() => {
+    const atk = useMemo(() => {
       if (!unit || !attackFx || attackFx.length === 0) return null;
       const last = attackFx[attackFx.length - 1];
       const isFrom = last.fromId === unit.instanceId;
@@ -1646,24 +1668,24 @@ const atk = useMemo(() => {
     }, [unit, damageFx]);
 
     const tags = useMemo(() => {
-      if (!unit) return [];
-      const arr = Array.from(unit.tags || []);
+      if (!activeUnit) return [];
+      const arr = Array.from(activeUnit.tags || []);
       return arr.slice(0, 3);
-    }, [unit]);
+    }, [activeUnit?.instanceId]);
 
-    if (isHidden) {
-      return <div className={"bb-slot is-hidden"} />;
-    }
-
+    const isActive = !!activeUnit && activeInstance ? activeUnit.instanceId === activeInstance : false;
+    const renderUnit = activeUnit;
+    const instanceKey = renderUnit?.instanceId ?? fallbackId ?? "slot";
+    const isDyingUi = !!renderUnit && (isDying || isDead);
     return (
-      <div className={["bb-slot", isDying ? "is-dying" : "" , isHidden ? "is-hidden" : ""].join(" ")}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}>
       <div className="bb-fx-anchor">
         
-        {isDying ? <div className="bb-death" /> : null}
+        {isDyingUi ? <div className="bb-death" /> : null}
       </div>
       <div
         ref={(el) => {
-          if (unit?.instanceId) unitElByIdRef.current[unit.instanceId] = el;
+          if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
         }}
         className={[
           "bb-card",
@@ -1690,25 +1712,25 @@ const atk = useMemo(() => {
               frameSrc={CARD_FRAME_SRC}
               showStats={false}
               atk={power ?? 0}
-              hp={activeUnit?.hp ?? 0}
-              shield={activeUnit?.shield ?? 0}
+              hp={unit?.hp ?? 0}
+              shield={unit?.shield ?? 0}
               showCorner={false}
             />
-            {unit && (
+            {renderUnit && (
               <div className="bb-fx">
-                {spawned && <div key={`spawn-${spawned.t}-${unit.instanceId}`} className="bb-spawn" />}
+                {spawned && <div key={`spawn-${spawned.t}-${instanceKey}`} className="bb-spawn" />}
 
                 {atk && (
                   <div className="bb-atkfx">
-                    {atk.isFrom && <div key={`slash-${atk.t}-${unit.instanceId}`} className="bb-slash" />}
-                    {atk.isTo && <div key={`impact-${atk.t}-${unit.instanceId}`} className="bb-impact" />}
+                    {atk.isFrom && <div key={`slash-${atk.t}-${instanceKey}`} className="bb-slash" />}
+                    {atk.isTo && <div key={`impact-${atk.t}-${instanceKey}`} className="bb-impact" />}
                   </div>
                 )}
 
                 {dmg && (
                   <>
-                    <div key={`dmgflash-${dmg.t}-${unit.instanceId}`} className="bb-dmgflash" />
-                    <div key={`dmgfloat-${dmg.t}-${unit.instanceId}`} className="bb-dmgfloat">
+                    <div key={`dmgflash-${dmg.t}-${instanceKey}`} className="bb-dmgflash" />
+                    <div key={`dmgfloat-${dmg.t}-${instanceKey}`} className="bb-dmgfloat">
                       {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
                     </div>
                   </>
@@ -1729,22 +1751,22 @@ const atk = useMemo(() => {
                 )}
               </div>
 
-              {unit && (
+              {renderUnit && (
                 <div className="bb-bars">
                   <div className="bb-bar bb-bar--hp">
                     <div style={{ width: `${hpPct}%` }} />
                   </div>
-                  {unit.shield > 0 && (
+                  {renderUnit.shield > 0 && (
                     <div className="bb-bar bb-bar--shield">
                       <div style={{ width: `${shieldPct}%` }} />
                     </div>
                   )}
                   <div className="bb-hptext">
-                    <span className="tabular-nums">{unit.hp}</span> / <span className="tabular-nums">{unit.maxHp}</span>
-                    {unit.shield > 0 ? (
+                    <span className="tabular-nums">{renderUnit.hp}</span> / <span className="tabular-nums">{renderUnit.maxHp}</span>
+                    {renderUnit.shield > 0 ? (
                       <span className="bb-shieldnum">
                         {" "}
-                        +<span className="tabular-nums">{unit.shield}</span>
+                        +<span className="tabular-nums">{renderUnit.shield}</span>
                       </span>
                     ) : null}
                   </div>
@@ -1763,7 +1785,7 @@ const atk = useMemo(() => {
             </div>
         </div>
       </div>
-      {unit && (
+      {renderUnit && (
         <div className="bb-hud" aria-hidden="true">
           <span className="bb-hud-item">
             <span className="bb-hud-icon" role="img" aria-label="Attack">⚔</span>
@@ -2861,11 +2883,12 @@ const atk = useMemo(() => {
                 }}
               >
                 {b.kind === "death" && (
-                  <img
-                    className="bb-fx-burst__img"
-                    src="/fx/retro/death_burst_strip.png"
-                    alt=""
-                    draggable={false}
+                  <div
+                    className="bb-fx-burst__atlas"
+                    style={{
+                      // death_burst_strip.png is 194x59 (3 frames with padding)
+                      ["--bb-strip-scale" as any]: (b.size / 59).toFixed(4),
+                    }}
                   />
                 )}
               </div>
