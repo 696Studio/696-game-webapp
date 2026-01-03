@@ -47,6 +47,22 @@
   animation: bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both;
   transform-style: preserve-3d;
 }
+/* Vanish after death (separate, does NOT affect FX Manager) */
+.bb-slot.is-dying.is-vanish .bb-card,
+.bb-slot.is-vanish .bb-card{
+  animation:
+    bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both,
+    bb_card_vanish 260ms cubic-bezier(.2,.9,.2,1) forwards;
+  animation-delay: 0ms, 520ms;
+  transform-style: preserve-3d;
+}
+
+@keyframes bb_card_vanish{
+  0%   { opacity: 1; transform: translate3d(0,0,0) scale(1); filter: none; }
+  100% { opacity: 0; transform: translate3d(0,18px,0) scale(.84); filter: blur(1.2px) brightness(.92); }
+}
+
+
 @keyframes bb_card_death_to_back{
   0%   { transform: translate3d(0,0,0) rotateY(0deg) scale(1); filter: saturate(1) brightness(1); }
   18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
@@ -71,6 +87,35 @@
   pointer-events: none;
   z-index: 50;
 }
+/* --- Death FX (atlas-style): no sliding, no bleeding ---
+   Asset: /fx/retro/death_burst_strip.png (194x59) — 3 frames with padding.
+   We animate background-position with HOLD segments to avoid interpolation "sliding left".
+*/
+.bb-fx-burst--death .bb-fx-burst__atlas{
+  width: 100%;
+  height: 100%;
+  background-image: url("/fx/retro/death_burst_strip.png");
+  background-repeat: no-repeat;
+  background-size: calc(194px * var(--bb-strip-scale, 2)) calc(59px * var(--bb-strip-scale, 2));
+  background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%;
+  will-change: background-position, opacity;
+  image-rendering: auto;
+  animation: bb-death-atlas-3 520ms linear forwards;
+}
+
+/* If old strip-based img exists somewhere, don't animate it for death */
+.bb-fx-burst--death .bb-fx-burst__img{
+  animation: none !important;
+}
+
+@keyframes bb-death-atlas-3{
+  /* Hold each frame — no in-between positions */
+  0%, 32.9%  { background-position: calc(-2px   * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+  33%, 65.9% { background-position: calc(-66px  * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+  66%, 92.9% { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+  100%       { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 0; }
+}
+
 .bb-death{
   position: absolute;
   inset: 0;
@@ -80,15 +125,19 @@
   content:"";
   position:absolute;
   inset:0;
-  background-image: url("/fx/death_burst.png");
+  background-image: url("/fx/retro/death_burst_strip.png");
   background-repeat: no-repeat;
-  background-position: 0 50%;
-  background-size: auto 100%;
+  /* strip frame size: 194x59, we scale via CSS var */
+  background-size: calc(194px * var(--bb-strip-scale, 2)) calc(59px * var(--bb-strip-scale, 2));
+  /* slight left padding inside strip */
+  background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%;
   transform: translateZ(0) scale(1.05);
   filter: contrast(1.15) brightness(1.1) saturate(1.1);
   opacity: 1;
-  animation: bb_death_sprite 680ms steps(var(--bb-death-frames, 8)) both;
+  /* use same working animation as FxLayer */
+  animation: bb-death-atlas-3 520ms linear forwards;
 }
+
 @keyframes bb_death_sprite{
   from { background-position: 0 50%; opacity: 1; }
   to   { background-position: 100% 50%; opacity: 0; }
@@ -208,6 +257,7 @@
     0%   { opacity:1; transform: translate3d(0,0,0) rotate(0deg) scale(1); }
     18%  { opacity:1; transform: translate3d(0,0,0) rotate(-1.2deg) scale(1.01); } /* micro-freeze + tilt */
     55%  { opacity:.92; transform: translate3d(0,16px,0) rotate(3.5deg) scale(.92); } /* drop + squash */
+    100% { opacity:0; transform: translate3d(0,26px,0) rotate(6deg) scale(.85); }
   }
   
   /* =========================================================
@@ -236,22 +286,25 @@
     width: 320px;
     height: 320px;
     transform: translate(-50%,-55%);
-    background-image: url("/fx/death_burst.png");
+
+    background-image: url("/fx/retro/death_burst_strip.png");
     background-repeat: no-repeat;
-    background-size: 800% 100%;
+    background-size: calc(194px * var(--bb-strip-scale, 2)) calc(59px * var(--bb-strip-scale, 2));
+    background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%;
     image-rendering: auto;
-  
+
     /* make grayscale look "alive" */
     filter:
       hue-rotate(var(--bb-fx-tint-hue))
       saturate(var(--bb-fx-tint-sat))
       brightness(var(--bb-fx-tint-bright))
       drop-shadow(var(--bb-fx-shadow));
-  
+
     opacity:1;
     mix-blend-mode: screen;
-    animation: bb_sprite8 680ms steps(8) both;
-  }
+    animation: bb-death-atlas-3 520ms linear forwards;
+}
+
   
   /* glow halo behind sprite */
   .bb-slot.is-dying .bb-death::after{
@@ -390,28 +443,6 @@
   100%{ transform: translate(-50%, -52%) scale(1.06); opacity: 0; }
 }
 
-/* ===== 696 Death → Vanish (SAFE, does NOT touch death FX) ===== */
-.bb-slot.is-vanish .bb-card {
-  animation: bb_vanish 340ms ease-out forwards;
-  transform-origin: 50% 60%;
-  will-change: transform, opacity, filter;
-}
 
-@keyframes bb_vanish {
-  0% {
-    opacity: 1;
-    transform: translateZ(0) scale(1);
-    filter: none;
-  }
-  100% {
-    opacity: 0;
-    transform: translateZ(0) scale(0.86) rotateZ(-2deg);
-    filter: blur(1px);
-  }
-}
-
-/* When we finally remove the unit, keep the slot but hide any card remnants */
-.bb-slot.is-hidden .bb-card {
-  display: none !important;
-}
-
+/* Vanish: when the card is removed from render, keep slot layout but hide visuals */
+.bb-slot.is-hidden{ opacity:0; pointer-events:none; }
