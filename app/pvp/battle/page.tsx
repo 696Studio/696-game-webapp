@@ -303,7 +303,7 @@ const FORCE_DEATH_SPRITE = false;
 const DEATH_SPRITE_FRAMES = 8; // tune: 6 / 8 / 10 / 12
 const DEATH_SPRITE_ROW_PCT = 50; // tune: 0 / 50 / 100 (sprite rows), 50 = middle row
 const DEATH_SPRITE_DURATION_MS = 820; // tune: 600–1200
-const DEATH_SPRITE_SCALE = 1.25; // tune: 1.2–1.8 (relative to card)
+const DEATH_SPRITE_SCALE = 1.45; // tune: 1.2–1.8 (relative to card)
 
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
@@ -1560,12 +1560,9 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }
   >
     {(FORCE_DEATH_SPRITE || isDying) ? (
-      <>
-        <div className="bb-burst" />
-        <div className={["bb-death", FORCE_DEATH_SPRITE ? "bb-death--force" : ""].join(" ")} />
-      </>
+      <div className={["bb-death", FORCE_DEATH_SPRITE ? "bb-death--force" : ""].join(" ")} />
     ) : null}
-</div>
+  </div>
   <div className="bb-card-inner">
 
           <div className="bb-face bb-back">
