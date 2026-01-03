@@ -386,7 +386,7 @@
 }
 
 .bb-fx-burst--death .bb-fx-burst__atlas{
-  animation: bb-death-atlas-3 520ms ease-out forwards;
+  animation: bb-death-atlas-3 520ms linear forwards;
 }
 
 /* Frame centers (native, px):
@@ -396,10 +396,11 @@
    Multiply by --bb-strip-scale so it stays correct at any size.
 */
 @keyframes bb-death-atlas-3{
-  0%   { background-position: calc(-2px   * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-  33%  { background-position: calc(-66px  * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-  66%  { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-  100% { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 0; }
+  /* Hold each frame so it DOESN'T "slide left" between positions */
+  0%, 32.9%  { background-position: calc(-2px   * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+  33%, 65.9% { background-position: calc(-66px  * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+  66%, 92.9% { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+  100%       { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 0; }
 }
 
 @keyframes bb-death-pop{
