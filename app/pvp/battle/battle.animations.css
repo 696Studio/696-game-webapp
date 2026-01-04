@@ -499,3 +499,16 @@
 
 /* Safety: don't dim dead cards; vanish handles removal */
 .bb-card.has-unit.is-dead{opacity:1 !important; filter:none !important;}
+
+
+/* ================================
+   Death → Vanish → Remove (stable)
+   ================================ */
+.bb-slot.is-hidden {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+.bb-slot.is-hidden .bb-card {
+  display: none !important;
+}
