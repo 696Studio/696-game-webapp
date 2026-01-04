@@ -441,6 +441,8 @@ function BattleInner() {
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
 
+  const lastInstBySlotRef = useRef<Record<string, string>>({});
+
   // =========================================================
   // FX MANAGER (GUARANTEED): death bursts are rendered in an
   // arena-level overlay, independent of card DOM/lifecycle.
@@ -1215,6 +1217,16 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   const bottomHit = youSide === "p1" ? p1Hit : p2Hit;
 
   
+  // Keep mapping from revealed card fallbackId -> current instanceId for stable FX when the engine clears the unit.
+  useEffect(() => {
+    const map = lastInstBySlotRef.current;
+    for (const s of [...(topSlots || []), ...(bottomSlots || [])]) {
+      const fid = s?.fallbackId;
+      const inst = s?.unit?.instanceId;
+      if (fid && inst) map[fid] = inst;
+    }
+  }, [topSlots, bottomSlots]);
+
   const teamHp = (unitsBySlot: Record<number, UnitView | null>) => {
     let hp = 0;
     let hpMax = 0;
@@ -1542,26 +1554,29 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   }
 
   function CardSlot({
-    card,
-    fallbackId,
-    revealed,
-    delayMs,
-    unit,
-    attackFx,
-    spawnFx,
-    damageFx,
-    isDying,
-  }: {
-    card?: CardMeta | null;
-    fallbackId?: string | null;
-    revealed: boolean;
-    delayMs: number;
-    unit?: UnitView | null;
-    attackFx?: AttackFx[];
-    spawnFx?: SpawnFx[];
-    damageFx?: DamageFx[];
-    isDying?: boolean;
-  }) {
+  card,
+  unit,
+  fallbackId,
+  unitInstanceId,
+  attackFx,
+  spawnFx,
+  damageFx,
+  isDying,
+  revealed,
+  delayMs,
+}: {
+  card?: CardMeta | null;
+  unit?: UnitView | null;
+  fallbackId?: string | null;
+  unitInstanceId?: string | null;
+  attackFx?: AttackFx[];
+  spawnFx?: SpawnFx[];
+  damageFx?: DamageFx[];
+  isDying?: boolean;
+  revealed: boolean;
+  delayMs: number;
+}) {
+
     const id = card?.id || fallbackId || "";
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
     const r = (card?.rarity || "common") as string;
@@ -1572,7 +1587,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     // IMPORTANT: battle state may remove `unit` immediately on death, so we keep a ghost snapshot
     // long enough to play the vanish animation, then we remove the card from DOM.
     const [ghostUnit, setGhostUnit] = useState<UnitView | null>(null);
-    const activeUnit = unit ?? ghostUnit;
+      const lastUnitRef = useRef<UnitView | null>(null);
+const activeUnit = unit ?? ghostUnit;
     const renderUnit = activeUnit;
 
     const [isVanish, setIsVanish] = useState(false);
@@ -1604,7 +1620,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, []);
 
     useEffect(() => {
-      const instId = activeUnit?.instanceId ?? null;
+      const instId = unitInstanceId ?? activeUnit?.instanceId ?? null;
 
       // No unit at all => reset
       if (!instId) {
@@ -1703,7 +1719,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           "bb-card",
           revealed ? "is-revealed" : "",
           `rt-${revealTick}`,
-          unit ? "has-unit" : "",
+          renderUnit ? "has-unit" : "",
           isDead ? "is-dead" : "",
           isActive ? "is-active" : "",
           spawned ? "is-spawn" : "",
@@ -2995,10 +3011,11 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
-                    attackFx={(() => { const inst = s.unit?.instanceId; return inst ? attackFxByInstance[inst] : undefined; })()}
-                    spawnFx={(() => { const inst = s.unit?.instanceId; return inst ? spawnFxByInstance[inst] : undefined; })()}
-                    damageFx={(() => { const inst = s.unit?.instanceId; return inst ? damageFxByInstance[inst] : undefined; })()}
-                    isDying={(() => { const inst = s.unit?.instanceId; return !!(inst && deathFxByInstance.has(inst)); })()}
+                    unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}
+                    attackFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? attackFxByInstance[inst] : undefined; })()}
+                    spawnFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? spawnFxByInstance[inst] : undefined; })()}
+                    damageFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? damageFxByInstance[inst] : undefined; })()}
+                    isDying={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return !!(inst && deathFxByInstance.has(inst)); })()}
                     revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
                   />
@@ -3026,10 +3043,11 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
-                    attackFx={(() => { const inst = s.unit?.instanceId; return inst ? attackFxByInstance[inst] : undefined; })()}
-                    spawnFx={(() => { const inst = s.unit?.instanceId; return inst ? spawnFxByInstance[inst] : undefined; })()}
-                    damageFx={(() => { const inst = s.unit?.instanceId; return inst ? damageFxByInstance[inst] : undefined; })()}
-                    isDying={(() => { const inst = s.unit?.instanceId; return !!(inst && deathFxByInstance.has(inst)); })()}
+                    unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}
+                    attackFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? attackFxByInstance[inst] : undefined; })()}
+                    spawnFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? spawnFxByInstance[inst] : undefined; })()}
+                    damageFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? damageFxByInstance[inst] : undefined; })()}
+                    isDying={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return !!(inst && deathFxByInstance.has(inst)); })()}
                     revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
                   />
