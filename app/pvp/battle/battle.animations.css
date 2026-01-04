@@ -42,36 +42,31 @@
   text-shadow: 0 6px 20px rgba(0,0,0,.65);
 }
 
-/* === Death: flip card to back and KEEP it (no fade-to-transparent) === */
+/* === Death: flip card to back, then VANISH (visual remove) === */
 .bb-slot.is-dying .bb-card{
-  animation: bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both;
-  transform-style: preserve-3d;
-}
-/* Vanish after death (separate, does NOT affect FX Manager) */
-.bb-slot.is-dying.is-vanish .bb-card,
-.bb-slot.is-vanish .bb-card{
   animation:
     bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both,
-    bb_card_vanish 260ms cubic-bezier(.2,.9,.2,1) forwards;
-  animation-delay: 0ms, 520ms;
+    bb_card_vanish 260ms var(--bb-ease-in, cubic-bezier(.2,.9,.2,1)) both;
+  animation-delay: 0ms, 520ms; /* 520ms = death-atlas timing */
   transform-style: preserve-3d;
 }
-
-@keyframes bb_card_vanish{
-  0%   { opacity: 1; transform: translate3d(0,0,0) scale(1); filter: none; }
-  100% { opacity: 0; transform: translate3d(0,18px,0) scale(.84); filter: blur(1.2px) brightness(.92); }
-}
-
-
 @keyframes bb_card_death_to_back{
   0%   { transform: translate3d(0,0,0) rotateY(0deg) scale(1); filter: saturate(1) brightness(1); }
   18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
   45%  { transform: translate3d(0,6px,0) rotateY(70deg) scale(.96); filter: saturate(.8) brightness(.95); }
+  100% { transform: translate3d(0,10px,0) rotateY(180deg) scale(.92); filter: saturate(.7) brightness(.9); }
 }
 
-/* After unit is dead, force it to stay flipped (no transparency) */
-.bb-card.is-dead{
-  opacity: 1 !important;
+/* Fade/shrink the card away AFTER the death atlas plays */
+@keyframes bb_card_vanish{
+  0%   { opacity: 1; transform: translate3d(0,10px,0) rotateY(180deg) scale(.92); filter: saturate(.7) brightness(.9); }
+  70%  { opacity: .35; transform: translate3d(0,16px,0) rotateY(180deg) scale(.78); filter: saturate(.4) brightness(.7) blur(.5px); }
+  100% { opacity: 0; transform: translate3d(0,22px,0) rotateY(180deg) scale(.62); filter: saturate(0) brightness(.6) blur(1.4px); }
+}
+
+/* After unit is dead, keep it flipped (but don't block the vanish animation) */
+.bb-slot:not(.is-dying) .bb-card.is-dead{
+  opacity: 1;
 }
 .bb-card.is-dead .bb-card-inner{
   transform: rotateY(180deg) !important;
@@ -87,35 +82,6 @@
   pointer-events: none;
   z-index: 50;
 }
-/* --- Death FX (atlas-style): no sliding, no bleeding ---
-   Asset: /fx/retro/death_burst_strip.png (194x59) — 3 frames with padding.
-   We animate background-position with HOLD segments to avoid interpolation "sliding left".
-*/
-.bb-fx-burst--death .bb-fx-burst__atlas{
-  width: 100%;
-  height: 100%;
-  background-image: url("/fx/retro/death_burst_strip.png");
-  background-repeat: no-repeat;
-  background-size: calc(194px * var(--bb-strip-scale, 2)) calc(59px * var(--bb-strip-scale, 2));
-  background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%;
-  will-change: background-position, opacity;
-  image-rendering: auto;
-  animation: bb-death-atlas-3 520ms linear forwards;
-}
-
-/* If old strip-based img exists somewhere, don't animate it for death */
-.bb-fx-burst--death .bb-fx-burst__img{
-  animation: none !important;
-}
-
-@keyframes bb-death-atlas-3{
-  /* Hold each frame — no in-between positions */
-  0%, 32.9%  { background-position: calc(-2px   * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-  33%, 65.9% { background-position: calc(-66px  * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-  66%, 92.9% { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-  100%       { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 0; }
-}
-
 .bb-death{
   position: absolute;
   inset: 0;
@@ -125,19 +91,15 @@
   content:"";
   position:absolute;
   inset:0;
-  background-image: url("/fx/retro/death_burst_strip.png");
+  background-image: url("/fx/death_burst.png");
   background-repeat: no-repeat;
-  /* strip frame size: 194x59, we scale via CSS var */
-  background-size: calc(194px * var(--bb-strip-scale, 2)) calc(59px * var(--bb-strip-scale, 2));
-  /* slight left padding inside strip */
-  background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%;
+  background-position: 0 50%;
+  background-size: auto 100%;
   transform: translateZ(0) scale(1.05);
   filter: contrast(1.15) brightness(1.1) saturate(1.1);
   opacity: 1;
-  /* use same working animation as FxLayer */
-  animation: bb-death-atlas-3 520ms linear forwards;
+  animation: bb_death_sprite 680ms steps(var(--bb-death-frames, 8)) both;
 }
-
 @keyframes bb_death_sprite{
   from { background-position: 0 50%; opacity: 1; }
   to   { background-position: 100% 50%; opacity: 0; }
@@ -257,7 +219,6 @@
     0%   { opacity:1; transform: translate3d(0,0,0) rotate(0deg) scale(1); }
     18%  { opacity:1; transform: translate3d(0,0,0) rotate(-1.2deg) scale(1.01); } /* micro-freeze + tilt */
     55%  { opacity:.92; transform: translate3d(0,16px,0) rotate(3.5deg) scale(.92); } /* drop + squash */
-    100% { opacity:0; transform: translate3d(0,26px,0) rotate(6deg) scale(.85); }
   }
   
   /* =========================================================
@@ -286,25 +247,22 @@
     width: 320px;
     height: 320px;
     transform: translate(-50%,-55%);
-
-    background-image: url("/fx/retro/death_burst_strip.png");
+    background-image: url("/fx/death_burst.png");
     background-repeat: no-repeat;
-    background-size: calc(194px * var(--bb-strip-scale, 2)) calc(59px * var(--bb-strip-scale, 2));
-    background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%;
+    background-size: 800% 100%;
     image-rendering: auto;
-
+  
     /* make grayscale look "alive" */
     filter:
       hue-rotate(var(--bb-fx-tint-hue))
       saturate(var(--bb-fx-tint-sat))
       brightness(var(--bb-fx-tint-bright))
       drop-shadow(var(--bb-fx-shadow));
-
+  
     opacity:1;
     mix-blend-mode: screen;
-    animation: bb-death-atlas-3 520ms linear forwards;
-}
-
+    animation: bb_sprite8 680ms steps(8) both;
+  }
   
   /* glow halo behind sprite */
   .bb-slot.is-dying .bb-death::after{
@@ -441,74 +399,4 @@
   8%{ opacity: 1; }
   70%{ opacity: 1; }
   100%{ transform: translate(-50%, -52%) scale(1.06); opacity: 0; }
-}
-
-
-/* Vanish: when the card is removed from render, keep slot layout but hide visuals */
-.bb-slot.is-hidden{ opacity:0; pointer-events:none; }
-
-
-/* =========================================================
-   DEATH + VANISH (FINAL OVERRIDE)
-   Goal:
-   - Keep current death burst FX working
-   - Flip card to back (gamey) then vanish and remove
-   - Prevent earlier partial keyframes from breaking the flip
-========================================================= */
-
-@keyframes bb_card_death_to_back__final{
-  0%   { transform: translate3d(0,0,0) rotateY(0deg) scale(1); filter: saturate(1) brightness(1); }
-  18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
-  45%  { transform: translate3d(0,6px,0) rotateY(70deg) scale(.96); filter: saturate(.85) brightness(.96); }
-  100% { transform: translate3d(0,10px,0) rotateY(180deg) scale(.92); filter: saturate(.75) brightness(.92); }
-}
-
-@keyframes bb_card_vanish__final{
-  0%   { opacity: 1; transform: translate3d(0,10px,0) rotateY(180deg) scale(.92); filter: saturate(.75) brightness(.92); }
-  100% { opacity: 0; transform: translate3d(0,26px,0) rotateY(180deg) scale(.82); filter: blur(1.2px) brightness(.88); }
-}
-
-/* Triggered by CardSlot: .bb-slot.is-dying and .bb-slot.is-vanish */
-.bb-slot.is-dying .bb-card{
-  animation: bb_card_death_to_back__final 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both !important;
-  transform-style: preserve-3d;
-}
-
-.bb-slot.is-dying.is-vanish .bb-card,
-.bb-slot.is-vanish .bb-card{
-  animation:
-    bb_card_death_to_back__final 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both,
-    bb_card_vanish__final 260ms cubic-bezier(.2,.9,.2,1) forwards !important;
-  animation-delay: 0ms, 520ms;
-  transform-style: preserve-3d;
-}
-
-/* When the unit is flagged dead, do NOT fade it by old rules */
-.bb-card.is-dead{
-  opacity: 1 !important;
-  filter: none !important;
-}
-
-/* Keep the slot footprint but fully hide once CardSlot sets isHidden=true */
-.bb-slot.is-hidden{
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-
-
-/* Safety: don't dim dead cards; vanish handles removal */
-.bb-card.has-unit.is-dead{opacity:1 !important; filter:none !important;}
-
-
-/* ================================
-   Death → Vanish → Remove (stable)
-   ================================ */
-.bb-slot.is-hidden {
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-.bb-slot.is-hidden .bb-card {
-  display: none !important;
 }
