@@ -1599,6 +1599,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const vanishTimersRef = useRef<number[]>([]);
     const deathStartedRef = useRef(false);
     const prevInstRef = useRef<string | null>(null);
+    const hadUnitRef = useRef(false);
 
     const isDead = !!activeUnit && (!activeUnit.alive || activeUnit.hp <= 0);
     const instId: string | null = unitInstanceId ?? activeUnit?.instanceId ?? null;
@@ -1646,25 +1647,32 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     // Start vanish AFTER the death atlas animation, then remove the card from the slot.
     useEffect(() => {
-      if (!instId) return;
-      if (!(isDying || isDead)) return;
-      if (deathStartedRef.current) return;
+  if (!instId) return;
 
-      deathStartedRef.current = true;
-      setDeathStarted(true);
+  const removedFromState = !unit && hadUnitRef.current;
+  const deadByStats = !!unit && (unit.hp <= 0 || unit.alive === false);
+  const shouldStart = isDying || isDead || deadByStats || removedFromState;
 
-      // 0..520ms: death atlas plays (flip + burst)
-      // 520..860ms: vanish animation
-      vanishTimersRef.current.push(
-        window.setTimeout(() => setIsVanish(true), 520),
-      );
-      vanishTimersRef.current.push(
-        window.setTimeout(() => {
-          setIsHidden(true);
-          setGhostUnit(null);
-        }, 860),
-      );
-    }, [instId, isDying, isDead]);
+  if (!shouldStart) return;
+  if (deathStartedRef.current) return;
+
+  deathStartedRef.current = true;
+  setDeathStarted(true);
+
+  // Clear any pending from a previous unit
+  vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
+  vanishTimersRef.current = [];
+
+  // Let the atlas play first, then fade/shrink the card out, then fully hide the slot content.
+  vanishTimersRef.current.push(window.setTimeout(() => setIsVanish(true), 560));
+  vanishTimersRef.current.push(
+    window.setTimeout(() => {
+      setIsHidden(true);
+      setGhostUnit(null);
+    }, 980),
+  );
+}, [instId, isDying, isDead, unit?.instanceId, unit?.hp, unit?.alive]);
+
 
 if (isHidden) {
       return <div className="bb-slot is-hidden" />;
