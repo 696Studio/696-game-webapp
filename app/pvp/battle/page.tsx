@@ -2746,7 +2746,7 @@ const activeUnit = unit ?? ghostUnit;
         .bb-corner-dot { width: 6px; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.28); }
 
         .bb-card.has-unit.is-active { animation: activePulse 180ms ease-out 1; }
-        .bb-card.has-unit.is-dead { opacity: 0.55; filter: grayscale(0.35); }
+        .bb-card.has-unit.is-dead { opacity: 1 !important; filter: none !important; }
         .bb-card.has-unit.is-dying { filter: saturate(0.9); }
 
         @media (max-width: 640px) {

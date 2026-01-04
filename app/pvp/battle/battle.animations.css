@@ -495,3 +495,7 @@
   pointer-events: none !important;
 }
 
+
+
+/* Safety: don't dim dead cards; vanish handles removal */
+.bb-card.has-unit.is-dead{opacity:1 !important; filter:none !important;}
