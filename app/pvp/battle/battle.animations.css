@@ -446,3 +446,52 @@
 
 /* Vanish: when the card is removed from render, keep slot layout but hide visuals */
 .bb-slot.is-hidden{ opacity:0; pointer-events:none; }
+
+
+/* =========================================================
+   DEATH + VANISH (FINAL OVERRIDE)
+   Goal:
+   - Keep current death burst FX working
+   - Flip card to back (gamey) then vanish and remove
+   - Prevent earlier partial keyframes from breaking the flip
+========================================================= */
+
+@keyframes bb_card_death_to_back__final{
+  0%   { transform: translate3d(0,0,0) rotateY(0deg) scale(1); filter: saturate(1) brightness(1); }
+  18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
+  45%  { transform: translate3d(0,6px,0) rotateY(70deg) scale(.96); filter: saturate(.85) brightness(.96); }
+  100% { transform: translate3d(0,10px,0) rotateY(180deg) scale(.92); filter: saturate(.75) brightness(.92); }
+}
+
+@keyframes bb_card_vanish__final{
+  0%   { opacity: 1; transform: translate3d(0,10px,0) rotateY(180deg) scale(.92); filter: saturate(.75) brightness(.92); }
+  100% { opacity: 0; transform: translate3d(0,26px,0) rotateY(180deg) scale(.82); filter: blur(1.2px) brightness(.88); }
+}
+
+/* Triggered by CardSlot: .bb-slot.is-dying and .bb-slot.is-vanish */
+.bb-slot.is-dying .bb-card{
+  animation: bb_card_death_to_back__final 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both !important;
+  transform-style: preserve-3d;
+}
+
+.bb-slot.is-dying.is-vanish .bb-card,
+.bb-slot.is-vanish .bb-card{
+  animation:
+    bb_card_death_to_back__final 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both,
+    bb_card_vanish__final 260ms cubic-bezier(.2,.9,.2,1) forwards !important;
+  animation-delay: 0ms, 520ms;
+  transform-style: preserve-3d;
+}
+
+/* When the unit is flagged dead, do NOT fade it by old rules */
+.bb-card.is-dead{
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+/* Keep the slot footprint but fully hide once CardSlot sets isHidden=true */
+.bb-slot.is-hidden{
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+

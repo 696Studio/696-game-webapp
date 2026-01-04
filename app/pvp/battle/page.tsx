@@ -1586,9 +1586,11 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     // Keep latest live unit snapshot for ghost rendering
     useEffect(() => {
       if (unit) setGhostUnit(unit);
-    }, [unit?.instanceId]);
+    // Update ghost snapshot not only on instanceId, but also on vital changes (hp/alive/etc),
+    // so `isDead` can become true even if the engine clears `unit` right after damage.
+    }, [unit?.instanceId, unit?.hp, unit?.maxHp, unit?.shield, unit?.alive]);
 
-    // Start vanish sequence when death starts.
+// Start vanish sequence when death starts.
 // IMPORTANT: battle state may remove `unit` immediately; we keep `ghostUnit` so the death FX can play.
 // We trigger on (isDying || isDead) and we DO NOT clear timers on every render.
     const clearVanishTimers = () => {
