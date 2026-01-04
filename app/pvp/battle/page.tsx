@@ -1599,7 +1599,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const vanishTimersRef = useRef<number[]>([]);
     const deathStartedRef = useRef(false);
     const prevInstRef = useRef<string | null>(null);
-    const hadUnitRef = useRef(false);
 
     const isDead = !!activeUnit && (!activeUnit.alive || activeUnit.hp <= 0);
     const instId: string | null = unitInstanceId ?? activeUnit?.instanceId ?? null;
@@ -1623,58 +1622,53 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     // Reset local FX state when the slot instance changes (new spawn / empty slot).
     useEffect(() => {
+      // Important: when a unit dies, the engine may clear `instId` before our timeouts fire.
+      // If death sequence already started, DO NOT reset on instId -> null, otherwise we cancel vanish/hide timers.
+      if (!instId && deathStartedRef.current) return;
+
       if (prevInstRef.current === instId) return;
       prevInstRef.current = instId;
 
+      // Full reset for a new unit (or when slot is cleared while NOT in death flow)
       deathStartedRef.current = false;
       setDeathStarted(false);
       setIsVanish(false);
       setIsHidden(false);
-      vanishStartedForRef.current = null;
 
-      // clear any pending timers from previous unit
-      vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
-      vanishTimersRef.current = [];
+      if (vanishTimersRef.current.length) {
+        vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
+        vanishTimersRef.current = [];
+      }
 
+      // If slot is cleared normally (not during death), drop snapshot too
       if (!instId) {
         setGhostUnit(null);
         lastUnitRef.current = null;
-      } else if (unit) {
-        setGhostUnit(unit);
-        lastUnitRef.current = unit;
       }
-    }, [instId, unit]);
-
-    // Start vanish AFTER the death atlas animation, then remove the card from the slot.
+    }, [instId, unit]);// Start vanish AFTER the death atlas animation, then remove the card from the slot.
     useEffect(() => {
-  if (!instId) return;
+      // Use last known instance id (prevInstRef) so death->vanish works even if `instId` becomes null quickly.
+      const deathKey = instId ?? prevInstRef.current;
+      if (!deathKey) return;
 
-  const removedFromState = !unit && hadUnitRef.current;
-  const deadByStats = !!unit && (unit.hp <= 0 || unit.alive === false);
-  const shouldStart = isDying || isDead || deadByStats || removedFromState;
+      if (!(isDying || isDead)) return;
+      if (deathStartedRef.current) return;
 
-  if (!shouldStart) return;
-  if (deathStartedRef.current) return;
+      deathStartedRef.current = true;
+      setDeathStarted(true);
 
-  deathStartedRef.current = true;
-  setDeathStarted(true);
-
-  // Clear any pending from a previous unit
-  vanishTimersRef.current.forEach((t) => window.clearTimeout(t));
-  vanishTimersRef.current = [];
-
-  // Let the atlas play first, then fade/shrink the card out, then fully hide the slot content.
-  vanishTimersRef.current.push(window.setTimeout(() => setIsVanish(true), 560));
-  vanishTimersRef.current.push(
-    window.setTimeout(() => {
-      setIsHidden(true);
-      setGhostUnit(null);
-    }, 980),
-  );
-}, [instId, isDying, isDead, unit?.instanceId, unit?.hp, unit?.alive]);
-
-
-if (isHidden) {
+      // 0..520ms: death atlas plays (flip + burst)
+      // 520..860ms: vanish animation
+      vanishTimersRef.current.push(
+        window.setTimeout(() => setIsVanish(true), 520),
+      );
+      vanishTimersRef.current.push(
+        window.setTimeout(() => {
+          setIsHidden(true);
+          setGhostUnit(null);
+        }, 860),
+      );
+    }, [instId, isDying, isDead]);if (isHidden) {
       return <div className="bb-slot is-hidden" />;
     }
 
