@@ -485,8 +485,7 @@ export default function CardArt({
         )}
       </div>
     );
-  }
-  else {
+  } else {
 
   // generic mode (inventory/chest): centered art + frame overlay
   return (
