@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import DeadPlaceholder from "./DeadPlaceholder";
 
 type CardArtProps = {
   /** Resolved image URL (already mapped to /cards/art/... if needed). */
@@ -354,26 +353,6 @@ export default function CardArt({
             />
 
             {/* Art (contain + center) */}
-            {/* DEAD SKELETON OVERLAY (only when dead, after animation) */}
-            {isDead && !isDying && (
-              <div
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  inset: "18%",
-                  zIndex: 4,
-                  backgroundImage: "url(/fx/dead_skeleton.png)",
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "center",
-                  backgroundSize: "60%",
-                  opacity: 0.95,
-                  pointerEvents: "none",
-                  filter: "drop-shadow(0 0 6px rgba(0,0,0,0.6))",
-                }}
-              />
-            )}
-
-
             {src ? (
               <div
                 style={{
@@ -404,6 +383,42 @@ export default function CardArt({
               >
                 CARD
               </div>
+            )}
+
+            {/* DEAD SKELETON OVERLAY (FINAL, ABOVE ART, BELOW FRAME) */}
+            {isDead && !isDying && (
+              <div
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  inset: "18%",
+                  zIndex: 6,
+                  backgroundImage: "url(/fx/dead_skeleton.png)",
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "center",
+                  backgroundSize: "60%",
+                  opacity: 1,
+                  pointerEvents: "none",
+                }}
+              />
+            )}
+
+            {/* DEAD SKELETON OVERLAY (FINAL, ABOVE ART, BELOW FRAME) */}
+            {isDead && !isDying && (
+              <div
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  inset: "18%",
+                  zIndex: 6,
+                  backgroundImage: "url(/fx/dead_skeleton.png)",
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "center",
+                  backgroundSize: "60%",
+                  opacity: 1,
+                  pointerEvents: "none",
+                }}
+              />
             )}
           </div>
 
