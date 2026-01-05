@@ -130,8 +130,6 @@ type TimelineEvent =
   | { t: number; type: string; [k: string]: any };
 
 type UnitView = {
-  isDead?: boolean;
-  isDying?: boolean;
   instanceId: string;
   side: "p1" | "p2";
   slot: number;
