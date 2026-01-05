@@ -544,3 +544,49 @@
   opacity: .95;
   z-index: 21;
 }
+
+/* =========================================================
+   🔒 DEAD STATE OVERRIDES (FINAL, MINIMAL, SAFE)
+   PURPOSE:
+   - Card stays visible after death
+   - Slot never fades to opacity:0 for dead cards
+   - Skeleton PNG is always visible
+   ========================================================= */
+
+/* NEVER hide slot if card is dead */
+.bb-slot.is-dying:has(.bb-card.is-dead),
+.bb-slot.is-hidden:has(.bb-card.is-dead){
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: none !important;
+}
+
+/* Ensure dead card is fully visible */
+.bb-card.is-dead{
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: block !important;
+  pointer-events: none !important;
+  position: relative !important;
+}
+
+/* Dark overlay */
+.bb-card.is-dead::after{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 200;
+  pointer-events: none;
+}
+
+/* Skeleton overlay */
+.bb-card.is-dead::before{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("/fx/dead_skeleton.png") center / 60% no-repeat;
+  opacity: 1;
+  z-index: 201;
+  pointer-events: none;
+}
