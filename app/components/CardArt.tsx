@@ -374,7 +374,7 @@ export default function CardArt({
                 backgroundImage: "url(/fx/dead_skeleton.png)",
                 backgroundRepeat: "no-repeat",
                 backgroundPosition: "center",
-                backgroundSize: "60%",
+                backgroundSize: "80%",
                 pointerEvents: "none",
                 transition: "opacity 220ms ease-out",
               }}
