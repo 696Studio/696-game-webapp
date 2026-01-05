@@ -1667,7 +1667,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [instId, isDying, isDead]);
 
 if (isHidden) {
-      return <div className="bb-slot is-hidden" />;
+      return null;
     }
 
     const hpPct = useMemo(() => {
