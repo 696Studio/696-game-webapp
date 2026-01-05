@@ -312,12 +312,23 @@ export default function CardArt({
             }
 
 
-            /* === DEAD SKELETON VISIBILITY (FINAL) === */
+            /* === DEAD SKELETON VISIBILITY (POLISHED) === */
             .bb-card .cardart-dead-skeleton {
               opacity: 0;
+              transform: scale(0.95);
+              filter: drop-shadow(0 0 0 rgba(0,0,0,0));
             }
             .bb-card.is-dead .cardart-dead-skeleton {
               opacity: 1;
+              transform: scale(1);
+              filter:
+                drop-shadow(0 0 8px rgba(0,0,0,0.55))
+                drop-shadow(0 0 14px rgba(255,255,255,0.08));
+            }
+
+            /* Extra dead darkening for the whole card */
+            .bb-card.is-dead {
+              filter: grayscale(0.25) brightness(0.7);
             }
 
           `}</style>
@@ -376,7 +387,7 @@ export default function CardArt({
                 backgroundPosition: "center",
                 backgroundSize: "80%",
                 pointerEvents: "none",
-                transition: "opacity 220ms ease-out",
+                transition: "opacity 260ms ease-out, transform 260ms ease-out, filter 260ms ease-out",
               }}
             />
 
@@ -475,6 +486,7 @@ export default function CardArt({
       </div>
     );
   }
+  else {
 
   // generic mode (inventory/chest): centered art + frame overlay
   return (
@@ -530,4 +542,5 @@ export default function CardArt({
       )}
     </div>
   );
+}
 }
