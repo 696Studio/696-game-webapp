@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -139,7 +138,6 @@ type UnitView = {
   shield: number;
   alive: boolean;
   tags: Set<string>;
-  dyingAt?: number;
 };
 
 type AttackFx = { t: number; fromId: string; toId: string };
@@ -1034,28 +1032,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           if (u) {
             u.alive = false;
             u.hp = 0;
-            u.dyingAt = e.t ?? Date.now();
           }
-
-          // ✅ HARD REMOVE from slotMap (card disappears)
-          if (ref.side === "p1") {
-            
-          } else if (ref.side === "p2") {
-            
-          }
-
-          
-          // ⏳ remove unit from slotMap AFTER death animation
-          const REMOVE_DELAY = 800; // ms
-          setTimeout(() => {
-            if (ref.side === "p1") {
-              slotMapP1[ref.slot] = null;
-            } else if (ref.side === "p2") {
-              slotMapP2[ref.slot] = null;
-            }
-          }, REMOVE_DELAY);
-
-          continue;
         }
       } else if (e.type === "score") {
         rr = (e as any).round ?? rr;
@@ -1599,8 +1576,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   revealed: boolean;
   delayMs: number;
 }) {
-  if (!unit) return null;
-
 
     const id = card?.id || fallbackId || "";
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
@@ -1692,7 +1667,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }, [instId, isDying, isDead]);
 
 if (isHidden) {
-      return null;
+      return <div className="bb-slot is-hidden" />;
     }
 
     const hpPct = useMemo(() => {
