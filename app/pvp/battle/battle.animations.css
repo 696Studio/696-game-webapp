@@ -512,3 +512,35 @@
 .bb-slot.is-hidden .bb-card {
   display: none !important;
 }
+
+
+
+/* =========================================================
+   FINAL DEAD STATE — SKELETON OVERLAY (STABLE)
+   Uses existing .is-dead flag. Does NOT affect death animation.
+   Asset: /public/fx/dead_skeleton.png
+   ========================================================= */
+
+.bb-card.is-dead{
+  opacity: 1 !important;
+  filter: none !important;
+  pointer-events: none;
+  position: relative;
+}
+
+.bb-card.is-dead::after{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 20;
+}
+
+.bb-card.is-dead::before{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("/fx/dead_skeleton.png") center / 60% no-repeat;
+  opacity: .95;
+  z-index: 21;
+}
