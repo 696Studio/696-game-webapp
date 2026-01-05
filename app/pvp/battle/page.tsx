@@ -1039,10 +1039,21 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
           // ✅ HARD REMOVE from slotMap (card disappears)
           if (ref.side === "p1") {
-            slotMapP1[ref.slot] = null;
+            
           } else if (ref.side === "p2") {
-            slotMapP2[ref.slot] = null;
+            
           }
+
+          
+          // ⏳ remove unit from slotMap AFTER death animation
+          const REMOVE_DELAY = 800; // ms
+          setTimeout(() => {
+            if (ref.side === "p1") {
+              slotMapP1[ref.slot] = null;
+            } else if (ref.side === "p2") {
+              slotMapP2[ref.slot] = null;
+            }
+          }, REMOVE_DELAY);
 
           continue;
         }
