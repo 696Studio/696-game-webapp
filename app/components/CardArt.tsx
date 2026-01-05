@@ -248,15 +248,6 @@ export default function CardArt({
     const shownAtk = Number.isFinite(atk) ? Math.max(0, Math.floor(atk as number)) : 0;
     const shownHp = Number.isFinite(hp) ? Math.max(0, Math.floor(hp as number)) : 0;
 
-    // DEAD PLACEHOLDER: after death animation finished
-    if (isDead && !isDying) {
-      return (
-        <div style={{ position: "relative", width: "100%", height: "100%" }}>
-          <DeadPlaceholder />
-        </div>
-      );
-    }
-
     return (
       <div style={{position:"relative", width:"100%", height:"100%"}}>
         {/* The card body */}
@@ -363,6 +354,26 @@ export default function CardArt({
             />
 
             {/* Art (contain + center) */}
+            {/* DEAD SKELETON OVERLAY (only when dead, after animation) */}
+            {isDead && !isDying && (
+              <div
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  inset: "18%",
+                  zIndex: 4,
+                  backgroundImage: "url(/fx/dead_skeleton.png)",
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "center",
+                  backgroundSize: "60%",
+                  opacity: 0.95,
+                  pointerEvents: "none",
+                  filter: "drop-shadow(0 0 6px rgba(0,0,0,0.6))",
+                }}
+              />
+            )}
+
+
             {src ? (
               <div
                 style={{
