@@ -314,11 +314,13 @@ export default function CardArt({
 
             /* === DEAD SKELETON VISIBILITY (POLISHED) === */
             .bb-card .cardart-dead-skeleton {
+              transform: scale(0.85);
               opacity: 0;
               transform: scale(0.95);
               filter: drop-shadow(0 0 0 rgba(0,0,0,0));
             }
             .bb-card.is-dead .cardart-dead-skeleton {
+              transform: scale(1);
               opacity: 1;
               transform: scale(1);
               filter:
@@ -328,7 +330,8 @@ export default function CardArt({
 
             /* Extra dead darkening for the whole card */
             .bb-card.is-dead {
-              filter: grayscale(0.25) brightness(0.7);
+              animation: dead-shake 140ms ease-out 1;
+              filter: grayscale(0.55) brightness(0.45);
             }
 
           `}</style>
@@ -380,14 +383,14 @@ export default function CardArt({
               className="cardart-dead-skeleton"
               style={{
                 position: "absolute",
-                inset: "18%",
+                inset: "12%",
                 zIndex: 6,
                 backgroundImage: "url(/fx/dead_skeleton.png)",
                 backgroundRepeat: "no-repeat",
                 backgroundPosition: "center",
-                backgroundSize: "80%",
+                backgroundSize: "100%",
                 pointerEvents: "none",
-                transition: "opacity 260ms ease-out, transform 260ms ease-out, filter 260ms ease-out",
+                transition: "opacity 200ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 200ms cubic-bezier(0.2, 0.8, 0.2, 1)",
               }}
             />
 
@@ -396,7 +399,7 @@ export default function CardArt({
               <div
                 style={{
                   position: "absolute",
-                  inset: "18%",
+                  inset: "12%",
                   zIndex: 3,
                   backgroundImage: `url(${src})`,
                   backgroundSize: "contain",
@@ -410,7 +413,7 @@ export default function CardArt({
               <div
                 style={{
                   position: "absolute",
-                  inset: "18%",
+                  inset: "12%",
                   zIndex: 3,
                   display: "flex",
                   alignItems: "center",
@@ -485,7 +488,8 @@ export default function CardArt({
         )}
       </div>
     );
-  } else {
+  }
+  else {
 
   // generic mode (inventory/chest): centered art + frame overlay
   return (
