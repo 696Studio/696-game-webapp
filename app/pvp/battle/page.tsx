@@ -138,6 +138,7 @@ type UnitView = {
   shield: number;
   alive: boolean;
   tags: Set<string>;
+  dyingAt?: number;
 };
 
 type AttackFx = { t: number; fromId: string; toId: string };
