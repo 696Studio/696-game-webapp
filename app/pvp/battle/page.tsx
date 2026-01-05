@@ -1031,11 +1031,19 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         const ref = readUnitRefFromEvent(e, "unit");
         if (ref?.instanceId) {
           const u = units.get(ref.instanceId);
-          if (!u) break;
-          u.alive = false;
-          u.hp = 0;
-          u.dyingAt = e.t ?? Date.now();
-          // ⚠️ removal happens AFTER animation
+          if (u) {
+            u.alive = false;
+            u.hp = 0;
+            u.dyingAt = e.t ?? Date.now();
+          }
+
+          // ✅ HARD REMOVE from slotMap (card disappears)
+          if (ref.side === "p1") {
+            slotMapP1[ref.slot] = null;
+          } else if (ref.side === "p2") {
+            slotMapP2[ref.slot] = null;
+          }
+
           continue;
         }
       } else if (e.type === "score") {
