@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import DeadPlaceholder from "./DeadPlaceholder";
 
 type CardArtProps = {
   /** Resolved image URL (already mapped to /cards/art/... if needed). */
@@ -41,6 +42,10 @@ type CardArtProps = {
   popText?: string;
   popType?: "atk" | "hp";
   showPop?: boolean;
+
+  /** PVP lifecycle flags */
+  isDead?: boolean;
+  isDying?: boolean;
 };
 
 const DEFAULT_FRAME = "/cards/frame/frame_common.png";
@@ -157,6 +162,8 @@ export default function CardArt({
   popText = "",
   popType = "atk",
   showPop = false,
+  isDead = false,
+  isDying = false,
 }: CardArtProps) {
   if (variant === "pvp") {
     // Infer rarity from frameSrc
@@ -240,6 +247,15 @@ export default function CardArt({
     // Compute clamped numbers for display
     const shownAtk = Number.isFinite(atk) ? Math.max(0, Math.floor(atk as number)) : 0;
     const shownHp = Number.isFinite(hp) ? Math.max(0, Math.floor(hp as number)) : 0;
+
+    // DEAD PLACEHOLDER: after death animation finished
+    if (isDead && !isDying) {
+      return (
+        <div style={{ position: "relative", width: "100%", height: "100%" }}>
+          <DeadPlaceholder />
+        </div>
+      );
+    }
 
     return (
       <div style={{position:"relative", width:"100%", height:"100%"}}>
