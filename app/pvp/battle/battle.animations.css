@@ -257,7 +257,7 @@
     0%   { opacity:1; transform: translate3d(0,0,0) rotate(0deg) scale(1); }
     18%  { opacity:1; transform: translate3d(0,0,0) rotate(-1.2deg) scale(1.01); } /* micro-freeze + tilt */
     55%  { opacity:.92; transform: translate3d(0,16px,0) rotate(3.5deg) scale(.92); } /* drop + squash */
-    100% { opacity:0; transform: translate3d(0,26px,0) rotate(6deg) scale(.85); }
+    100% { opacity:1; transform: translate3d(0,26px,0) rotate(6deg) scale(.85); }
   }
   
   /* =========================================================
@@ -589,4 +589,45 @@
   opacity: 1;
   z-index: 201;
   pointer-events: none;
+}
+
+/* =========================================================
+   DEAD STATE — MINIMAL SAFE FIX (DO NOT REMOVE)
+   ========================================================= */
+
+/* Dead card must stay visible */
+.bb-card.is-dead{
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: block !important;
+  pointer-events: none !important;
+  position: relative !important;
+}
+
+/* Darken dead card */
+.bb-card.is-dead::after{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 200;
+  pointer-events: none;
+}
+
+/* Skeleton overlay */
+.bb-card.is-dead::before{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("/fx/dead_skeleton.png") center / 60% no-repeat;
+  opacity: 1;
+  z-index: 201;
+  pointer-events: none;
+}
+
+/* If slot becomes hidden, keep dead card visible */
+.bb-slot.is-hidden .bb-card.is-dead{
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
 }
