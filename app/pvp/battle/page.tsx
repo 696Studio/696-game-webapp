@@ -1577,8 +1577,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   revealed: boolean;
   delayMs: number;
 }) {
-  if (!unit) return null;
-
 
     const id = card?.id || fallbackId || "";
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
