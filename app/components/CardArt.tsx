@@ -311,6 +311,15 @@ export default function CardArt({
               display: none !important;
             }
 
+
+            /* === DEAD SKELETON VISIBILITY (FINAL) === */
+            .bb-card .cardart-dead-skeleton {
+              opacity: 0;
+            }
+            .bb-card.is-dead .cardart-dead-skeleton {
+              opacity: 1;
+            }
+
           `}</style>
 
           {/* Inner face (CLIPPED) */}
@@ -353,6 +362,25 @@ export default function CardArt({
             />
 
             {/* Art (contain + center) */}
+
+            {/* DEAD SKELETON LAYER (ALWAYS IN DOM, CSS-CONTROLLED) */}
+            <div
+              aria-hidden="true"
+              className="cardart-dead-skeleton"
+              style={{
+                position: "absolute",
+                inset: "18%",
+                zIndex: 6,
+                backgroundImage: "url(/fx/dead_skeleton.png)",
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "center",
+                backgroundSize: "60%",
+                pointerEvents: "none",
+                transition: "opacity 220ms ease-out",
+              }}
+            />
+
+
             {src ? (
               <div
                 style={{
@@ -385,41 +413,6 @@ export default function CardArt({
               </div>
             )}
 
-            {/* DEAD SKELETON OVERLAY (FINAL, ABOVE ART, BELOW FRAME) */}
-            {isDead && !isDying && (
-              <div
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  inset: "18%",
-                  zIndex: 6,
-                  backgroundImage: "url(/fx/dead_skeleton.png)",
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "center",
-                  backgroundSize: "60%",
-                  opacity: 1,
-                  pointerEvents: "none",
-                }}
-              />
-            )}
-
-            {/* DEAD SKELETON OVERLAY (FINAL, ABOVE ART, BELOW FRAME) */}
-            {isDead && !isDying && (
-              <div
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  inset: "18%",
-                  zIndex: 6,
-                  backgroundImage: "url(/fx/dead_skeleton.png)",
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "center",
-                  backgroundSize: "60%",
-                  opacity: 1,
-                  pointerEvents: "none",
-                }}
-              />
-            )}
           </div>
 
           {/* Frame overlay (CLIPPED): bigger frame, centered, but clipped to card bounds */}
