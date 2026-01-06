@@ -313,6 +313,21 @@ export default function CardArt({
 
 
             /* === DEAD SKELETON VISIBILITY (POLISHED) === */
+            /* === DEATH SMOKE GIF === */
+            .bb-card .cardart-death-smoke {
+              position: absolute;
+              inset: 0;
+              z-index: 5; /* under skeleton (6), over art (3) */
+              opacity: 0;
+              pointer-events: none;
+              mix-blend-mode: screen;
+            }
+
+            .bb-card.is-dead .cardart-death-smoke {
+              opacity: 1;
+            }
+
+
             .bb-card .cardart-dead-skeleton {
               transform: scale(0.85);
               opacity: 0;
