@@ -169,11 +169,8 @@
   }
 }
 
-
-
-
 @keyframes bb_death_fx_once{
   0%   { opacity:1; }
   85%  { opacity:1; }
-  100% { opacity:0; }
+  100% { opacity:0; background-image:none; }
 }
