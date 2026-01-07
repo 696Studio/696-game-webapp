@@ -161,7 +161,9 @@
 
 
 
-/* Ensure death FX never persists or replays after dying state */
-.bb-fx-anchor::before{
-  opacity: 0;
+
+@keyframes bb_death_fx_once{
+  0%   { opacity:1; }
+  85%  { opacity:1; }
+  100% { opacity:0; }
 }
