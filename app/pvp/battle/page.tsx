@@ -460,7 +460,8 @@ function BattleInner() {
   const prevHpByInstanceRef = useRef<Record<string, number>>({});
   const prevPresentRef = useRef<Set<string>>(new Set());
 
-  const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
+    const deathFxPlayedRef = useRef<Set<string>>(new Set());
+const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
     const arenaEl = arenaRef.current;
     if (!arenaEl) return;
 
@@ -3108,7 +3109,6 @@ if (isHidden) {
 }
 
 export default function BattlePage() {
-  const deathFxPlayedRef = useRef<Set<string>>(new Set());
   return (
     <Suspense
       fallback={
