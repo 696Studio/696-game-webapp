@@ -2,13 +2,17 @@
   --bb-ease-out: cubic-bezier(.18,.9,.22,1);
   --bb-ease-inout: cubic-bezier(.2,.0,.2,1);
   --bb-hit-ease: cubic-bezier(.2,.8,.2,1);
-  --bb-fx-tint-hue: 195deg;
-  --bb-fx-tint-sat: 1.6;
-  --bb-fx-tint-bright: 1.05;
-  --bb-fx-shadow: 0 0 14px rgba(120,220,255,.35);
 }
 
-/* ================= CORE CARD ================= */
+/* ================= SLOT ================= */
+
+.bb-slot{
+  position: relative;
+  overflow: visible;
+  transform-origin: 50% 70%;
+}
+
+/* ================= CARD CORE ================= */
 
 .bb-card-inner{
   position: relative;
@@ -22,19 +26,6 @@
 
 .bb-face.bb-back{
   transform: rotateY(180deg);
-  background:
-    radial-gradient(circle at 30% 20%, rgba(255,255,255,.08), rgba(0,0,0,0) 55%),
-    linear-gradient(135deg, rgba(20,20,25,.98), rgba(5,5,8,.98));
-  border: 1px solid rgba(255,255,255,.08);
-}
-
-/* ================= SLOT ================= */
-
-.bb-slot{
-  position: relative;
-  overflow: visible;
-  will-change: transform, opacity;
-  transform-origin: 50% 70%;
 }
 
 /* ================= STATES ================= */
@@ -57,7 +48,14 @@
 
 .bb-slot.is-dying{
   animation: bb_death_collapse 680ms var(--bb-ease-inout) both;
-  filter: saturate(.35) brightness(.92) contrast(1.05);
+  filter: saturate(.35) brightness(.92);
+}
+
+/* ================= CARD FLIP ================= */
+
+.bb-slot.is-dying .bb-card{
+  animation: bb_card_death_to_back 680ms var(--bb-ease-inout) both;
+  transform-style: preserve-3d;
 }
 
 /* ================= KEYFRAMES ================= */
@@ -74,40 +72,28 @@
 }
 
 @keyframes bb_attack_lunge{
-  from{ transform: translateY(0); }
   to{ transform: translateY(-6px); }
 }
 
 @keyframes bb_attack_recoil{
-  from{ transform: translateY(0); }
   to{ transform: translateY(4px); }
 }
 
 @keyframes bb_death_collapse{
-  from{ transform: scale(1); opacity:1; }
   to{ transform: scale(.96); opacity:.85; }
 }
 
-@keyframes bb_card_death_to_back__final{
-  from{ transform: rotateY(0deg); }
+@keyframes bb_card_death_to_back{
   to{ transform: rotateY(180deg); }
 }
 
-/* ================= CARD STATES ================= */
-
-.bb-slot.is-dying .bb-card{
-  animation: bb_card_death_to_back__final 680ms var(--bb-ease-inout) both;
-  transform-style: preserve-3d;
-}
+/* ================= DEAD STATE (SKELETON) ================= */
 
 .bb-card.is-dead{
-  opacity:1 !important;
-  filter:none !important;
   pointer-events:none;
   position: relative;
+  opacity:1 !important;
 }
-
-/* ================= DEAD OVERLAY ================= */
 
 .bb-card.is-dead::after{
   content:"";
@@ -126,35 +112,19 @@
   z-index:21;
 }
 
-/* ================= FX LAYER ================= */
+/* ================= DEATH FX (DOM, ONE-SHOT) ================= */
 
-.bb-fx-anchor{
+.bb-fx-burst--death{
   position:absolute;
-  inset:0;
-  z-index:80;
+  transform: translate(-50%, -50%);
   pointer-events:none;
-  overflow:visible;
+  z-index:200;
 }
 
-/* ================= DEATH FX GIF (ONE SHOT) ================= */
-
-.bb-slot.is-dying .bb-fx-anchor::before{
-  content:"";
+.bb-fx-burst--death .bb-fx-burst__atlas{
   position:absolute;
-
-  width:130%;
-  height:130%;
-
-  left:50%;
-  top:44%;
-  transform: translate(-50%, -50%);
-
+  inset:0;
   background: url("/fx/death_smoke.gif") center / contain no-repeat;
-
-  z-index:90;
-  pointer-events:none;
-
-  animation: bb_death_fx_once 900ms linear forwards;
 }
 
 /* ================= REDUCED MOTION ================= */
@@ -167,10 +137,4 @@
   .bb-slot.is-dying{
     animation:none !important;
   }
-}
-
-@keyframes bb_death_fx_once{
-  0%   { opacity:1; }
-  85%  { opacity:1; }
-  100% { opacity:0; background-image:none; }
 }

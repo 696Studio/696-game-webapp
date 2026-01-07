@@ -490,7 +490,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     // Auto-remove after animation window
     window.setTimeout(() => {
       setFxBursts((prev) => prev.filter((b) => b.id !== id));
-    }, 900);
+    }, 1100);
   };
 
   // Detect deaths robustly:
