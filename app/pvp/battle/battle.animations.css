@@ -136,15 +136,25 @@
   overflow:visible;
 }
 
-/* ================= DEATH FX GIF ================= */
+/* ================= DEATH FX GIF (ONE SHOT) ================= */
 
 .bb-slot.is-dying .bb-fx-anchor::before{
   content:"";
   position:absolute;
-  inset:0;
-  background: url("/fx/death_smoke.gif") center / cover no-repeat;
+
+  width:130%;
+  height:130%;
+
+  left:50%;
+  top:44%;
+  transform: translate(-50%, -50%);
+
+  background: url("/fx/death_smoke.gif") center / contain no-repeat;
+
   z-index:90;
   pointer-events:none;
+
+  animation: bb_death_fx_once 900ms linear forwards;
 }
 
 /* ================= REDUCED MOTION ================= */
