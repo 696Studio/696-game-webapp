@@ -262,7 +262,6 @@ function pickAvatarUrl(p?: PlayerProfile | null, seed?: string) {
   return `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${encodeURIComponent(s)}`;
 }
 
-
 const CARD_FRAME_SRC = "/cards/frame/frame_common.png";
 
 /**
@@ -295,7 +294,6 @@ function resolveCardArtUrl(raw?: string | null) {
  */
 const BOARD_IMG_W = 1290;
 const BOARD_IMG_H = 2796;
-
 
 const DEBUG_ARENA = true; // debug overlay for arena sizing
 const DEBUG_GRID = true; // mirrored A/B measurement grid (dev only)
@@ -490,7 +488,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     // Auto-remove after animation window
     window.setTimeout(() => {
       setFxBursts((prev) => prev.filter((b) => b.id !== id));
-    }, 1100);
+    }, 900);
   };
 
   // Detect deaths robustly:
@@ -515,7 +513,10 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     for (const [id, hp] of Object.entries(current)) {
       const before = prevHp[id];
       if (typeof before === "number" && before > 0 && hp <= 0) {
-        spawnDeathBurst(id);
+        if (!deathFxPlayedRef.current.has(id)) {
+          deathFxPlayedRef.current.add(id);
+          spawnDeathBurst(id);
+        }
       }
     }
 
@@ -523,8 +524,10 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     const prevPresent = prevPresentRef.current;
     for (const id of prevPresent) {
       if (!present.has(id)) {
-        // If we still have a DOM ref, spawn at last known position
-        spawnDeathBurst(id);
+        if (!deathFxPlayedRef.current.has(id)) {
+          deathFxPlayedRef.current.add(id);
+          spawnDeathBurst(id);
+        }
       }
     }
 
@@ -534,7 +537,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   const [layoutTick, setLayoutTick] = useState(0);
 
   const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
-
 
   const debugCover = useMemo(() => {
     if (!arenaBox) return null;
@@ -1582,7 +1584,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 }) {
   if (!unit) return null;
 
-
     const id = card?.id || fallbackId || "";
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
     const r = (card?.rarity || "common") as string;
@@ -1608,7 +1609,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     const isDead = !!activeUnit && (!activeUnit.alive || activeUnit.hp <= 0);
     const instId: string | null = unitInstanceId ?? activeUnit?.instanceId ?? null;
-
 
     // Cleanup timers on unmount
     useEffect(() => {
@@ -3108,6 +3108,7 @@ if (isHidden) {
 }
 
 export default function BattlePage() {
+  const deathFxPlayedRef = useRef<Set<string>>(new Set());
   return (
     <Suspense
       fallback={
