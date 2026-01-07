@@ -460,6 +460,21 @@ function BattleInner() {
   const prevHpByInstanceRef = useRef<Record<string, number>>({});
   const prevPresentRef = useRef<Set<string>>(new Set());
 
+  // ===== Death FX one-shot (disappearance-only) =====
+  const deathFxPlayedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const prev = prevPresentRef.current;
+    const now = presentRef.current;
+    for (const id of prev) {
+      if (!now.has(id) && !deathFxPlayedRef.current.has(id)) {
+        deathFxPlayedRef.current.add(id);
+        spawnDeathBurst(id);
+      }
+    }
+  }, [tick]);
+
+
     const deathFxPlayedRef = useRef<Set<string>>(new Set());
 const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
     const arenaEl = arenaRef.current;
