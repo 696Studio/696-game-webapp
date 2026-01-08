@@ -4,16 +4,17 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
- * BattleFxLayer — PORTAL ATTACK FX (FIXED)
+ * BattleFxLayer — PORTAL ATTACK FX (CLEAN, OPTION A)
  *
- * Fixes React error #300 by:
- * - Rendering portal ONLY after mount
- * - Never touching document during render
- * - Keeping hooks unconditional
+ * OPTION A: FX-клон = ПРОСТАЯ КАРТИНКА КАРТЫ (IMG)
  *
- * ✔ Creates FX-clone of attacking card
- * ✔ Moves clone to target
- * ✔ Original cards NEVER move
+ * ❌ НЕТ dangerouslySetInnerHTML
+ * ❌ НЕТ клонирования DOM
+ * ❌ НЕТ старых FX / HTML мусора
+ *
+ * ✔ React-safe
+ * ✔ Next.js-safe
+ * ✔ Никаких crash #300 / #418
  */
 
 export type FxEvent =
@@ -39,7 +40,7 @@ type AttackFx = {
   key: string;
   fromRect: DOMRect;
   toRect: DOMRect;
-  html: string;
+  imgSrc: string | null;
 };
 
 const ATTACK_DURATION = 420;
@@ -49,7 +50,6 @@ export default function BattleFxLayer({ events }: Props) {
   const [attackFx, setAttackFx] = useState<AttackFx[]>([]);
   const [mounted, setMounted] = useState(false);
 
-  // Mount guard (CRITICAL for Next.js)
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -73,6 +73,8 @@ export default function BattleFxLayer({ events }: Props) {
 
       if (!attackerEl || !targetEl) continue;
 
+      const img = attackerEl.querySelector<HTMLImageElement>('img');
+
       const fromRect = attackerEl.getBoundingClientRect();
       const toRect = targetEl.getBoundingClientRect();
 
@@ -82,7 +84,7 @@ export default function BattleFxLayer({ events }: Props) {
           key,
           fromRect,
           toRect,
-          html: attackerEl.innerHTML,
+          imgSrc: img?.src ?? null,
         },
       ]);
 
@@ -107,15 +109,18 @@ export default function BattleFxLayer({ events }: Props) {
           (fx.fromRect.top + fx.fromRect.height / 2);
 
         return (
-          <div
+          <img
             key={fx.key}
             className="bb-fx-card-clone"
+            src={fx.imgSrc ?? undefined}
+            alt=""
             style={{
               position: 'fixed',
               left: fx.fromRect.left,
               top: fx.fromRect.top,
               width: fx.fromRect.width,
               height: fx.fromRect.height,
+              objectFit: 'contain',
               transform: 'translate3d(0,0,0)',
               animation: `bb_fx_lunge ${ATTACK_DURATION}ms cubic-bezier(.18,.9,.22,1) both`,
               ['--fx-dx' as any]: `${dx}px`,
@@ -123,7 +128,6 @@ export default function BattleFxLayer({ events }: Props) {
               zIndex: 9999,
               pointerEvents: 'none',
             }}
-            dangerouslySetInnerHTML={{ __html: fx.html }}
           />
         );
       })}
