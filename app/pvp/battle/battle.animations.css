@@ -307,3 +307,38 @@ z-index: 21;
 .bb-slot.is-dying .bb-card.is-dead::after{
   opacity:0;
 }
+
+/* =========================================================
+ ATTACK FX — VARIANT A (CSS + DOM)
+ Cards lunge towards target and return.
+ Controlled by BattleFxLayer.tsx
+ ========================================================= */
+
+/* helper injected by FX layer */
+.bb-attack-fx{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+}
+
+.bb-attack-left{
+  animation: bb_attack_move_right 420ms var(--bb-ease-out) both;
+}
+
+.bb-attack-right{
+  animation: bb_attack_move_left 420ms var(--bb-ease-out) both;
+}
+
+@keyframes bb_attack_move_right{
+  0%   { transform: translate3d(0,0,0); }
+  40%  { transform: translate3d(36px,-6px,0) rotate(1.2deg); }
+  65%  { transform: translate3d(28px,-2px,0) scale(1.02); }
+  100% { transform: translate3d(0,0,0); }
+}
+
+@keyframes bb_attack_move_left{
+  0%   { transform: translate3d(0,0,0); }
+  40%  { transform: translate3d(-36px,-6px,0) rotate(-1.2deg); }
+  65%  { transform: translate3d(-28px,-2px,0) scale(1.02); }
+  100% { transform: translate3d(0,0,0); }
+}

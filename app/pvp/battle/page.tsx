@@ -5,6 +5,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
 import CardArt from "../../components/CardArt";
+import BattleFxLayer, { FxEvent } from "./BattleFxLayer";
 
 type MatchRow = {
   id: string;
@@ -1381,7 +1382,36 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     };
   }
 
-  const attackCurves = useMemo(() => {
+  
+  const attackFxEvents: FxEvent[] = useMemo(() => {
+    const windowSec = 0.3;
+    const fromT = Math.max(0, t - windowSec);
+    const events: FxEvent[] = [];
+
+    for (const e of timeline) {
+      if (e.t < fromT) continue;
+      if (e.t > t) break;
+      if (e.type === "attack") {
+        const from = (e as any)?.from;
+        const to = (e as any)?.to;
+        if (!from || !to) continue;
+
+        const direction =
+          from.side === "p1" ? "right" : "left";
+
+        events.push({
+          type: "attack",
+          id: `${e.t}-${from.instanceId}-${to.instanceId}`,
+          attackerId: from.instanceId,
+          targetId: to.instanceId,
+          direction,
+        });
+      }
+    }
+    return events;
+  }, [timeline, t]);
+
+const attackCurves = useMemo(() => {
     const arenaEl = arenaRef.current;
     if (!arenaEl) return [];
 
@@ -2910,6 +2940,7 @@ if (isHidden) {
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
+          <BattleFxLayer events={attackFxEvents} />
           {/* FX overlay (independent from card DOM) */}
           <div className="bb-fx-layer" aria-hidden="true">
             {fxBursts.map((b) => (
