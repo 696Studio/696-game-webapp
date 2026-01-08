@@ -376,20 +376,20 @@ z-index: 21;
   45%{
     transform:
       translate3d(
-        calc(var(--atk-dx) * 0.88),
-        calc(var(--atk-dy) * 0.88),
+        calc(var(--atk-dx) * 1.0),
+        calc(var(--atk-dy) * 1.0),
         0
       )
-      scale(1.04);
+      scale(1.05);
   }
   55%{
     transform:
       translate3d(
-        calc(var(--atk-dx) * 0.92),
-        calc(var(--atk-dy) * 0.92),
+        calc(var(--atk-dx) * 1.08),
+        calc(var(--atk-dy) * 1.08),
         0
       )
-      scale(1.02);
+      scale(1.03);
   }
   100%{
     transform: translate3d(0,0,0) scale(1);
