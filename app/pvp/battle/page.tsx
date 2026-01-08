@@ -1929,6 +1929,8 @@ const hpPct = useMemo(() => {
           30%  { opacity: 0.45; }
           100% { opacity: 0; }
         }
+        @keyframes atkPath {
+          0%   { opacity: 0; stroke-dashoffset: 140; }
           18%  { opacity: 1; }
           100% { opacity: 0; stroke-dashoffset: 0; }
         }
@@ -2062,10 +2064,42 @@ const hpPct = useMemo(() => {
         }
 
         .arena > .lane,
+        .arena > .atk-overlay {
+          position: relative;
+          z-index: 1;
+        }
 
         .arena.fx-p1,
         .arena.fx-p2,
         .arena.fx-draw { animation: microShake 240ms ease-out 1; }
+
+        .atk-overlay {
+          position: absolute;
+          inset: 0;
+          z-index: 4;
+          pointer-events: none;
+        }
+        .atk-path-glow {
+          stroke: rgba(255,255,255,0.28);
+          stroke-width: 8;
+          stroke-linecap: round;
+          fill: none;
+          stroke-dasharray: 140;
+          filter: drop-shadow(0 12px 24px rgba(0,0,0,0.35)) drop-shadow(0 0 14px rgba(255,255,255,0.18));
+          animation: atkPath 220ms ease-out both;
+          mix-blend-mode: screen;
+        }
+        .atk-path-core {
+          stroke: rgba(255,255,255,0.85);
+          stroke-width: 3.25;
+          stroke-linecap: round;
+          fill: none;
+          stroke-dasharray: 140;
+          filter: drop-shadow(0 10px 18px rgba(0,0,0,0.35)) drop-shadow(0 0 10px rgba(255,255,255,0.14));
+          animation: atkPath 220ms ease-out both;
+          mix-blend-mode: screen;
+          marker-end: url(#atkArrow);
+        }
 
         .map-portrait {
           position: absolute;
