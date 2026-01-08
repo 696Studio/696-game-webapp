@@ -1768,8 +1768,12 @@ if (isHidden) {
         ref={(el) => {
           if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
         }}
+        
         className={[
           "bb-card",
+          atk && atk.isFrom ? "is-attacking bb-attack-lunge" : "",
+          atk && atk.isTo ? "is-attack-target" : "",
+
           revealed ? "is-revealed" : "",
           `rt-${revealTick}`,
           renderUnit ? "has-unit" : "",
@@ -1779,7 +1783,19 @@ if (isHidden) {
           dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
         ].join(" ")}
-        style={{ animationDelay: `${delayMs}ms` }}
+        style={(() => {
+          if (atk && atk.isFrom) {
+            const v = readAttackVector(renderUnit.instanceId);
+            if (v) {
+              return {
+                animationDelay: `${delayMs}ms`,
+                ["--atk-dx"]: v.dx,
+                ["--atk-dy"]: v.dy,
+              } as React.CSSProperties;
+            }
+          }
+          return { animationDelay: `${delayMs}ms` } as React.CSSProperties;
+        })()}
       >
         <div className="bb-card-inner">
           <div className="bb-face bb-back">
