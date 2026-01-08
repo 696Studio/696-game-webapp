@@ -446,6 +446,10 @@ function BattleInner() {
   
   const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
 
+  // layoutTick drives layout-dependent calculations (no FX dependency)
+  const [layoutTick, setLayoutTick] = useState(0);
+
+
   const debugCover = useMemo(() => {
     if (!arenaBox) return null;
 
