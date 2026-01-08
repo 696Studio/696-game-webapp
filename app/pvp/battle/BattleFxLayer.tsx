@@ -4,13 +4,16 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
- * BattleFxLayer — PORTAL ATTACK FX (FINAL)
+ * BattleFxLayer — PORTAL ATTACK FX (FIXED)
+ *
+ * Fixes React error #300 by:
+ * - Rendering portal ONLY after mount
+ * - Never touching document during render
+ * - Keeping hooks unconditional
  *
  * ✔ Creates FX-clone of attacking card
  * ✔ Moves clone to target
  * ✔ Original cards NEVER move
- * ✔ No React tree instability
- * ✔ No transform conflicts
  */
 
 export type FxEvent =
@@ -40,13 +43,20 @@ type AttackFx = {
 };
 
 const ATTACK_DURATION = 420;
-const DEATH_GIF_DURATION = 900;
 
 export default function BattleFxLayer({ events }: Props) {
   const playedRef = useRef<Set<string>>(new Set());
   const [attackFx, setAttackFx] = useState<AttackFx[]>([]);
+  const [mounted, setMounted] = useState(false);
+
+  // Mount guard (CRITICAL for Next.js)
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
+    if (!mounted) return;
+
     for (const e of events) {
       if (e.type !== 'attack') continue;
 
@@ -80,7 +90,9 @@ export default function BattleFxLayer({ events }: Props) {
         setAttackFx((prev) => prev.filter((fx) => fx.key !== key));
       }, ATTACK_DURATION);
     }
-  }, [events]);
+  }, [events, mounted]);
+
+  if (!mounted) return null;
 
   return createPortal(
     <>

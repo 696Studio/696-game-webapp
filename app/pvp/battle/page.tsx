@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client";
 
-const FORCE_LUNGE = true;
+const FORCE_LUNGE = false;
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -1774,20 +1774,8 @@ if (isHidden) {
         <div
           className={[
             "bb-motion-layer",
-            atk && atk.isFrom ? "is-attacking bb-attack-lunge" : "",
           ].join(" ")}
-          style={(() => {
-            if (atk && atk.isFrom) {
-              const v = FORCE_LUNGE ? { dx: '120px', dy: '-40px' } : readAttackVector(renderUnit.instanceId);
-              if (v) {
-                return {
-                  ["--atk-dx"]: v.dx,
-                  ["--atk-dy"]: v.dy,
-                } as React.CSSProperties;
-              }
-            }
-            return undefined;
-          })()}
+          style={undefined}
         >
           <div
             ref={(el) => {
