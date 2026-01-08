@@ -1,0 +1,13 @@
+/* Базовый слой FX */
+.bb-fx {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 1000;
+  }
+  
+  /* Death FX */
+  .bb-fx-death {
+    background: url("/fx/death_smoke.gif") center / contain no-repeat;
+  }
+  
