@@ -1,145 +1,270 @@
-'use client';
+"use client";
 
-/**
- * page.battleLogic.tsx
- *
- * STEP 1 — CLEAN BATTLE LOGIC CORE
- * --------------------------------
- * PURPOSE:
- * - Rebuild battle logic from old page.tsx
- * - ZERO FX
- * - ZERO animations
- * - ZERO DOM access
- * - ZERO portals
- *
- * This file is intentionally SIMPLE and STABLE.
- * It is the foundation we will extend step-by-step.
- */
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useGameSessionContext } from "../../context/GameSessionContext";
+import CardArt from "../../components/CardArt";
 
-import { useEffect, useMemo, useState } from 'react';
+/* =========================
+   TYPES
+========================= */
 
-// --------------------
-// Types (minimal set)
-// --------------------
-
-type Unit = {
+type MatchRow = {
   id: string;
-  title: string;
+  p1_user_id: string;
+  p2_user_id: string;
+  winner_user_id: string | null;
+  log: any;
+};
+
+type CardMeta = {
+  id: string;
+  rarity: string;
+  base_power: number;
+  name?: string;
+  image_url?: string | null;
+};
+
+type UnitView = {
+  instanceId: string;
+  side: "p1" | "p2";
+  slot: number;
+  card_id: string;
   hp: number;
-  atk: number;
+  maxHp: number;
+  shield: number;
   alive: boolean;
 };
 
-type BattleState = {
-  units: Unit[];
-  turn: number;
-};
+/* =========================
+   HELPERS
+========================= */
 
-// --------------------
-// Mock / initial data
-// (replace later with real data source)
-// --------------------
-
-const INITIAL_UNITS: Unit[] = [
-  { id: 'a1', title: 'Unit A', hp: 10, atk: 3, alive: true },
-  { id: 'b1', title: 'Unit B', hp: 10, atk: 2, alive: true },
-];
-
-// --------------------
-// Page
-// --------------------
-
-export default function PvpBattleLogicPage() {
-  const [battle, setBattle] = useState<BattleState>({
-    units: INITIAL_UNITS,
-    turn: 0,
-  });
-
-  // --------------------
-  // Derived state
-  // --------------------
-
-  const attacker = useMemo(() => battle.units[0], [battle.units]);
-  const defender = useMemo(() => battle.units[1], [battle.units]);
-
-  // --------------------
-  // Core battle action
-  // --------------------
-
-  function nextTurn() {
-    setBattle((prev) => {
-      if (!prev.units[0].alive || !prev.units[1].alive) return prev;
-
-      const dmg = prev.units[0].atk;
-
-      const newUnits = prev.units.map((u) => {
-        if (u.id === prev.units[1].id) {
-          const newHp = u.hp - dmg;
-          return {
-            ...u,
-            hp: newHp,
-            alive: newHp > 0,
-          };
-        }
-        return u;
-      });
-
-      return {
-        units: newUnits,
-        turn: prev.turn + 1,
-      };
-    });
+function parseJson(v: any) {
+  if (typeof v === "string") {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return v;
+    }
   }
+  return v;
+}
 
-  // --------------------
-  // Auto battle loop (for testing)
-  // --------------------
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n));
+}
+
+/* =========================
+   MAIN
+========================= */
+
+function BattleInner() {
+  const router = useRouter();
+  const sp = useSearchParams();
+  const matchId = sp.get("matchId");
+
+  const session = useGameSessionContext() as any;
+  const { isTelegramEnv, loading, timedOut, error, refreshSession } = session;
+
+  const [match, setMatch] = useState<MatchRow | null>(null);
+  const [errText, setErrText] = useState<string | null>(null);
+
+  const [t, setT] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [rate, setRate] = useState<0.5 | 1 | 2>(1);
+
+  const rafRef = useRef<number | null>(null);
+  const startAtRef = useRef<number | null>(null);
+
+  /* =========================
+     LOAD MATCH
+  ========================= */
 
   useEffect(() => {
-    if (!defender.alive) return;
-    const t = setTimeout(nextTurn, 800);
-    return () => clearTimeout(t);
-  }, [battle.turn, defender.alive]);
+    if (!matchId) {
+      setErrText("matchId required");
+      return;
+    }
 
-  // --------------------
-  // Render (NO FX)
-  // --------------------
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/pvp/match?matchId=${matchId}`);
+        const data = await res.json();
+        if (!alive) return;
+        if (!res.ok) throw new Error(data?.error || "Load failed");
+        setMatch(data.match);
+      } catch (e: any) {
+        if (alive) setErrText(e.message);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [matchId]);
+
+  /* =========================
+     TIMELINE
+  ========================= */
+
+  const logObj = useMemo(() => parseJson(match?.log ?? {}), [match]);
+  const timeline = useMemo(() => {
+    const tl = parseJson(logObj?.timeline);
+    if (!Array.isArray(tl)) return [];
+    return tl
+      .map((e: any) => ({ ...e, t: Number(e.t ?? 0) }))
+      .filter((e: any) => Number.isFinite(e.t))
+      .sort((a: any, b: any) => a.t - b.t);
+  }, [logObj]);
+
+  const durationSec = useMemo(() => {
+    const d = Number(logObj?.duration_sec ?? 30);
+    return clamp(d, 10, 240);
+  }, [logObj]);
+
+  /* =========================
+     PLAYBACK
+  ========================= */
+
+  useEffect(() => {
+    if (!playing) return;
+
+    const step = (now: number) => {
+      if (startAtRef.current == null) {
+        startAtRef.current = now - (t / rate) * 1000;
+      }
+
+      const elapsed = ((now - startAtRef.current) / 1000) * rate;
+      const nextT = Math.min(durationSec, elapsed);
+      setT(nextT);
+
+      if (nextT < durationSec) {
+        rafRef.current = requestAnimationFrame(step);
+      } else {
+        setPlaying(false);
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(step);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [playing, rate, durationSec]);
+
+  useEffect(() => {
+    startAtRef.current = null;
+  }, [rate, playing]);
+
+  /* =========================
+     BUILD BOARD STATE
+  ========================= */
+
+  const { p1Slots, p2Slots } = useMemo(() => {
+    const units = new Map<string, UnitView>();
+    const p1: Record<number, UnitView | null> = {};
+    const p2: Record<number, UnitView | null> = {};
+
+    for (let i = 0; i < 5; i++) {
+      p1[i] = null;
+      p2[i] = null;
+    }
+
+    for (const e of timeline) {
+      if (e.t > t) break;
+
+      if (e.type === "spawn") {
+        const u: UnitView = {
+          instanceId: e.instanceId,
+          side: e.side,
+          slot: e.slot,
+          card_id: e.card_id,
+          hp: e.hp,
+          maxHp: e.maxHp,
+          shield: e.shield ?? 0,
+          alive: true,
+        };
+        units.set(u.instanceId, u);
+        (u.side === "p1" ? p1 : p2)[u.slot] = u;
+      }
+
+      if (e.type === "damage") {
+        const u = units.get(e.target?.instanceId);
+        if (u) {
+          u.hp = clamp(e.hp ?? u.hp - e.amount, 0, u.maxHp);
+          if (u.hp <= 0) u.alive = false;
+        }
+      }
+    }
+
+    return {
+      p1Slots: Object.values(p1),
+      p2Slots: Object.values(p2),
+    };
+  }, [timeline, t]);
+
+  /* =========================
+     RENDERS
+  ========================= */
+
+  if (!isTelegramEnv) {
+    return <div>Open in Telegram</div>;
+  }
+
+  if (loading) return <div>Loading…</div>;
+  if (timedOut || error)
+    return <button onClick={() => refreshSession?.()}>Re-sync</button>;
+  if (errText) return <div>{errText}</div>;
+  if (!match) return <div>Loading match…</div>;
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#0b0b0f',
-        color: '#fff',
-        padding: 24,
-        fontFamily: 'system-ui, sans-serif',
-      }}
-    >
-      <h2>PVP Battle — Logic Core</h2>
+    <main style={{ padding: 16 }}>
+      <h2>BATTLE</h2>
 
-      <div style={{ display: 'flex', gap: 24, marginTop: 24 }}>
-        {battle.units.map((u) => (
-          <div
-            key={u.id}
-            style={{
-              width: 160,
-              padding: 12,
-              borderRadius: 8,
-              background: '#15151c',
-              opacity: u.alive ? 1 : 0.4,
-            }}
-          >
-            <div style={{ fontWeight: 600 }}>{u.title}</div>
-            <div>HP: {u.hp}</div>
-            <div>ATK: {u.atk}</div>
-            {!u.alive && <div style={{ color: '#f55' }}>DEAD</div>}
-          </div>
-        ))}
+      <div>
+        <button onClick={() => setPlaying((p) => !p)}>
+          {playing ? "Pause" : "Play"}
+        </button>
+        <button onClick={() => setT(0)}>Restart</button>
+        <button onClick={() => router.push("/pvp")}>Back</button>
       </div>
 
-      <div style={{ marginTop: 24, opacity: 0.7 }}>
-        Turn: {battle.turn}
+      <div>
+        Time: {t.toFixed(2)} / {durationSec}
       </div>
-    </div>
+
+      <hr />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+        {p2Slots.map((u, i) =>
+          u ? (
+            <CardArt key={i} src={u.card_id} atk={0} hp={u.hp} />
+          ) : (
+            <div key={i}>—</div>
+          ),
+        )}
+      </div>
+
+      <hr />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+        {p1Slots.map((u, i) =>
+          u ? (
+            <CardArt key={i} src={u.card_id} atk={0} hp={u.hp} />
+          ) : (
+            <div key={i}>—</div>
+          ),
+        )}
+      </div>
+    </main>
+  );
+}
+
+export default function BattlePage() {
+  return (
+    <Suspense fallback={<div>Loading…</div>}>
+      <BattleInner />
+    </Suspense>
   );
 }
