@@ -1,6 +1,8 @@
 // @ts-nocheck
 "use client";
 
+const FORCE_LUNGE = true;
+
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
@@ -1282,8 +1284,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   }, [scored, roundWinner, youSide, enemySide]);
 
   const attackFxByInstance = useMemo(() => {
-    console.log("[DEBUG][FX MAP] t=", t);
-
     const windowSec = 0.35;
     const fromT = Math.max(0, t - windowSec);
     const map: Record<string, AttackFx[]> = {};
@@ -1734,7 +1734,9 @@ if (isHidden) {
     }, [activeUnit?.instanceId, activeUnit?.shield, activeUnit?.maxHp]);
 
     const atk = useMemo(() => {
-      console.log("[DEBUG][ATK] attackFx:", attackFx, "unit:", renderUnit?.instanceId);
+    if (FORCE_LUNGE && renderUnit) {
+      return { isFrom: true, isTo: false } as any;
+    }
 
       if (!renderUnit || !attackFx || attackFx.length === 0) return null;
       const last = attackFx[attackFx.length - 1];
@@ -1776,7 +1778,7 @@ if (isHidden) {
           ].join(" ")}
           style={(() => {
             if (atk && atk.isFrom) {
-              const v = readAttackVector(renderUnit.instanceId);
+              const v = FORCE_LUNGE ? { dx: '120px', dy: '-40px' } : readAttackVector(renderUnit.instanceId);
               if (v) {
                 return {
                   ["--atk-dx"]: v.dx,
