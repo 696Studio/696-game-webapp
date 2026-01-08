@@ -1758,229 +1758,123 @@ if (isHidden) {
 
     const isActive = !!activeUnit && activeInstance ? activeUnit.instanceId === activeInstance : false;
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
+    
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}>
-      <div className="bb-fx-anchor">
-        
-        {isDyingUi ? <div className="bb-death" /> : null}
-      </div>
-      <div
-        ref={(el) => {
-          if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
-        }}
-        
-        className={[
-          "bb-card",
-          atk && atk.isFrom ? "is-attacking bb-attack-lunge" : "",
-          atk && atk.isTo ? "is-attack-target" : "",
+        <div className="bb-fx-anchor">
+          {isDyingUi ? <div className="bb-death" /> : null}
+        </div>
 
-          revealed ? "is-revealed" : "",
-          `rt-${revealTick}`,
-          renderUnit ? "has-unit" : "",
-          isDead ? "is-dead" : "",
-          isActive ? "is-active" : "",
-          spawned ? "is-spawn" : "",
-          dmg ? "is-damage" : "",
-          isDying ? "is-dying" : "",
-        ].join(" ")}
-        style={(() => {
-          if (atk && atk.isFrom) {
-            const v = readAttackVector(renderUnit.instanceId);
-            if (v) {
-              return {
-                animationDelay: `${delayMs}ms`,
-                ["--atk-dx"]: v.dx,
-                ["--atk-dy"]: v.dy,
-              } as React.CSSProperties;
+        <div
+          className={[
+            "bb-motion-layer",
+            atk && atk.isFrom ? "is-attacking bb-attack-lunge" : "",
+          ].join(" ")}
+          style={(() => {
+            if (atk && atk.isFrom) {
+              const v = readAttackVector(renderUnit.instanceId);
+              if (v) {
+                return {
+                  ["--atk-dx"]: v.dx,
+                  ["--atk-dy"]: v.dy,
+                } as React.CSSProperties;
+              }
             }
-          }
-          return { animationDelay: `${delayMs}ms` } as React.CSSProperties;
-        })()}
-      >
-        <div className="bb-card-inner">
-          <div className="bb-face bb-back">
-            <div className="bb-mark">696</div>
-          </div>
+            return undefined;
+          })()}
+        >
+          <div
+            ref={(el) => {
+              if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
+            }}
+            className={[
+              "bb-card",
+              atk && atk.isTo ? "is-attack-target" : "",
+              revealed ? "is-revealed" : "",
+              `rt-${revealTick}`,
+              renderUnit ? "has-unit" : "",
+              isDead ? "is-dead" : "",
+              isActive ? "is-active" : "",
+              spawned ? "is-spawn" : "",
+              dmg ? "is-damage" : "",
+              isDying ? "is-dying" : "",
+            ].join(" ")}
+            style={{ animationDelay: `${delayMs}ms` }}
+          >
+            <div className="bb-card-inner">
+              <div className="bb-face bb-back">
+                <div className="bb-mark">696</div>
+              </div>
 
-          <div className={["bb-face bb-front", rarityFxClass(r)].join(" ")}>
-            <CardArt
-              variant="pvp"
-              src={img}
-              frameSrc={CARD_FRAME_SRC}
-              showStats={false}
-              atk={power ?? 0}
-              hp={unit?.hp ?? 0}
-              shield={unit?.shield ?? 0}
-              showCorner={false}
-            />
-            {renderUnit && (
-              <div className="bb-fx">
-                {spawned && <div key={`spawn-${spawned.t}-${renderUnit.instanceId}`} className="bb-spawn" />}
+              <div className={["bb-face bb-front", rarityFxClass(r)].join(" ")}>
+                <CardArt
+                  variant="pvp"
+                  src={img}
+                  frameSrc={CARD_FRAME_SRC}
+                  showStats={false}
+                  atk={power ?? 0}
+                  hp={unit?.hp ?? 0}
+                  shield={unit?.shield ?? 0}
+                  showCorner={false}
+                />
 
-                {atk && (
-                  <div className="bb-atkfx">
-                    {atk.isFrom && <div key={`slash-${atk.t}-${renderUnit.instanceId}`} className="bb-slash" />}
-                    {atk.isTo && <div key={`impact-${atk.t}-${renderUnit.instanceId}`} className="bb-impact" />}
+                {renderUnit && (
+                  <div className="bb-fx">
+                    {spawned && <div key={`spawn-${spawned.t}-${renderUnit.instanceId}`} className="bb-spawn" />}
+
+                    {atk && (
+                      <div className="bb-atkfx">
+                        {atk.isFrom && <div key={`slash-${atk.t}-${renderUnit.instanceId}`} className="bb-slash" />}
+                        {atk.isTo && <div key={`impact-${atk.t}-${renderUnit.instanceId}`} className="bb-impact" />}
+                      </div>
+                    )}
+
+                    {renderUnit && dmg && (
+                      <>
+                        <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
+                        <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
+                          {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
+                        </div>
+                      </>
+                    )}
+
+                    {isDying && <div className="bb-death" />}
                   </div>
                 )}
 
-                {renderUnit && dmg && (
-                  <>
-                    <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
-                    <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
-                      {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
-                    </div>
-                  </>
-                )}
-
-                {isDying && <div className="bb-death" />}
-              </div>
-            )}
-
-            <div className="bb-overlay">
-              <div className="bb-title">{title}</div>
-              <div className="bb-subrow">
-                <span className="bb-chip">{rarityRu(r)}</span>
-                {power != null && (
-                  <span className="bb-chip">
-                    POW <b className="tabular-nums">{power}</b>
-                  </span>
-                )}
-              </div>
-
-              {renderUnit && (
-                <div className="bb-bars">
-                  <div className="bb-bar bb-bar--hp">
-                    <div style={{ width: `${hpPct}%` }} />
-                  </div>
-                  {renderUnit.shield > 0 && (
-                    <div className="bb-bar bb-bar--shield">
-                      <div style={{ width: `${shieldPct}%` }} />
-                    </div>
-                  )}
-                  <div className="bb-hptext">
-                    <span className="tabular-nums">{renderUnit.hp}</span> / <span className="tabular-nums">{renderUnit.maxHp}</span>
-                    {renderUnit.shield > 0 ? (
-                      <span className="bb-shieldnum">
-                        {" "}
-                        +<span className="tabular-nums">{renderUnit.shield}</span>
+                <div className="bb-overlay">
+                  <div className="bb-title">{title}</div>
+                  <div className="bb-subrow">
+                    <span className="bb-chip">{rarityRu(r)}</span>
+                    {power != null && (
+                      <span className="bb-chip">
+                        POW <b className="tabular-nums">{power}</b>
                       </span>
-                    ) : null}
+                    )}
                   </div>
-
-                  {tags.length > 0 && (
-                    <div className="bb-tags">
-                      {tags.map((x) => (
-                        <TagPill key={x} label={String(x).toUpperCase()} />
-                      ))}
-                    </div>
-                  )}
                 </div>
-              )}
+              </div>
             </div>
-
-            </div>
+          </div>
         </div>
+
+        {renderUnit && (
+          <div className="bb-hud" aria-hidden="true">
+            <span className="bb-hud-item">
+              <span className="bb-hud-icon" role="img" aria-label="Attack">⚔</span>
+              <span className="bb-hud-num">{power ?? 0}</span>
+            </span>
+            <span className="bb-hud-sep" />
+            <span className="bb-hud-item">
+              <span className="bb-hud-icon hp" role="img" aria-label="HP">❤</span>
+              <span className="bb-hud-num">{unit?.hp ?? 0}</span>
+            </span>
+          </div>
+        )}
       </div>
-      {renderUnit && (
-        <div className="bb-hud" aria-hidden="true">
-          <span className="bb-hud-item">
-            <span className="bb-hud-icon" role="img" aria-label="Attack">⚔</span>
-            <span className="bb-hud-num">{power ?? 0}</span>
-          </span>
-          <span className="bb-hud-sep" />
-          <span className="bb-hud-item">
-            <span className="bb-hud-icon hp" role="img" aria-label="HP">❤</span>
-            <span className="bb-hud-num">{unit?.hp ?? 0}</span>
-          </span>
-        </div>
-      )}
-
-      <style jsx>{`
-        .bb-hud {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          background: rgba(11, 18, 26, 0.92);
-          border-radius: 8px;
-          border: 1.6px solid rgba(51,241,255,0.38);
-          box-shadow:
-            0 0 1.5px #36ffe4be,
-            0 0 7px 0 #30e6ff40,
-            0 0 0.8px 0 #00dbff75;
-          padding: 1px 5px;
-          gap: 3px;
-          min-height: 12px;
-          max-width: calc(100% - 6px);
-          width: max-content;
-          box-sizing: border-box;
-          overflow: hidden;
-          white-space: nowrap;
-        }
-
-        .bb-hud-item {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 1px;
-          min-width: 0;
-        }
-
-        .bb-hud-icon {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 10px;
-          height: 10px;
-          font-size: 9px;
-          line-height: 1;
-          flex: 0 0 auto;
-        }
-
-        .bb-hud-num {
-          font-size: 9px;
-          line-height: 1;
-          font-variant-numeric: tabular-nums;
-          letter-spacing: 0.1px;
-          flex: 0 1 auto;
-          min-width: 0;
-        }
-
-        .bb-hud-sep {
-          display: inline-block;
-          width: 4px;
-          height: 4px;
-          background: radial-gradient(circle, #33ffe7cc 73%, transparent 100%);
-          border-radius: 50%;
-          opacity: 0.5;
-          flex: 0 0 auto;
-        }
-
-        @media (max-width: 500px) {
-          .bb-hud {
-            min-height: 11px;
-            padding: 1px 4px;
-            border-radius: 7px;
-            gap: 2px;
-          }
-          .bb-hud-icon {
-            width: 8px;
-            height: 8px;
-            font-size: 7px;
-          }
-          .bb-hud-num {
-            font-size: 7px;
-          }
-          .bb-hud-sep {
-            width: 2px;
-            height: 2px;
-          }
-        }
-      `}</style>
-      </div>
-
     );
-  }
+
+}
 
   if (!isTelegramEnv) {
     return (
