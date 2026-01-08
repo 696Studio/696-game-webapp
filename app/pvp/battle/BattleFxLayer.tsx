@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
- * BattleFxLayer — ATTACK LUNGE (STEP 1)
- * - Calculates attacker → target vector
- * - Exposes CSS variables (--atk-dx / --atk-dy)
- * - Does NOT animate cards directly (CSS handles it)
+ * BattleFxLayer — PORTAL ATTACK FX (FINAL)
  *
- * FX live ONLY here.
+ * ✔ Creates FX-clone of attacking card
+ * ✔ Moves clone to target
+ * ✔ Original cards NEVER move
+ * ✔ No React tree instability
+ * ✔ No transform conflicts
  */
 
 export type FxEvent =
@@ -24,138 +26,96 @@ export type FxEvent =
       id: string;
       attackerId: string;
       targetId: string;
-      direction: 'left' | 'right';
     };
 
 type Props = {
   events: FxEvent[];
 };
 
-const DEATH_GIF_DURATION = 900;
-const ATTACK_DURATION = 420;
+type AttackFx = {
+  key: string;
+  fromRect: DOMRect;
+  toRect: DOMRect;
+  html: string;
+};
 
-type ActiveFx =
-  | (Extract<FxEvent, { type: 'death' }> & { key: string })
-  | (Extract<FxEvent, { type: 'attack' }> & {
-      key: string;
-      dx: number;
-      dy: number;
-    });
+const ATTACK_DURATION = 420;
+const DEATH_GIF_DURATION = 900;
 
 export default function BattleFxLayer({ events }: Props) {
   const playedRef = useRef<Set<string>>(new Set());
-  const [activeFx, setActiveFx] = useState<ActiveFx[]>([]);
-
-  const arenaRef = useRef<HTMLElement | null>(null);
+  const [attackFx, setAttackFx] = useState<AttackFx[]>([]);
 
   useEffect(() => {
-    arenaRef.current = document.querySelector('.arena');
-  }, []);
-
-  useEffect(() => {
-    const arena = arenaRef.current;
-
     for (const e of events) {
-      const key =
-        e.type === 'death'
-          ? `death:${e.id}`
-          : `attack:${e.id}:${e.attackerId}:${e.targetId}`;
+      if (e.type !== 'attack') continue;
 
+      const key = `attack:${e.id}:${e.attackerId}:${e.targetId}`;
       if (playedRef.current.has(key)) continue;
-
       playedRef.current.add(key);
 
-      if (e.type === 'attack') {
-        const attackerEl = document.querySelector<HTMLElement>(
-          `[data-unit-id="${e.attackerId}"]`
-        );
-        const targetEl = document.querySelector<HTMLElement>(
-          `[data-unit-id="${e.targetId}"]`
-        );
+      const attackerEl = document.querySelector<HTMLElement>(
+        `[data-unit-id="${e.attackerId}"]`
+      );
+      const targetEl = document.querySelector<HTMLElement>(
+        `[data-unit-id="${e.targetId}"]`
+      );
 
-        if (!arena || !attackerEl || !targetEl) continue;
+      if (!attackerEl || !targetEl) continue;
 
-        const aRect = arena.getBoundingClientRect();
-        const r1 = attackerEl.getBoundingClientRect();
-        const r2 = targetEl.getBoundingClientRect();
+      const fromRect = attackerEl.getBoundingClientRect();
+      const toRect = targetEl.getBoundingClientRect();
 
-        const dx = r2.left + r2.width / 2 - (r1.left + r1.width / 2);
-        const dy = r2.top + r2.height / 2 - (r1.top + r1.height / 2);
-
-        setActiveFx((prev) => [
-          ...prev,
-          {
-            ...e,
-            key,
-            dx,
-            dy,
-          } as ActiveFx,
-        ]);
-
-        setTimeout(() => {
-          setActiveFx((prev) => prev.filter((fx) => fx.key !== key));
-        }, ATTACK_DURATION);
-
-        continue;
-      }
-
-      // death
-      setActiveFx((prev) => [...prev, { ...e, key } as ActiveFx]);
+      setAttackFx((prev) => [
+        ...prev,
+        {
+          key,
+          fromRect,
+          toRect,
+          html: attackerEl.innerHTML,
+        },
+      ]);
 
       setTimeout(() => {
-        setActiveFx((prev) => prev.filter((fx) => fx.key !== key));
-      }, DEATH_GIF_DURATION);
+        setAttackFx((prev) => prev.filter((fx) => fx.key !== key));
+      }, ATTACK_DURATION);
     }
   }, [events]);
 
-  return (
-    <div
-      className="bb-fx-layer"
-      style={{
-        position: 'absolute',
-        inset: 0,
-        pointerEvents: 'none',
-        zIndex: 9999,
-      }}
-    >
-      {activeFx.map((fx) => {
-        if (fx.type === 'death') {
-          const size = fx.size ?? 200;
-          return (
-            <img
-              key={fx.key}
-              src="/fx/death_smoke.gif"
-              alt=""
-              style={{
-                position: 'absolute',
-                left: fx.x - size / 2,
-                top: fx.y - size / 2,
-                width: size,
-                height: size,
-                objectFit: 'contain',
-                pointerEvents: 'none',
-              }}
-            />
-          );
-        }
+  return createPortal(
+    <>
+      {attackFx.map((fx) => {
+        const dx =
+          fx.toRect.left +
+          fx.toRect.width / 2 -
+          (fx.fromRect.left + fx.fromRect.width / 2);
+        const dy =
+          fx.toRect.top +
+          fx.toRect.height / 2 -
+          (fx.fromRect.top + fx.fromRect.height / 2);
 
-        if (fx.type === 'attack') {
-          return (
-            <div
-              key={fx.key}
-              className="bb-attack-lunge"
-              style={{
-                ['--atk-dx' as any]: `${fx.dx}px`,
-                ['--atk-dy' as any]: `${fx.dy}px`,
-              }}
-              data-attacker={fx.attackerId}
-              data-target={fx.targetId}
-            />
-          );
-        }
-
-        return null;
+        return (
+          <div
+            key={fx.key}
+            className="bb-fx-card-clone"
+            style={{
+              position: 'fixed',
+              left: fx.fromRect.left,
+              top: fx.fromRect.top,
+              width: fx.fromRect.width,
+              height: fx.fromRect.height,
+              transform: 'translate3d(0,0,0)',
+              animation: `bb_fx_lunge ${ATTACK_DURATION}ms cubic-bezier(.18,.9,.22,1) both`,
+              ['--fx-dx' as any]: `${dx}px`,
+              ['--fx-dy' as any]: `${dy}px`,
+              zIndex: 9999,
+              pointerEvents: 'none',
+            }}
+            dangerouslySetInnerHTML={{ __html: fx.html }}
+          />
+        );
       })}
-    </div>
+    </>,
+    document.body
   );
 }

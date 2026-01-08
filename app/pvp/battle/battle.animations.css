@@ -454,3 +454,22 @@ z-index: 21;
 .bb-card.is-attack-target{
   animation: bb_attack_target_hit 220ms var(--bb-hit-ease) both;
 }
+
+/* =========================================================
+ PORTAL FX — CARD CLONE LUNGE
+ Used by BattleFxLayer.portal.tsx
+ ========================================================= */
+
+@keyframes bb_fx_lunge {
+  0% {
+    transform: translate3d(0,0,0) scale(1);
+  }
+  55% {
+    transform:
+      translate3d(var(--fx-dx), var(--fx-dy), 0)
+      scale(1.06);
+  }
+  100% {
+    transform: translate3d(0,0,0) scale(1);
+  }
+}
