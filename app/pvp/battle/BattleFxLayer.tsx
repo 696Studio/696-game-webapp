@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * BattleFxLayer — FINAL
- * Поддерживает:
- * - death FX (GIF, one-shot)
- * - attack FX (CSS + DOM, one-shot)
+ * BattleFxLayer — ATTACK LUNGE (STEP 1)
+ * - Calculates attacker → target vector
+ * - Exposes CSS variables (--atk-dx / --atk-dy)
+ * - Does NOT animate cards directly (CSS handles it)
  *
- * FX живут ТОЛЬКО тут
+ * FX live ONLY here.
  */
 
 export type FxEvent =
@@ -36,13 +36,25 @@ const ATTACK_DURATION = 420;
 
 type ActiveFx =
   | (Extract<FxEvent, { type: 'death' }> & { key: string })
-  | (Extract<FxEvent, { type: 'attack' }> & { key: string });
+  | (Extract<FxEvent, { type: 'attack' }> & {
+      key: string;
+      dx: number;
+      dy: number;
+    });
 
 export default function BattleFxLayer({ events }: Props) {
   const playedRef = useRef<Set<string>>(new Set());
   const [activeFx, setActiveFx] = useState<ActiveFx[]>([]);
 
+  const arenaRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
+    arenaRef.current = document.querySelector('.arena');
+  }, []);
+
+  useEffect(() => {
+    const arena = arenaRef.current;
+
     for (const e of events) {
       const key =
         e.type === 'death'
@@ -52,14 +64,47 @@ export default function BattleFxLayer({ events }: Props) {
       if (playedRef.current.has(key)) continue;
 
       playedRef.current.add(key);
-      setActiveFx((prev) => [...prev, { ...e, key } as ActiveFx]);
 
-      const duration =
-        e.type === 'death' ? DEATH_GIF_DURATION : ATTACK_DURATION;
+      if (e.type === 'attack') {
+        const attackerEl = document.querySelector<HTMLElement>(
+          `[data-unit-id="${e.attackerId}"]`
+        );
+        const targetEl = document.querySelector<HTMLElement>(
+          `[data-unit-id="${e.targetId}"]`
+        );
+
+        if (!arena || !attackerEl || !targetEl) continue;
+
+        const aRect = arena.getBoundingClientRect();
+        const r1 = attackerEl.getBoundingClientRect();
+        const r2 = targetEl.getBoundingClientRect();
+
+        const dx = r2.left + r2.width / 2 - (r1.left + r1.width / 2);
+        const dy = r2.top + r2.height / 2 - (r1.top + r1.height / 2);
+
+        setActiveFx((prev) => [
+          ...prev,
+          {
+            ...e,
+            key,
+            dx,
+            dy,
+          } as ActiveFx,
+        ]);
+
+        setTimeout(() => {
+          setActiveFx((prev) => prev.filter((fx) => fx.key !== key));
+        }, ATTACK_DURATION);
+
+        continue;
+      }
+
+      // death
+      setActiveFx((prev) => [...prev, { ...e, key } as ActiveFx]);
 
       setTimeout(() => {
         setActiveFx((prev) => prev.filter((fx) => fx.key !== key));
-      }, duration);
+      }, DEATH_GIF_DURATION);
     }
   }, [events]);
 
@@ -98,7 +143,11 @@ export default function BattleFxLayer({ events }: Props) {
           return (
             <div
               key={fx.key}
-              className={`bb-attack-fx bb-attack-${fx.direction}`}
+              className="bb-attack-lunge"
+              style={{
+                ['--atk-dx' as any]: `${fx.dx}px`,
+                ['--atk-dy' as any]: `${fx.dy}px`,
+              }}
               data-attacker={fx.attackerId}
               data-target={fx.targetId}
             />

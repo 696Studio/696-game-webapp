@@ -342,3 +342,67 @@ z-index: 21;
   65%  { transform: translate3d(-28px,-2px,0) scale(1.02); }
   100% { transform: translate3d(0,0,0); }
 }
+
+
+/* =========================================================
+ ATTACK FX — LUNGE TO TARGET (STEP 2)
+ Uses vectors from BattleFxLayer (--atk-dx / --atk-dy)
+ Card flies to target, touches, returns back
+ ========================================================= */
+
+/* FX marker injected by BattleFxLayer */
+.bb-attack-lunge{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+}
+
+/* Attacking card motion */
+.bb-card{
+  --atk-dx: 0px;
+  --atk-dy: 0px;
+}
+
+.bb-card.is-attacking{
+  animation: bb_card_lunge_to_target 420ms var(--bb-ease-out) both;
+  z-index: 60;
+  will-change: transform;
+}
+
+@keyframes bb_card_lunge_to_target{
+  0%{
+    transform: translate3d(0,0,0) scale(1);
+  }
+  45%{
+    transform:
+      translate3d(
+        calc(var(--atk-dx) * 0.88),
+        calc(var(--atk-dy) * 0.88),
+        0
+      )
+      scale(1.04);
+  }
+  55%{
+    transform:
+      translate3d(
+        calc(var(--atk-dx) * 0.92),
+        calc(var(--atk-dy) * 0.92),
+        0
+      )
+      scale(1.02);
+  }
+  100%{
+    transform: translate3d(0,0,0) scale(1);
+  }
+}
+
+/* Impact feedback on target */
+.bb-card.is-attack-target{
+  animation: bb_attack_target_hit 220ms var(--bb-hit-ease) both;
+}
+
+@keyframes bb_attack_target_hit{
+  35%{
+    transform: translate3d(0,6px,0) scale(0.985);
+  }
+}

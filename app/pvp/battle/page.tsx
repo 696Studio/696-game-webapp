@@ -1592,7 +1592,17 @@ const attackCurves = useMemo(() => {
     );
   }
 
-  function CardSlot({
+  
+  function readAttackVector(attackerId: string) {
+    const el = document.querySelector<HTMLElement>(`.bb-attack-lunge[data-attacker="${attackerId}"]`);
+    if (!el) return null;
+    const dx = el.style.getPropertyValue("--atk-dx");
+    const dy = el.style.getPropertyValue("--atk-dy");
+    if (!dx || !dy) return null;
+    return { dx, dy };
+  }
+
+function CardSlot({
   card,
   unit,
   fallbackId,
