@@ -3,9 +3,9 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Универсальный FX-слой боя.
- * Все FX живут ТОЛЬКО здесь.
- * Смерть — one-shot, сам удаляется из DOM.
+ * Battle FX Layer
+ * All FX live ONLY here.
+ * Death FX is ONE-SHOT and removes itself from DOM.
  */
 
 export type FxEvent =
@@ -20,6 +20,8 @@ export type FxEvent =
 type Props = {
   events: FxEvent[];
 };
+
+const DEATH_GIF_DURATION = 900; // ms — length of death_smoke.gif
 
 export default function BattleFxLayer({ events }: Props) {
   const playedRef = useRef<Set<string>>(new Set());
@@ -37,21 +39,34 @@ export default function BattleFxLayer({ events }: Props) {
   }, [events]);
 
   function spawnDeathFx(e: Extract<FxEvent, { type: 'death' }>) {
-    const el = document.createElement('div');
-    el.className = 'bb-fx bb-fx-death';
+    const container = document.createElement('div');
+    container.className = 'bb-fx bb-fx-death';
 
-    const size = e.size ?? 180;
-    el.style.width = `${size}px`;
-    el.style.height = `${size}px`;
-    el.style.left = `${e.x}px`;
-    el.style.top = `${e.y}px`;
+    const size = e.size ?? 200;
 
-    document.body.appendChild(el);
+    Object.assign(container.style, {
+      position: 'absolute',
+      left: `${e.x - size / 2}px`,
+      top: `${e.y - size / 2}px`,
+      width: `${size}px`,
+      height: `${size}px`,
+      pointerEvents: 'none',
+      zIndex: '9999',
+    });
 
-    // ⏱ длительность GIF (можешь менять)
+    const img = document.createElement('img');
+    img.src = '/fx/death_smoke.gif';
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.objectFit = 'contain';
+
+    container.appendChild(img);
+    document.body.appendChild(container);
+
+    // Remove after one play
     setTimeout(() => {
-      el.remove();
-    }, 900);
+      container.remove();
+    }, DEATH_GIF_DURATION);
   }
 
   return null;
