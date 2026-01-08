@@ -1584,7 +1584,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   delayMs: number;
 }) {
     const id = card?.id || fallbackId || "";
-    if (!unit) return null;
 
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
     const r = (card?.rarity || "common") as string;
@@ -1716,6 +1715,7 @@ if (isHidden) {
 
     const isActive = !!activeUnit && activeInstance ? activeUnit.instanceId === activeInstance : false;
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
+    if (!renderUnit) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}>
       <div className="bb-fx-anchor">
