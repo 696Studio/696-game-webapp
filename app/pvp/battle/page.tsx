@@ -1282,6 +1282,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   }, [scored, roundWinner, youSide, enemySide]);
 
   const attackFxByInstance = useMemo(() => {
+    console.log("[DEBUG][FX MAP] t=", t);
+
     const windowSec = 0.35;
     const fromT = Math.max(0, t - windowSec);
     const map: Record<string, AttackFx[]> = {};
@@ -1732,6 +1734,8 @@ if (isHidden) {
     }, [activeUnit?.instanceId, activeUnit?.shield, activeUnit?.maxHp]);
 
     const atk = useMemo(() => {
+      console.log("[DEBUG][ATK] attackFx:", attackFx, "unit:", renderUnit?.instanceId);
+
       if (!renderUnit || !attackFx || attackFx.length === 0) return null;
       const last = attackFx[attackFx.length - 1];
       const isFrom = last.fromId === renderUnit.instanceId;
