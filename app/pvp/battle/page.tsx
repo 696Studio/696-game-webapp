@@ -1276,6 +1276,51 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return set;
   }, [timeline, t]);
 
+  function getCenterInArena(instanceId: string) {
+    const arenaEl = arenaRef.current;
+    const el = unitElByIdRef.current[instanceId];
+    if (!arenaEl || !el) return null;
+
+    const aRect = arenaEl.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+
+    return {
+      x: r.left + r.width / 2 - aRect.left,
+      y: r.top + r.height / 2 - aRect.top,
+    };
+  }
+
+  const attackCurves = useMemo(() => {
+    const arenaEl = arenaRef.current;
+    if (!arenaEl) return [];
+
+    const curves: Array<{ key: string; d: string; fromId: string; toId: string }> = [];
+
+    for (const atk of recentAttacks) {
+      const p1 = getCenterInArena(atk.fromId);
+      const p2 = getCenterInArena(atk.toId);
+      if (!p1 || !p2) continue;
+
+      const mx = (p1.x + p2.x) / 2;
+      const my = (p1.y + p2.y) / 2;
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const len = Math.max(1, Math.hypot(dx, dy));
+      const nx = -dy / len;
+      const ny = dx / len;
+
+      const bend = clamp(len * 0.1, 14, 46);
+      const cx = mx + nx * bend;
+      const cy = my + ny * bend;
+
+      const d = `M ${p1.x} ${p1.y} Q ${cx} ${cy} ${p2.x} ${p2.y}`;
+      curves.push({ key: `${atk.t}:${atk.fromId}:${atk.toId}`, d, fromId: atk.fromId, toId: atk.toId });
+    }
+
+    return curves;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentAttacks, layoutTick]);
+
   function TagPill({ label }: { label: string }) {
     return <span className="bb-tag">{label}</span>;
   }
@@ -2797,6 +2842,21 @@ const hpPct = useMemo(() => {
           )}
 
           {DEBUG_GRID && debugCover && <DebugGrid />}
+
+          <svg className="atk-overlay" width="100%" height="100%">
+            <defs>
+              <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.85)" />
+              </marker>
+            </defs>
+
+            {attackCurves.map((c) => (
+              <g key={c.key}>
+                <path className="atk-path-glow" d={c.d} />
+                <path className="atk-path-core" d={c.d} />
+              </g>
+            ))}
+          </svg>
 
           <div className="corner-info">
             <div className="h1">
