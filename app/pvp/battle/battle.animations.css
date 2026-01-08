@@ -406,3 +406,51 @@ z-index: 21;
     transform: translate3d(0,6px,0) scale(0.985);
   }
 }
+
+
+/* =========================================================
+ FINAL ATTACK LUNGE — MOTION LAYER (NO CONFLICTS)
+ ========================================================= */
+
+.bb-motion-layer{
+  --atk-dx: 0px;
+  --atk-dy: 0px;
+  will-change: transform;
+}
+
+.bb-motion-layer.is-attacking{
+  animation: bb_motion_lunge_to_target 420ms cubic-bezier(.18,.9,.22,1) both;
+  z-index: 60;
+}
+
+@keyframes bb_motion_lunge_to_target{
+  0%{
+    transform: translate3d(0,0,0) scale(1);
+  }
+  45%{
+    transform:
+      translate3d(
+        var(--atk-dx),
+        var(--atk-dy),
+        0
+      )
+      scale(1.06);
+  }
+  60%{
+    transform:
+      translate3d(
+        calc(var(--atk-dx) * 1.08),
+        calc(var(--atk-dy) * 1.08),
+        0
+      )
+      scale(1.03);
+  }
+  100%{
+    transform: translate3d(0,0,0) scale(1);
+  }
+}
+
+/* Impact on target */
+.bb-card.is-attack-target{
+  animation: bb_attack_target_hit 220ms var(--bb-hit-ease) both;
+}
