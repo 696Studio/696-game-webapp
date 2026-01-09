@@ -1,12 +1,13 @@
 "use client";
-// @ts-nocheck
 
+// @ts-nocheck
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
 import CardArt from "../../components/CardArt";
-import BattleFxLayer, { FxEvent } from "./BattleFxLayer";
+
+import BattleFxLayer from "./BattleFxLayer";
 
 type MatchRow = {
   id: string;
@@ -445,12 +446,12 @@ function BattleInner() {
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
+  // Layout tick: forces re-measurements (used by FX + cover mapping)
+  const [layoutTick, setLayoutTick] = useState<number>(0);
+
+
   
   const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
-
-  // layoutTick drives layout-dependent calculations (no FX dependency)
-  const [layoutTick, setLayoutTick] = useState(0);
-
 
   const debugCover = useMemo(() => {
     if (!arenaBox) return null;
@@ -684,7 +685,7 @@ function BattleInner() {
   }
 
   useEffect(() => {
-    const onResize = () => setLayoutTick((x) => x + 1);
+    const onResize = () => setLayoutTick((x: number) => x + 1);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -1000,7 +1001,7 @@ function BattleInner() {
     setP1UnitsBySlot(slotMapP1);
     setP2UnitsBySlot(slotMapP2);
 
-    setLayoutTick((x) => x + 1);
+    setLayoutTick((x: number) => x + 1);
   }, [t, timeline]);
 
   useEffect(() => {
@@ -1227,16 +1228,17 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return arr.slice(-2);
   }, [timeline, t]);
 
-  const fxEvents: FxEvent[] = useMemo(() => {
-    // Convert recent attacks to FX events for BattleFxLayer (touch + back).
-    // Keep it deterministic and minimal: only last few events near current time.
-    return recentAttacks.map((a, i) => ({
-      type: "attack" as const,
-      id: `${a.t}:${a.fromId}:${a.toId}:${i}`,
-      attackerId: a.fromId,
-      targetId: a.toId,
-    }));
-  }, [recentAttacks]);
+  // FX events consumed by BattleFxLayer (guaranteed, independent from DOM remounts)
+  const fxEvents = useMemo(
+    () =>
+      (recentAttacks as any[]).map((a: any, i: number) => ({
+        type: "attack" as const,
+        id: `${a?.t ?? ""}:${a?.fromId ?? ""}:${a?.toId ?? ""}:${i}`,
+        attackerId: String(a?.fromId ?? ""),
+        targetId: String(a?.toId ?? ""),
+      })),
+    [recentAttacks]
+  );
 
   const spawnFxByInstance = useMemo(() => {
     const windowSec = 0.35;
@@ -1647,7 +1649,7 @@ const hpPct = useMemo(() => {
         ref={(el) => {
           if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
         }}
-        data-unit-id={renderUnit?.instanceId ?? ""}
+        data-unit-id={String(renderUnit?.instanceId ?? "")}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
@@ -1849,6 +1851,7 @@ const hpPct = useMemo(() => {
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+      <BattleFxLayer events={fxEvents} />
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
           <div className="text-sm ui-subtle">Эта страница работает только внутри Telegram WebApp.</div>
@@ -2830,7 +2833,6 @@ const hpPct = useMemo(() => {
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
-          <BattleFxLayer events={fxEvents} />
                     {DEBUG_ARENA && debugCover && (
             <>
               <div className="dbg-panel">
