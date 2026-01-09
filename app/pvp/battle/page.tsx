@@ -443,12 +443,101 @@ function BattleInner() {
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
-  
-  const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
+  // =========================================================
+  // FX MANAGER (GUARANTEED): death bursts are rendered in an
+  // arena-level overlay, independent of card DOM/lifecycle.
+  // =========================================================
+  type FxBurst = {
+    id: string;
+    x: number; // px relative to arena
+    y: number; // px relative to arena
+    size: number; // px
+    createdAt: number; // ms
+    kind: "death";
+  };
 
-  // layoutTick drives layout-dependent calculations (no FX dependency)
+  const [fxBursts, setFxBursts] = useState<FxBurst[]>([]);
+  const prevHpByInstanceRef = useRef<Record<string, number>>({});
+  const prevPresentRef = useRef<Set<string>>(new Set());
+
+    const deathFxPlayedRef = useRef<Set<string>>(new Set());
+const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
+    const arenaEl = arenaRef.current;
+    if (!arenaEl) return;
+
+    const arenaRect = arenaEl.getBoundingClientRect();
+    const targetEl = unitElByIdRef.current[instanceId];
+    const r = targetEl?.getBoundingClientRect();
+    if (!r) return;
+
+    const size = Math.max(84, Math.min(170, Math.max(r.width, r.height) * 1.05));
+const x = (r.left - arenaRect.left) + r.width / 2;
+    const y = (r.top - arenaRect.top) + r.height / 2;
+
+    const id = `${instanceId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const burst: FxBurst = {
+      id,
+      x,
+      y,
+      size: Number.isFinite(size) ? size : fallbackSize,
+      createdAt: Date.now(),
+      kind: "death",
+    };
+
+    setFxBursts((prev) => [...prev, burst]);
+
+    // Auto-remove after animation window
+    window.setTimeout(() => {
+      setFxBursts((prev) => prev.filter((b) => b.id !== id));
+    }, 900);
+  };
+
+  // Detect deaths robustly:
+  // - hp drops from >0 to <=0
+  // - or instance disappears from slots (removal)
+  useEffect(() => {
+    const current: Record<string, number> = {};
+    const present = new Set<string>();
+
+    const allUnits: (UnitView | null | undefined)[] = [
+      ...Object.values(p1UnitsBySlot || {}),
+      ...Object.values(p2UnitsBySlot || {}),
+    ];
+
+    for (const u of allUnits) {
+      if (!u?.instanceId) continue;
+      present.add(u.instanceId);
+      current[u.instanceId] = (u.hp ?? 0);
+    }
+
+    const prevHp = prevHpByInstanceRef.current;
+    for (const [id, hp] of Object.entries(current)) {
+      const before = prevHp[id];
+      if (typeof before === "number" && before > 0 && hp <= 0) {
+        if (!deathFxPlayedRef.current.has(id)) {
+          deathFxPlayedRef.current.add(id);
+          spawnDeathBurst(id);
+        }
+      }
+    }
+
+    // Disappearances (unit removed from slots)
+    const prevPresent = prevPresentRef.current;
+    for (const id of prevPresent) {
+      if (!present.has(id)) {
+        if (!deathFxPlayedRef.current.has(id)) {
+          deathFxPlayedRef.current.add(id);
+          spawnDeathBurst(id);
+        }
+      }
+    }
+
+    prevHpByInstanceRef.current = current;
+    prevPresentRef.current = present;
+  }, [p1UnitsBySlot, p2UnitsBySlot]);
   const [layoutTick, setLayoutTick] = useState(0);
 
+  const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
 
   const debugCover = useMemo(() => {
     if (!arenaBox) return null;
@@ -1276,7 +1365,25 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return set;
   }, [timeline, t]);
 
-  function TagPill({ label }: { label: string }) {
+  function getCenterInArena(instanceId: string) {
+    const arenaEl = arenaRef.current;
+    const el = unitElByIdRef.current[instanceId];
+    if (!arenaEl || !el) return null;
+
+    const aRect = arenaEl.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+
+    return {
+      x: r.left + r.width / 2 - aRect.left,
+      y: r.top + r.height / 2 - aRect.top,
+    };
+  }
+
+    const attackCurves = useMemo(() => {
+    return [] as any[];
+  }, [recentAttacks, layoutTick]);
+
+function TagPill({ label }: { label: string }) {
     return <span className="bb-tag">{label}</span>;
   }
 
@@ -1299,129 +1406,68 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     score: number | null;
     isHit: boolean;
   }) {
-    const isBottom = where === "bottom";
-
-    // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
-    // Top player must stay untouched.
-    const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
-    const BOTTOM_HP_Y = 644; // TeamHP bar row
-    const BOTTOM_NAME_Y = 678; // nickname
-
     const pos = useMemo(() => {
       if (!arenaBox) return null;
-    
+
       const p =
         where === "top"
           ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
           : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-    
-      // ✅ responsive portrait size based on arena width
+
       const base = Math.min(arenaBox.w, arenaBox.h);
       const ring = clamp(Math.round(base * 0.083), 84, 148);
-      const img  = Math.round(ring * 0.86);     
-    
-      // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
-      const yOffset =
-      where === "top"
-        ? Math.round(arenaBox.h * 0.008) // ⬇️ TOP tiny down
-        : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
-    
+      const img = Math.round(ring * 0.86);
+
+      const yOffset = where === "top" ? Math.round(arenaBox.h * 0.008) : -Math.round(arenaBox.h * 0.008);
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
-    
+
       return { left: p.x, top, ring, img };
-    }, [arenaBox, where]);  
+    }, [arenaBox, where]);
 
-    // ✅ IMPORTANT: top HUD stays as-is. Bottom HUD is placed by hard Y targets.
-    if (isBottom) {
-      if (!pos) return null;
+    if (!pos) return null;
 
-      const vars = {
-        ["--ringSize" as any]: `${pos.ring}px`,
-        ["--imgSize" as any]: `${pos.img}px`,
-      } as React.CSSProperties;
-
-      return (
-        <>
-          {/* Bottom Avatar Ring (ONLY moved by Y target) */}
-          <div
-            className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you", "is-bottom"].join(" ")}
-            style={{ left: pos.left, top: BOTTOM_AVATAR_Y, transform: "translate(-50%,-50%)", ...vars }}
-          >
-            <div className="map-portrait-ring">
-              <div className="map-portrait-img">
-                <img src={avatar} alt={tone} />
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom Name */}
-          <div
-            className="map-portrait-name"
-            style={{ position: "absolute", left: pos.left, top: BOTTOM_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
-          >
-            {name}
-          </div>
-
-          {/* Bottom TeamHP + Score Row */}
-          <div
-            className="map-pillrow"
-            style={{ position: "absolute", left: pos.left, top: BOTTOM_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
-          >
-            <div
-              className="map-xp"
-              style={{ ["--xp" as any]: `${clamp((hp / Math.max(1, hpMax)) * 100, 0, 100)}%`, ["--xpHue" as any]: `${Math.round(120 * clamp(hp / Math.max(1, hpMax), 0, 1))}` } as React.CSSProperties}
-            >
-              <div className="map-xp-fill" />
-              <div className="map-xp-knob" />
-            </div>
-
-            <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-              {score == null ? "—" : score}
-            </div>
-          </div>
-        </>
-      );
-    }
+    const hpSafeMax = Math.max(1, hpMax);
+    const hpRatio = clamp(hp / hpSafeMax, 0, 1);
 
     return (
       <div
         className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
         style={
-          pos
-            ? ({
-                left: pos.left,
-                top: pos.top,
-                transform: "translate(-50%,-50%)",
-                ["--ringSize" as any]: `${pos.ring}px`,
-                ["--imgSize" as any]: `${pos.img}px`,
-              } as React.CSSProperties)
-            : undefined
+          {
+            left: pos.left,
+            top: pos.top,
+            transform: "translate(-50%,-50%)",
+            ["--ringSize" as any]: `${pos.ring}px`,
+            ["--imgSize" as any]: `${pos.img}px`,
+          } as React.CSSProperties
         }
       >
-        {/* Top player stays exactly as-is. */}
-        <>
-          <div className="map-portrait-ring" style={{ transform: "translateY(6px)" }}>
-            <div className="map-portrait-img">
-              <img src={avatar} alt={tone} />
-            </div>
+        <div className="map-portrait-ring">
+          <div className="map-portrait-img">
+            <img src={avatar} alt={tone} />
+          </div>
+        </div>
+
+        <div className="map-portrait-name">{name}</div>
+
+        <div className="map-pillrow">
+          <div
+            className="map-xp"
+            style={
+              {
+                ["--xp" as any]: `${clamp(hpRatio * 100, 0, 100)}%`,
+                ["--xpHue" as any]: `${Math.round(120 * hpRatio)}`,
+              } as React.CSSProperties
+            }
+          >
+            <div className="map-xp-fill" />
+            <div className="map-xp-knob" />
           </div>
 
-          <div className="map-portrait-name" style={{ marginTop: 20, transform: "translateY(6px)" }}>{name}</div>
-
-          <div className="map-pillrow" style={{ marginTop: 16 }}>
-            <div
-              className="map-xp"
-              style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%`, ["--xpHue" as any]: `${Math.round(120 * clamp(hp / 30, 0, 1))}` } as React.CSSProperties}
-            >
-              <div className="map-xp-fill" />
-              <div className="map-xp-knob" />
-            </div>
-
-            <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-              {score == null ? "—" : score}
-            </div>
+          <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+            {score == null ? "—" : score}
           </div>
-        </>
+        </div>
       </div>
     );
   }
@@ -2771,7 +2817,33 @@ const hpPct = useMemo(() => {
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
-                    {DEBUG_ARENA && debugCover && (
+          {/* FX overlay (independent from card DOM) */}
+          <div className="bb-fx-layer" aria-hidden="true">
+            {fxBursts.map((b) => (
+              <div
+                key={b.id}
+                className={`bb-fx-burst bb-fx-burst--${b.kind}`}
+                style={{
+                  left: b.x,
+                  top: b.y,
+                  width: b.size,
+                  height: b.size,
+                }}
+              >
+                {b.kind === "death" && (
+                  <div
+                    className="bb-fx-burst__atlas"
+                    style={{
+                      // death_burst_strip.png is 194x59 (3 frames with padding)
+                      ["--bb-strip-scale" as any]: (b.size / 59).toFixed(4),
+                    }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {DEBUG_ARENA && debugCover && (
             <>
               <div className="dbg-panel">
                 <div>
@@ -2798,7 +2870,20 @@ const hpPct = useMemo(() => {
 
           {DEBUG_GRID && debugCover && <DebugGrid />}
 
-          <svg aria-hidden="true" className="atk-overlay" width="100%" height="100%" style={{ display: "none" }} />
+          <svg className="atk-overlay" width="100%" height="100%">
+            <defs>
+              <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.85)" />
+              </marker>
+            </defs>
+
+            {attackCurves.map((c) => (
+              <g key={c.key}>
+                <path className="atk-path-glow" d={c.d} />
+                <path className="atk-path-core" d={c.d} />
+              </g>
+            ))}
+          </svg>
 
           <div className="corner-info">
             <div className="h1">
