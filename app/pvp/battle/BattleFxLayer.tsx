@@ -43,7 +43,7 @@ type AttackFx = {
   imgSrc: string | null;
 };
 
-const ATTACK_DURATION = 420;
+const ATTACK_DURATION = 520;
 
 export default function BattleFxLayer({ events }: Props) {
   const playedRef = useRef<Set<string>>(new Set());
@@ -98,6 +98,14 @@ export default function BattleFxLayer({ events }: Props) {
 
   return createPortal(
     <>
+      <style>{`
+        @keyframes bb_fx_lunge_touch_back {
+          0%   { transform: translate3d(0px, 0px, 0) scale(1); }
+          55%  { transform: translate3d(var(--fx-dx), var(--fx-dy), 0) scale(1.03); }
+          70%  { transform: translate3d(calc(var(--fx-dx) * 0.92), calc(var(--fx-dy) * 0.92), 0) scale(1.00); }
+          100% { transform: translate3d(0px, 0px, 0) scale(1); }
+        }
+      `}</style>
       {attackFx.map((fx) => {
         const dx =
           fx.toRect.left +
@@ -122,7 +130,7 @@ export default function BattleFxLayer({ events }: Props) {
               height: fx.fromRect.height,
               objectFit: 'contain',
               transform: 'translate3d(0,0,0)',
-              animation: `bb_fx_lunge ${ATTACK_DURATION}ms cubic-bezier(.18,.9,.22,1) both`,
+              animation: `bb_fx_lunge_touch_back ${ATTACK_DURATION}ms cubic-bezier(.18,.9,.22,1) both`,
               ['--fx-dx' as any]: `${dx}px`,
               ['--fx-dy' as any]: `${dy}px`,
               zIndex: 9999,
