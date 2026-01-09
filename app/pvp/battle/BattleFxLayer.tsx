@@ -4,17 +4,15 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
- * BattleFxLayer — MOVE REAL CARD VIA TRANSFORM (NO CLONE)
+ * BattleFxLayer — MOVE REAL CARD VIA CSS `translate` (NOT `transform`)
  *
- * Что ты хочешь: чтобы двигалась САМА карта, а не её копия.
- * Как делаем безопасно: НЕ меняем layout (никаких top/left), а даём
- * реальной DOM-карте временный transform: translate(...) и потом снимаем.
+ * Почему прошлый вариант мог "не двигать":
+ * - у карты уже есть transform (hover/flip/scale), и animation по transform его перебивает/конфликтует.
  *
- * ✔ выглядит как "карта атакует"
- * ✔ карта остаётся в своём слоте (transform не влияет на поток)
- * ✔ никаких дубликатов
+ * Решение: анимируем CSS-свойство `translate` (individual transform) — оно
+ * добавляет смещение поверх существующего transform и не ломает его.
  *
- * Требование: на корневом DOM карты/юнита есть data-unit-id="<id>"
+ * Требование: на DOM карты/юнита есть data-unit-id="<id>" (на том элементе, который виден как "карта").
  */
 
 export type FxEvent =
@@ -45,7 +43,7 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
   const dx = bc.x - ac.x;
   const dy = bc.y - ac.y;
 
-  const k = 0.9; // "касание"
+  const k = 0.9;
   const maxMove = Math.max(a.width, a.height) * 1.2;
   const len = Math.hypot(dx, dy) || 1;
   const safeK = clamp((maxMove / len) * k, 0.55, 0.92);
@@ -56,21 +54,19 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
 
-  // CSS для анимации — кладём в portal, чтобы не трогать твой layout/css
   const css = useMemo(
     () => `
-      @keyframes bb_realcard_lunge_touch_back {
-        0%   { transform: translate3d(0px, 0px, 0) scale(1); }
-        55%  { transform: translate3d(var(--fx-dx), var(--fx-dy), 0) scale(1.03); }
-        70%  { transform: translate3d(calc(var(--fx-dx) * 0.92), calc(var(--fx-dy) * 0.92), 0) scale(1.00); }
-        100% { transform: translate3d(0px, 0px, 0) scale(1); }
+      @keyframes bb_realcard_lunge_touch_back_translate {
+        0%   { translate: 0px 0px; }
+        55%  { translate: var(--fx-dx) var(--fx-dy); }
+        70%  { translate: calc(var(--fx-dx) * 0.92) calc(var(--fx-dy) * 0.92); }
+        100% { translate: 0px 0px; }
       }
 
-      /* ВАЖНО: transform применяется к САМОЙ карте. */
       .bb-realcard-attack {
-        animation: bb_realcard_lunge_touch_back ${ATTACK_DURATION}ms cubic-bezier(.18,.9,.22,1) both !important;
-        will-change: transform;
-        z-index: 50; /* чтобы проходила поверх соседей, но не ломала слои */
+        animation: bb_realcard_lunge_touch_back_translate ${ATTACK_DURATION}ms cubic-bezier(.18,.9,.22,1) both !important;
+        will-change: translate;
+        z-index: 50;
       }
     `,
     []
@@ -88,20 +84,17 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
 
       const attackerEl = getElByUnitId(e.attackerId);
       const targetEl = getElByUnitId(e.targetId);
-
       if (!attackerEl || !targetEl) continue;
 
       const ar = attackerEl.getBoundingClientRect();
       const tr = targetEl.getBoundingClientRect();
       const { dx, dy } = computeTouchDelta(ar, tr);
 
-      // Ставим CSS vars на реальный элемент и запускаем анимацию классом
       attackerEl.style.setProperty('--fx-dx', `${dx}px`);
       attackerEl.style.setProperty('--fx-dy', `${dy}px`);
 
-      // Перезапуск анимации, если класс уже был (редкий кейс быстрых событий)
       attackerEl.classList.remove('bb-realcard-attack');
-      // forced reflow
+      // forced reflow to restart animation
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       attackerEl.offsetHeight;
       attackerEl.classList.add('bb-realcard-attack');
@@ -120,6 +113,5 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     };
   }, [events]);
 
-  // Нам не нужно рисовать DOM FX, только style. Portal — чтобы гарантированно в клиенте.
   return createPortal(<style>{css}</style>, document.body);
 }
