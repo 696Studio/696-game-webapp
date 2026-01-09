@@ -64,33 +64,36 @@ export default function BattleFxLayer({ events }: Props) {
       if (playedRef.current.has(key)) continue;
       playedRef.current.add(key);
 
-      const attackerEl = document.querySelector<HTMLElement>(
-        `[data-unit-id="${e.attackerId}"]`
-      );
-      const targetEl = document.querySelector<HTMLElement>(
-        `[data-unit-id="${e.targetId}"]`
-      );
+      const tryPlay = (tries = 0) => {
+        const attackerEl = document.querySelector<HTMLElement>(`[data-unit-id="${e.attackerId}"]`);
+        const targetEl = document.querySelector<HTMLElement>(`[data-unit-id="${e.targetId}"]`);
 
-      if (!attackerEl || !targetEl) continue;
+        // If React re-mounted or layout shifted, elements may not be ready on the first frame.
+        if (!attackerEl || !targetEl) {
+          if (tries < 12) requestAnimationFrame(() => tryPlay(tries + 1));
+          return;
+        }
 
-      const img = attackerEl.querySelector<HTMLImageElement>('img');
+        const img = attackerEl.querySelector<HTMLImageElement>('img');
+        const fromRect = attackerEl.getBoundingClientRect();
+        const toRect = targetEl.getBoundingClientRect();
 
-      const fromRect = attackerEl.getBoundingClientRect();
-      const toRect = targetEl.getBoundingClientRect();
+        setAttackFx((prev) => [
+          ...prev,
+          {
+            key,
+            fromRect,
+            toRect,
+            imgSrc: img?.src ?? null,
+          },
+        ]);
 
-      setAttackFx((prev) => [
-        ...prev,
-        {
-          key,
-          fromRect,
-          toRect,
-          imgSrc: img?.src ?? null,
-        },
-      ]);
+        setTimeout(() => {
+          setAttackFx((prev) => prev.filter((fx) => fx.key !== key));
+        }, ATTACK_DURATION);
+      };
 
-      setTimeout(() => {
-        setAttackFx((prev) => prev.filter((fx) => fx.key !== key));
-      }, ATTACK_DURATION);
+      tryPlay();
     }
   }, [events, mounted]);
 

@@ -6,6 +6,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
 import CardArt from "../../components/CardArt";
+import BattleFxLayer, { FxEvent } from "./BattleFxLayer";
 
 type MatchRow = {
   id: string;
@@ -1226,6 +1227,17 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return arr.slice(-2);
   }, [timeline, t]);
 
+  const fxEvents: FxEvent[] = useMemo(() => {
+    // Convert recent attacks to FX events for BattleFxLayer (touch + back).
+    // Keep it deterministic and minimal: only last few events near current time.
+    return recentAttacks.map((a, i) => ({
+      type: "attack" as const,
+      id: `${a.t}:${a.fromId}:${a.toId}:${i}`,
+      attackerId: a.fromId,
+      targetId: a.toId,
+    }));
+  }, [recentAttacks]);
+
   const spawnFxByInstance = useMemo(() => {
     const windowSec = 0.35;
     const fromT = Math.max(0, t - windowSec);
@@ -1635,6 +1647,7 @@ const hpPct = useMemo(() => {
         ref={(el) => {
           if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
         }}
+        data-unit-id={renderUnit?.instanceId ?? ""}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
@@ -2817,6 +2830,7 @@ const hpPct = useMemo(() => {
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
+          <BattleFxLayer events={fxEvents} />
                     {DEBUG_ARENA && debugCover && (
             <>
               <div className="dbg-panel">
