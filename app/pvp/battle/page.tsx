@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 // @ts-nocheck
 "use client";
 
@@ -5,7 +7,6 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
 import CardArt from "../../components/CardArt";
-import BattleFxLayer from "./BattleFxLayer";
 
 type MatchRow = {
   id: string;
@@ -1226,17 +1227,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return arr.slice(-2);
   }, [timeline, t]);
 
-  const fxEvents = useMemo(() => {
-    // Map recent attack window into portal-based touch-back animation events
-    return recentAttacks.map((a) => ({
-      type: "attack" as const,
-      id: `${Math.round(a.t * 1000)}:${a.fromId}:${a.toId}`,
-      attackerId: a.fromId,
-      targetId: a.toId,
-    }));
-  }, [recentAttacks]);
-
-
   const spawnFxByInstance = useMemo(() => {
     const windowSec = 0.35;
     const fromT = Math.max(0, t - windowSec);
@@ -1646,7 +1636,6 @@ const hpPct = useMemo(() => {
         ref={(el) => {
           if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
         }}
-        data-unit-id={renderUnit?.instanceId ?? undefined}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
@@ -3015,9 +3004,7 @@ export default function BattlePage() {
               <div className="w-1/3 opacity-70 animate-pulse" />
             </div>
           </div>
-        
-      <BattleFxLayer events={fxEvents} />
-</main>
+        </main>
       }
     >
       <BattleInner />
