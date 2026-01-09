@@ -1,7 +1,6 @@
-export const dynamic = 'force-dynamic';
-
-// @ts-nocheck
 "use client";
+// @ts-nocheck
+
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
