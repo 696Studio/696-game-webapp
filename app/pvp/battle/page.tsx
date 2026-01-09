@@ -142,9 +142,6 @@ type UnitView = {
   dyingAt?: number;
 };
 
-type AttackFx = { t: number; fromId: string; toId: string };
-type SpawnFx = { t: number };
-type DamageFx = { t: number; amount: number; blocked?: boolean };
 
 type PlayerProfile = {
   id: string;
@@ -439,7 +436,6 @@ function BattleInner() {
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
-  const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
@@ -1189,138 +1185,13 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return "";
   }, [scored, roundWinner, youSide, enemySide]);
 
-  const attackFxByInstance = useMemo(() => {
-    const windowSec = 0.35;
-    const fromT = Math.max(0, t - windowSec);
-    const map: Record<string, AttackFx[]> = {};
-
-    for (const e of timeline) {
-      if (e.t < fromT) continue;
-      if (e.t > t) break;
-      if (e.type === "attack") {
-        const fromId = String((e as any)?.from?.instanceId ?? "");
-        const toId = String((e as any)?.to?.instanceId ?? "");
-        if (!fromId || !toId) continue;
-        (map[fromId] ||= []).push({ t: e.t, fromId, toId });
-        (map[toId] ||= []).push({ t: e.t, fromId, toId });
-      }
-    }
-    return map;
-  }, [timeline, t]);
-
-  const recentAttacks = useMemo(() => {
-    const windowSec = 0.22;
-    const fromT = Math.max(0, t - windowSec);
-    const arr: AttackFx[] = [];
-    for (const e of timeline) {
-      if (e.t < fromT) continue;
-      if (e.t > t) break;
-      if (e.type === "attack") {
-        const fromId = String((e as any)?.from?.instanceId ?? "");
-        const toId = String((e as any)?.to?.instanceId ?? "");
-        if (!fromId || !toId) continue;
-        arr.push({ t: e.t, fromId, toId });
-      }
-    }
-    return arr.slice(-2);
-  }, [timeline, t]);
-
-  const spawnFxByInstance = useMemo(() => {
-    const windowSec = 0.35;
-    const fromT = Math.max(0, t - windowSec);
-    const map: Record<string, SpawnFx[]> = {};
-
-    for (const e of timeline) {
-      if (e.t < fromT) continue;
-      if (e.t > t) break;
-      if (e.type === "spawn") {
-        const ref = readUnitRefFromEvent(e, "unit");
-        if (!ref?.instanceId) continue;
-        (map[ref.instanceId] ||= []).push({ t: e.t });
-      }
-    }
-    return map;
-  }, [timeline, t]);
-
-  const damageFxByInstance = useMemo(() => {
-    const windowSec = 0.45;
-    const fromT = Math.max(0, t - windowSec);
-    const map: Record<string, DamageFx[]> = {};
-
-    for (const e of timeline) {
-      if (e.t < fromT) continue;
-      if (e.t > t) break;
-      if (e.type === "damage") {
-        const tid = String((e as any)?.target?.instanceId ?? "");
-        const amount = Number((e as any)?.amount ?? 0);
-        const blocked = Boolean((e as any)?.blocked ?? false);
-        if (!tid) continue;
-        (map[tid] ||= []).push({ t: e.t, amount, blocked });
-      }
-    }
-    return map;
-  }, [timeline, t]);
-
-  const deathFxByInstance = useMemo(() => {
-    const windowSec = 0.65;
-    const fromT = Math.max(0, t - windowSec);
-    const set = new Set<string>();
-    for (const e of timeline) {
-      if (e.t < fromT) continue;
-      if (e.t > t) break;
-      if (e.type === "death") {
-        const ref = readUnitRefFromEvent(e, "unit");
-        if (ref?.instanceId) set.add(ref.instanceId);
-      }
-    }
-    return set;
-  }, [timeline, t]);
-
-  function getCenterInArena(instanceId: string) {
-    const arenaEl = arenaRef.current;
-    const el = unitElByIdRef.current[instanceId];
-    if (!arenaEl || !el) return null;
-
-    const aRect = arenaEl.getBoundingClientRect();
-    const r = el.getBoundingClientRect();
-
-    return {
-      x: r.left + r.width / 2 - aRect.left,
-      y: r.top + r.height / 2 - aRect.top,
-    };
-  }
-
-  const attackCurves = useMemo(() => {
-    const arenaEl = arenaRef.current;
-    if (!arenaEl) return [];
-
-    const curves: Array<{ key: string; d: string; fromId: string; toId: string }> = [];
-
-    for (const atk of recentAttacks) {
-      const p1 = getCenterInArena(atk.fromId);
-      const p2 = getCenterInArena(atk.toId);
-      if (!p1 || !p2) continue;
-
-      const mx = (p1.x + p2.x) / 2;
-      const my = (p1.y + p2.y) / 2;
-      const dx = p2.x - p1.x;
-      const dy = p2.y - p1.y;
-      const len = Math.max(1, Math.hypot(dx, dy));
-      const nx = -dy / len;
-      const ny = dx / len;
-
-      const bend = clamp(len * 0.1, 14, 46);
-      const cx = mx + nx * bend;
-      const cy = my + ny * bend;
-
-      const d = `M ${p1.x} ${p1.y} Q ${cx} ${cy} ${p2.x} ${p2.y}`;
-      curves.push({ key: `${atk.t}:${atk.fromId}:${atk.toId}`, d, fromId: atk.fromId, toId: atk.toId });
-    }
-
-    return curves;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recentAttacks, layoutTick]);
-
+  
+  
+  
+  
+  
+  
+  
   function TagPill({ label }: { label: string }) {
     return <span className="bb-tag">{label}</span>;
   }
@@ -1476,9 +1347,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   unit,
   fallbackId,
   unitInstanceId,
-  attackFx,
-  spawnFx,
-  damageFx,
   isDying,
   revealed,
   delayMs,
@@ -1487,9 +1355,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   unit?: UnitView | null;
   fallbackId?: string | null;
   unitInstanceId?: string | null;
-  attackFx?: AttackFx[];
-  spawnFx?: SpawnFx[];
-  damageFx?: DamageFx[];
   isDying?: boolean;
   revealed: boolean;
   delayMs: number;
@@ -1595,25 +1460,6 @@ const hpPct = useMemo(() => {
       return clamp((activeUnit.shield / maxHp) * 100, 0, 100);
     }, [activeUnit?.instanceId, activeUnit?.shield, activeUnit?.maxHp]);
 
-    const atk = useMemo(() => {
-      if (!renderUnit || !attackFx || attackFx.length === 0) return null;
-      const last = attackFx[attackFx.length - 1];
-      const isFrom = last.fromId === renderUnit.instanceId;
-      const isTo = last.toId === renderUnit.instanceId;
-      if (!isFrom && !isTo) return null;
-      return { ...last, isFrom, isTo };
-    }, [renderUnit?.instanceId, attackFx]);
-
-    const spawned = useMemo(() => {
-      if (!renderUnit || !spawnFx || spawnFx.length === 0) return null;
-      return spawnFx[spawnFx.length - 1];
-    }, [renderUnit?.instanceId, spawnFx]);
-
-    const dmg = useMemo(() => {
-      if (!renderUnit || !damageFx || damageFx.length === 0) return null;
-      return damageFx[damageFx.length - 1];
-    }, [renderUnit?.instanceId, damageFx]);
-
     const tags = useMemo(() => {
       if (!activeUnit) return [];
       const arr = Array.from(activeUnit.tags || []);
@@ -1628,12 +1474,9 @@ const hpPct = useMemo(() => {
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}>
       <div className="bb-fx-anchor">
         
-        {isDyingUi ? <div className="bb-death" /> : null}
+        
       </div>
       <div
-        ref={(el) => {
-          if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
-        }}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
@@ -1641,8 +1484,6 @@ const hpPct = useMemo(() => {
           renderUnit ? "has-unit" : "",
           isDead ? "is-dead" : "",
           isActive ? "is-active" : "",
-          spawned ? "is-spawn" : "",
-          dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
         ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
@@ -1665,25 +1506,6 @@ const hpPct = useMemo(() => {
             />
             {renderUnit && (
               <div className="bb-fx">
-                {spawned && <div key={`spawn-${spawned.t}-${renderUnit.instanceId}`} className="bb-spawn" />}
-
-                {atk && (
-                  <div className="bb-atkfx">
-                    {atk.isFrom && <div key={`slash-${atk.t}-${renderUnit.instanceId}`} className="bb-slash" />}
-                    {atk.isTo && <div key={`impact-${atk.t}-${renderUnit.instanceId}`} className="bb-impact" />}
-                  </div>
-                )}
-
-                {renderUnit && dmg && (
-                  <>
-                    <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
-                    <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
-                      {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
-                    </div>
-                  </>
-                )}
-
-                {isDying && <div className="bb-death" />}
               </div>
             )}
 
@@ -2842,23 +2664,7 @@ const hpPct = useMemo(() => {
           )}
 
           {DEBUG_GRID && debugCover && <DebugGrid />}
-
-          <svg className="atk-overlay" width="100%" height="100%">
-            <defs>
-              <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.85)" />
-              </marker>
-            </defs>
-
-            {attackCurves.map((c) => (
-              <g key={c.key}>
-                <path className="atk-path-glow" d={c.d} />
-                <path className="atk-path-core" d={c.d} />
-              </g>
-            ))}
-          </svg>
-
-          <div className="corner-info">
+<div className="corner-info">
             <div className="h1">
               РАУНД{" "}
               <b className="tabular-nums">
@@ -2904,11 +2710,7 @@ const hpPct = useMemo(() => {
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
-                    unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}
-                    attackFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? attackFxByInstance[inst] : undefined; })()}
-                    spawnFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? spawnFxByInstance[inst] : undefined; })()}
-                    damageFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? damageFxByInstance[inst] : undefined; })()}
-                    isDying={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return !!(inst && deathFxByInstance.has(inst)); })()}
+                    unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}                    isDying={false}
                     revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
                     delayMs={i * 70}
                   />
@@ -2936,11 +2738,7 @@ const hpPct = useMemo(() => {
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
-                    unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}
-                    attackFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? attackFxByInstance[inst] : undefined; })()}
-                    spawnFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? spawnFxByInstance[inst] : undefined; })()}
-                    damageFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? damageFxByInstance[inst] : undefined; })()}
-                    isDying={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return !!(inst && deathFxByInstance.has(inst)); })()}
+                    unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}                    isDying={false}
                     revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
                     delayMs={i * 70}
                   />
