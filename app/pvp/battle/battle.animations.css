@@ -473,3 +473,19 @@ z-index: 21;
     transform: translate3d(0,0,0) scale(1);
   }
 }
+
+/* =========================================================
+ ATTACK LUNGE — ATTRIBUTE TRIGGER (ANTI-REACT-OVERRIDE)
+ React can overwrite className on re-render, wiping .is-attacking.
+ Using data attributes avoids that.
+ Controlled by BattleFxLayer.tsx
+ ========================================================= */
+
+.bb-motion-layer[data-fx-attacking="1"]{
+  animation: bb_motion_lunge_to_target 420ms cubic-bezier(.18,.9,.22,1) both;
+  z-index: 60;
+}
+
+.bb-card[data-fx-attack-target="1"]{
+  animation: bb_attack_target_hit 220ms var(--bb-hit-ease) both;
+}
