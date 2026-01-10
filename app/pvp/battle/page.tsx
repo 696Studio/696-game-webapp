@@ -1,5 +1,4 @@
 "use client";
-
 // @ts-nocheck
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -7,7 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
 import CardArt from "../../components/CardArt";
 
-import BattleFxLayer from "./BattleFxLayer";
+import BattleFxLayer from './BattleFxLayer';
 
 type MatchRow = {
   id: string;
@@ -446,11 +445,100 @@ function BattleInner() {
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
-  // Layout tick: forces re-measurements (used by FX + cover mapping)
-  const [layoutTick, setLayoutTick] = useState<number>(0);
+  // =========================================================
+  // FX MANAGER (GUARANTEED): death bursts are rendered in an
+  // arena-level overlay, independent of card DOM/lifecycle.
+  // =========================================================
+  type FxBurst = {
+    id: string;
+    x: number; // px relative to arena
+    y: number; // px relative to arena
+    size: number; // px
+    createdAt: number; // ms
+    kind: "death";
+  };
 
+  const [fxBursts, setFxBursts] = useState<FxBurst[]>([]);
+  const prevHpByInstanceRef = useRef<Record<string, number>>({});
+  const prevPresentRef = useRef<Set<string>>(new Set());
 
-  
+    const deathFxPlayedRef = useRef<Set<string>>(new Set());
+const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
+    const arenaEl = arenaRef.current;
+    if (!arenaEl) return;
+
+    const arenaRect = arenaEl.getBoundingClientRect();
+    const targetEl = unitElByIdRef.current[instanceId];
+    const r = targetEl?.getBoundingClientRect();
+    if (!r) return;
+
+    const size = Math.max(84, Math.min(170, Math.max(r.width, r.height) * 1.05));
+const x = (r.left - arenaRect.left) + r.width / 2;
+    const y = (r.top - arenaRect.top) + r.height / 2;
+
+    const id = `${instanceId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const burst: FxBurst = {
+      id,
+      x,
+      y,
+      size: Number.isFinite(size) ? size : fallbackSize,
+      createdAt: Date.now(),
+      kind: "death",
+    };
+
+    setFxBursts((prev) => [...prev, burst]);
+
+    // Auto-remove after animation window
+    window.setTimeout(() => {
+      setFxBursts((prev) => prev.filter((b) => b.id !== id));
+    }, 900);
+  };
+
+  // Detect deaths robustly:
+  // - hp drops from >0 to <=0
+  // - or instance disappears from slots (removal)
+  useEffect(() => {
+    const current: Record<string, number> = {};
+    const present = new Set<string>();
+
+    const allUnits: (UnitView | null | undefined)[] = [
+      ...Object.values(p1UnitsBySlot || {}),
+      ...Object.values(p2UnitsBySlot || {}),
+    ];
+
+    for (const u of allUnits) {
+      if (!u?.instanceId) continue;
+      present.add(u.instanceId);
+      current[u.instanceId] = (u.hp ?? 0);
+    }
+
+    const prevHp = prevHpByInstanceRef.current;
+    for (const [id, hp] of Object.entries(current)) {
+      const before = prevHp[id];
+      if (typeof before === "number" && before > 0 && hp <= 0) {
+        if (!deathFxPlayedRef.current.has(id)) {
+          deathFxPlayedRef.current.add(id);
+          spawnDeathBurst(id);
+        }
+      }
+    }
+
+    // Disappearances (unit removed from slots)
+    const prevPresent = prevPresentRef.current;
+    for (const id of prevPresent) {
+      if (!present.has(id)) {
+        if (!deathFxPlayedRef.current.has(id)) {
+          deathFxPlayedRef.current.add(id);
+          spawnDeathBurst(id);
+        }
+      }
+    }
+
+    prevHpByInstanceRef.current = current;
+    prevPresentRef.current = present;
+  }, [p1UnitsBySlot, p2UnitsBySlot]);
+  const [layoutTick, setLayoutTick] = useState(0);
+
   const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
 
   const debugCover = useMemo(() => {
@@ -685,7 +773,7 @@ function BattleInner() {
   }
 
   useEffect(() => {
-    const onResize = () => setLayoutTick((x: number) => x + 1);
+    const onResize = () => setLayoutTick((x) => x + 1);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -1001,7 +1089,7 @@ function BattleInner() {
     setP1UnitsBySlot(slotMapP1);
     setP2UnitsBySlot(slotMapP2);
 
-    setLayoutTick((x: number) => x + 1);
+    setLayoutTick((x) => x + 1);
   }, [t, timeline]);
 
   useEffect(() => {
@@ -1228,17 +1316,18 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return arr.slice(-2);
   }, [timeline, t]);
 
-  // FX events consumed by BattleFxLayer (guaranteed, independent from DOM remounts)
-  const fxEvents = useMemo(
-    () =>
-      (recentAttacks as any[]).map((a: any, i: number) => ({
+  // FX events derived from recent attacks (used by BattleFxLayer).
+  const fxEvents = useMemo(() => {
+    return (recentAttacks as any[])
+      .filter((a) => a && (a as any).fromId && (a as any).toId)
+      .map((a: any, i: number) => ({
         type: "attack" as const,
-        id: `${a?.t ?? ""}:${a?.fromId ?? ""}:${a?.toId ?? ""}:${i}`,
-        attackerId: String(a?.fromId ?? ""),
-        targetId: String(a?.toId ?? ""),
-      })),
-    [recentAttacks]
-  );
+        id: `${a.t ?? ""}:${a.fromId}:${a.toId}:${i}`,
+        attackerId: String(a.fromId),
+        targetId: String(a.toId),
+      }));
+  }, [recentAttacks]);
+
 
   const spawnFxByInstance = useMemo(() => {
     const windowSec = 0.35;
@@ -1649,7 +1738,6 @@ const hpPct = useMemo(() => {
         ref={(el) => {
           if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
         }}
-        data-unit-id={String(renderUnit?.instanceId ?? "")}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
@@ -1852,6 +1940,7 @@ const hpPct = useMemo(() => {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
       <BattleFxLayer events={fxEvents} />
+
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
           <div className="text-sm ui-subtle">Эта страница работает только внутри Telegram WebApp.</div>
@@ -2833,7 +2922,33 @@ const hpPct = useMemo(() => {
         </header>
 
         <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
-                    {DEBUG_ARENA && debugCover && (
+          {/* FX overlay (independent from card DOM) */}
+          <div className="bb-fx-layer" aria-hidden="true">
+            {fxBursts.map((b) => (
+              <div
+                key={b.id}
+                className={`bb-fx-burst bb-fx-burst--${b.kind}`}
+                style={{
+                  left: b.x,
+                  top: b.y,
+                  width: b.size,
+                  height: b.size,
+                }}
+              >
+                {b.kind === "death" && (
+                  <div
+                    className="bb-fx-burst__atlas"
+                    style={{
+                      // death_burst_strip.png is 194x59 (3 frames with padding)
+                      ["--bb-strip-scale" as any]: (b.size / 59).toFixed(4),
+                    }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {DEBUG_ARENA && debugCover && (
             <>
               <div className="dbg-panel">
                 <div>
