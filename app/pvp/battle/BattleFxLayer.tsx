@@ -31,14 +31,16 @@ function computeTouchDelta(attacker: DOMRect, target: DOMRect) {
   const k = clamp(maxMove / len, 0.55, 0.92);
   return { dx: dx * k, dy: dy * k };
 }
+
 function safeEscape(v: string) {
+  // CSS.escape may be missing in some webviews
   try {
     const cssAny = CSS as unknown as { escape?: (s: string) => string };
     return typeof cssAny !== 'undefined' && typeof cssAny.escape === 'function'
       ? cssAny.escape(v)
-      : v.replace(/"/g, '\"');
+      : v.replace(/"/g, '\\"');
   } catch {
-    return v.replace(/"/g, '\"');
+    return v.replace(/"/g, '\\"');
   }
 }
 
@@ -75,13 +77,16 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   // URL debug (optional)
   const urlDebug = useMemo(() => {
     try {
-      return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fxdebug') === '1';
+      return (
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('fxdebug') === '1'
+      );
     } catch {
       return false;
     }
   }, []);
 
-  // Manual toggle debug (button)
+  // Manual toggle debug (button) — works even if you can't add ?fxdebug=1
   const [debugOn, setDebugOn] = useState(false);
   const debug = urlDebug || debugOn;
 
@@ -114,7 +119,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
 
       const { dx, dy } = computeTouchDelta(ar, tr);
 
-      // === detect реально видимый слой ===
+      // === KEY PART: detect реально видимый слой ===
       const c = rectCenter(ar);
       const topEl = document.elementFromPoint(c.x, c.y) as HTMLElement | null;
       const topMotion = topEl?.closest('.bb-motion-layer') as HTMLElement | null;
@@ -127,12 +132,17 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
 
       if (!chosen) return false;
 
+      // Bring above siblings without changing layout (no координаты/позиции UI)
       const prevZ = chosen.style.zIndex || '';
       chosen.style.zIndex = '60';
       chosen.style.willChange = 'transform';
+
+      // Prefer WAAPI (most reliable, doesn't depend on CSS being loaded)
+      const canWAAPI = typeof (chosen as any).animate === 'function';
+
+      // Make sure we start from clean inline transform
       chosen.style.transform = 'translate3d(0px,0px,0px)';
 
-      const canWAAPI = typeof (chosen as any).animate === 'function';
       if (canWAAPI) {
         try {
           const anim = (chosen as any).animate(
@@ -141,52 +151,53 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
               { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
               { transform: 'translate3d(0px,0px,0px)' },
             ],
-            {
-              duration: OUT_MS + BACK_MS,
-              easing: 'cubic-bezier(.18,.9,.22,1)',
-              fill: 'none',
-            }
+            { duration: OUT_MS + BACK_MS, easing: 'cubic-bezier(.2,.9,.2,1)' }
           );
+
           anim.onfinish = () => {
             try {
+              chosen!.style.transform = 'translate3d(0px,0px,0px)';
               chosen!.style.zIndex = prevZ;
               chosen!.style.willChange = '';
-              chosen!.style.transform = '';
             } catch {}
           };
-        } catch {}
+        } catch {
+          // fallback below
+        }
       } else {
-        chosen.style.transition = 'none';
-        chosen.style.transform = 'translate3d(0px,0px,0px)';
-        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-        chosen.offsetHeight;
-
-        chosen.style.transition = `transform ${OUT_MS}ms cubic-bezier(.18,.9,.22,1)`;
+        // Fallback: transition (Telegram webview should still support this)
+        const prevTr = chosen.style.transition || '';
+        chosen.style.transition = `transform ${OUT_MS}ms cubic-bezier(.2,.9,.2,1)`;
         chosen.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
 
         timers.push(
           window.setTimeout(() => {
-            chosen!.style.transition = `transform ${BACK_MS}ms cubic-bezier(.2,.8,.2,1)`;
-            chosen!.style.transform = 'translate3d(0px,0px,0px)';
-
-            timers.push(
-              window.setTimeout(() => {
-                try {
-                  chosen!.style.transition = '';
-                  chosen!.style.transform = '';
-                  chosen!.style.zIndex = prevZ;
-                  chosen!.style.willChange = '';
-                } catch {}
-              }, BACK_MS + 40)
-            );
+            try {
+              chosen!.style.transition = `transform ${BACK_MS}ms cubic-bezier(.2,.9,.2,1)`;
+              chosen!.style.transform = 'translate3d(0px,0px,0px)';
+            } catch {}
           }, OUT_MS + 10)
+        );
+
+        timers.push(
+          window.setTimeout(() => {
+            try {
+              chosen!.style.transition = prevTr;
+              chosen!.style.zIndex = prevZ;
+              chosen!.style.willChange = '';
+            } catch {}
+          }, OUT_MS + BACK_MS + 40)
         );
       }
 
       if (debug) {
         const same = assumedMotion === chosen ? 'YES' : 'NO';
+        let trf = '';
+        try {
+          trf = getComputedStyle(chosen).transform || '';
+        } catch {}
         setHud(
-          `att=${e.attackerId}\nassumed==chosen: ${same}\ntopEl=${topEl?.className || 'null'}\nchosen=${chosen.className}\ntransform=${getComputedStyle(chosen).transform}`
+          `att=${e.attackerId}\nassumed==chosen: ${same}\ntopEl=${topEl?.className || 'null'}\nchosen=${chosen.className}\ntransform=${trf}`
         );
         timers.push(window.setTimeout(() => setHud(''), 1200));
       }
@@ -224,9 +235,9 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
           cancelAnimationFrame(r);
         } catch {}
       }
-      for (const t of timers) {
+      for (const tmr of timers) {
         try {
-          clearTimeout(t);
+          clearTimeout(tmr);
         } catch {}
       }
     };
@@ -241,8 +252,8 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
           position:fixed; right:10px; bottom:10px;
           z-index:10000; pointer-events:none;
           font:12px/1.2 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;
-          color:rgba(255,255,255,.92);
-          background:rgba(0,0,0,.55);
+          color:rgba(255,255,255,0.92);
+          background:rgba(0,0,0,0.55);
           padding:8px 10px; border-radius:10px;
           backdrop-filter: blur(6px);
           max-width:70vw; white-space:pre-wrap;
@@ -253,9 +264,9 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
           font:12px system-ui;
           padding:6px 10px;
           border-radius:999px;
-          background:rgba(0,0,0,.65);
+          background:rgba(0,0,0,0.65);
           color:#fff;
-          border:1px solid rgba(255,255,255,.25);
+          border:1px solid rgba(255,255,255,0.25);
         }
       `}</style>
 
@@ -263,8 +274,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
         FX DEBUG {debug ? 'ON' : 'OFF'}
       </button>
 
-      {debug && <div className="bb-fx-debug-hud">{`fxEvents: ${cnt}
-${hud}`}</div>}
+      {debug && <div className="bb-fx-debug-hud">{`fxEvents: ${cnt}\n${hud}`}</div>}
     </>
   );
 }
