@@ -4,20 +4,15 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
- * BattleFxLayer — ATTACK TOUCH→BACK (HARDENED + DEBUG)
+ * BattleFxLayer — ATTACK TOUCH→BACK (WAAPI + SSR-safe)
  *
- * Если "ничего не двигается", причина почти всегда одна из:
- * 1) events пустые (fxEvents не приходят)
- * 2) data-unit-id не совпадает / стоит не на том узле
- * 3) мы двигаем не тот контейнер (нет .bb-slot)
+ * Key idea:
+ * - We move the ORIGINAL card by animating the OUTER slot/wrapper that has data-unit-id
+ * - Uses Web Animations API (element.animate) to avoid CSS/transform conflicts
+ * - Fully SSR-safe: no document/window access before mount
  *
- * Этот файл:
- * - двигает "лучший" контейнер вокруг карты (slot/wrapper/сам unit)
- * - делает ретраи, чтобы дождаться DOM после ремоунта
- * - имеет режим debug (?fxdebug=1) — показывает:
- *    • счётчик событий
- *    • подсветку найденных attacker/target
- *    • всплывающий текст, если DOM не найден
+ * Debug:
+ *   Add ?fxdebug=1 to URL to see HUD + outlines.
  */
 
 export type FxEvent =
@@ -35,10 +30,6 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
-function getElByUnitId(unitId: string) {
-  return document.querySelector<HTMLElement>(`[data-unit-id="${CSS.escape(String(unitId))}"]`);
-}
-
 function rectCenter(r: DOMRect) {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
@@ -49,6 +40,7 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
   const dx = bc.x - ac.x;
   const dy = bc.y - ac.y;
 
+  // Move mostly towards the target, but cap distance so it "touches" instead of teleporting
   const k = 0.9;
   const maxMove = Math.max(a.width, a.height) * 1.15;
   const len = Math.hypot(dx, dy) || 1;
@@ -62,74 +54,52 @@ function hasClassLike(el: HTMLElement, needle: string) {
   return c.includes(needle);
 }
 
+/**
+ * We DO NOT move CardArt internals.
+ * We move the "best" outer container around the unit.
+ */
 function findMoveEl(unitRoot: HTMLElement): HTMLElement {
-  // 1) нормальный путь
+  // 1) Best: slot wrapper
   const slot = unitRoot.closest('.bb-slot') as HTMLElement | null;
   if (slot) return slot;
 
-  // 2) любые "slot"-подобные контейнеры
-  const slotLike = unitRoot.closest('[class*="slot"],[class*="Slot"],[data-slot], [data-slot-id]') as HTMLElement | null;
+  // 2) Any slot-like wrapper
+  const slotLike = unitRoot.closest('[class*="slot"],[class*="Slot"],[data-slot],[data-slot-id]') as HTMLElement | null;
   if (slotLike) return slotLike;
 
-  // 3) поднимаемся вверх в пределах 5 уровней и берём первый контейнер,
-  // который похож на слот/карточный контейнер
+  // 3) Walk up a few levels and pick a container that looks like a slot/card block
   let cur: HTMLElement | null = unitRoot;
-  for (let i = 0; i < 5 && cur; i++) {
+  for (let i = 0; i < 6 && cur; i++) {
     if (hasClassLike(cur, 'bb-slot') || hasClassLike(cur, 'slot') || hasClassLike(cur, 'card') || hasClassLike(cur, 'bb-card')) {
       return cur;
     }
     cur = cur.parentElement;
   }
 
-  // 4) fallback: сам root
   return unitRoot;
-}
-
-function startAttackMove(moveEl: HTMLElement, dx: number, dy: number) {
-  moveEl.style.setProperty('--fx-dx', `${dx}px`);
-  moveEl.style.setProperty('--fx-dy', `${dy}px`);
-
-  // перезапуск анимации
-  moveEl.classList.remove('bb-attack-move');
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-  moveEl.offsetHeight;
-  moveEl.classList.add('bb-attack-move');
-
-  window.setTimeout(() => {
-    moveEl.classList.remove('bb-attack-move');
-    moveEl.style.removeProperty('--fx-dx');
-    moveEl.style.removeProperty('--fx-dy');
-  }, ATTACK_DURATION + 40);
 }
 
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const animByElRef = useRef<WeakMap<HTMLElement, Animation>>(new WeakMap());
+
   const [mounted, setMounted] = useState(false);
   const [debugMsg, setDebugMsg] = useState<string>('');
   const [debugCount, setDebugCount] = useState<number>(0);
 
+  useEffect(() => setMounted(true), []);
+
   const debugEnabled = useMemo(() => {
+    if (!mounted) return false;
     try {
-      return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fxdebug') === '1';
+      return new URLSearchParams(window.location.search).get('fxdebug') === '1';
     } catch {
       return false;
     }
-  }, []);
+  }, [mounted]);
 
   const css = useMemo(
     () => `
-      @keyframes bb_attack_touch_back {
-        0%   { transform: translate3d(0px, 0px, 0) scale(1); }
-        55%  { transform: translate3d(var(--fx-dx), var(--fx-dy), 0) scale(1.03); }
-        70%  { transform: translate3d(calc(var(--fx-dx) * 0.92), calc(var(--fx-dy) * 0.92), 0) scale(1.00); }
-        100% { transform: translate3d(0px, 0px, 0) scale(1); }
-      }
-      .bb-attack-move {
-        animation: bb_attack_touch_back ${ATTACK_DURATION}ms cubic-bezier(.18,.9,.22,1) both !important;
-        will-change: transform;
-        z-index: 60;
-      }
-
       /* Debug helpers */
       .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,.85) !important; }
       .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,.85) !important; }
@@ -154,16 +124,78 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   );
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    if (!mounted) return;
 
-  useEffect(() => {
     const timers: any[] = [];
     const rafs: number[] = [];
 
-    if (debugEnabled) {
-      setDebugCount((events || []).length);
-    }
+    if (debugEnabled) setDebugCount((events || []).length);
+
+    const getElByUnitId = (unitId: string) =>
+      document.querySelector<HTMLElement>(`[data-unit-id="${CSS.escape(String(unitId))}"]`);
+
+    const animateAttack = (moveEl: HTMLElement, dx: number, dy: number) => {
+      // Cancel previous animation on this element (if any)
+      const prev = animByElRef.current.get(moveEl);
+      try {
+        prev?.cancel();
+      } catch {}
+
+      // Ensure it can sit above neighbors during motion (z-index works only if positioned)
+      const prevPos = moveEl.style.position;
+      if (!prevPos) moveEl.style.position = 'relative';
+      moveEl.style.willChange = 'transform';
+      moveEl.style.zIndex = '60';
+
+      // WAAPI: reliable even when CSS has transform stuff elsewhere
+      let anim: Animation | null = null;
+      try {
+        anim = moveEl.animate(
+          [
+            { transform: 'translate3d(0px, 0px, 0) scale(1)' },
+            { transform: `translate3d(${dx}px, ${dy}px, 0) scale(1.03)`, offset: 0.55 },
+            { transform: `translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)`, offset: 0.7 },
+            { transform: 'translate3d(0px, 0px, 0) scale(1)' }
+          ],
+          { duration: ATTACK_DURATION, easing: 'cubic-bezier(.18,.9,.22,1)', fill: 'both' }
+        );
+      } catch {
+        anim = null;
+      }
+
+      if (anim) {
+        animByElRef.current.set(moveEl, anim);
+        anim.onfinish = () => {
+          moveEl.style.willChange = '';
+          moveEl.style.zIndex = '';
+          // Keep position intact (do not touch layout), but revert our temporary inline position if we set it.
+          if (!prevPos) moveEl.style.position = '';
+          animByElRef.current.delete(moveEl);
+        };
+        anim.oncancel = () => {
+          moveEl.style.willChange = '';
+          moveEl.style.zIndex = '';
+          if (!prevPos) moveEl.style.position = '';
+          animByElRef.current.delete(moveEl);
+        };
+      } else {
+        // Fallback: set inline transform directly (still touch→back)
+        moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.03)`;
+        timers.push(
+          window.setTimeout(() => {
+            moveEl.style.transform = 'translate3d(0px, 0px, 0) scale(1)';
+          }, Math.floor(ATTACK_DURATION * 0.55))
+        );
+        timers.push(
+          window.setTimeout(() => {
+            moveEl.style.transform = '';
+            moveEl.style.willChange = '';
+            moveEl.style.zIndex = '';
+            if (!prevPos) moveEl.style.position = '';
+          }, ATTACK_DURATION + 40)
+        );
+      }
+    };
 
     const tryOnce = (attackerId: string, targetId: string) => {
       const attackerRoot = getElByUnitId(attackerId);
@@ -176,6 +208,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
 
       const { dx, dy } = computeTouchDelta(ar, tr);
+
       const moveEl = findMoveEl(attackerRoot);
 
       if (debugEnabled) {
@@ -189,7 +222,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
         );
       }
 
-      startAttackMove(moveEl, dx, dy);
+      animateAttack(moveEl, dx, dy);
       return true;
     };
 
@@ -203,8 +236,10 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
         if (frame < RETRY_FRAMES) {
           rafs.push(requestAnimationFrame(tick));
         } else if (debugEnabled) {
-          setDebugMsg(`FX: DOM not found for\nattackerId=${attackerId}\ntargetId=${targetId}\n(data-unit-id mismatch?)`);
-          timers.push(window.setTimeout(() => setDebugMsg(''), 1200));
+          setDebugMsg(
+            `FX: DOM not found for\nattackerId=${attackerId}\ntargetId=${targetId}\n(data-unit-id mismatch?)`
+          );
+          timers.push(window.setTimeout(() => setDebugMsg(''), 1400));
         }
       };
       rafs.push(requestAnimationFrame(tick));
@@ -224,17 +259,19 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     return () => {
       for (const t of timers) clearTimeout(t);
       for (const r of rafs) cancelAnimationFrame(r);
+      // Cancel any running animations we started
+      try {
+        // WeakMap isn't iterable; we just let them finish. Safe.
+      } catch {}
     };
-  }, [events, debugEnabled]);
+  }, [events, debugEnabled, mounted]);
 
   if (!mounted) return null;
 
   return createPortal(
     <>
       <style>{css}</style>
-      {debugEnabled ? (
-        <div className="bb-fx-debug-hud">{`FX events: ${debugCount}\n${debugMsg}`}</div>
-      ) : null}
+      {debugEnabled ? <div className="bb-fx-debug-hud">{`FX events: ${debugCount}\n${debugMsg}`}</div> : null}
     </>,
     document.body
   );
