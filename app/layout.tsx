@@ -58,7 +58,26 @@ export default function RootLayout({
           `}
         </Script>
 
-        <GameSessionProvider>
+              {/* BUILD STAMP (remove later) */}
+      <div
+        className="bb-build-stamp"
+        style={{
+          position: "fixed",
+          left: 10,
+          top: 10,
+          zIndex: 999999,
+          background: "rgba(255,0,0,0.78)",
+          color: "#fff",
+          font: "12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial",
+          padding: "6px 10px",
+          borderRadius: 10,
+          pointerEvents: "none",
+        }}
+      >
+        BUILD_STAMP_ROOT_v1
+      </div>
+
+      <GameSessionProvider>
           {children}
           <BottomNav />
         </GameSessionProvider>
