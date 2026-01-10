@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 
 export type FxEvent =
   | {
@@ -10,8 +10,8 @@ export type FxEvent =
       targetId: string;
     };
 
-const DURATION = 360;
-const RETURN_DURATION = 220;
+const DURATION_MS = 360;
+const RETURN_MS = 220;
 const RETRY_FRAMES = 28;
 
 function clamp(n: number, a: number, b: number) {
@@ -22,17 +22,28 @@ function rectCenter(r: DOMRect) {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
 
-function computeTouchDelta(a: DOMRect, b: DOMRect) {
-  const ac = rectCenter(a);
-  const bc = rectCenter(b);
-  const dx = bc.x - ac.x;
-  const dy = bc.y - ac.y;
+/**
+ * Move attacker towards target, but not full center-to-center:
+ * - scale down delta to "touch" feeling
+ * - clamp max travel so it never flies too far
+ */
+function computeTouchDelta(attackerRect: DOMRect, targetRect: DOMRect) {
+  const ac = rectCenter(attackerRect);
+  const tc = rectCenter(targetRect);
 
-  const maxMove = Math.max(a.width, a.height) * 1.05;
-  const len = Math.hypot(dx, dy) || 1;
-  const k = clamp(maxMove / len, 0.45, 0.95);
+  const rawDx = tc.x - ac.x;
+  const rawDy = tc.y - ac.y;
 
-  return { dx: dx * k, dy: dy * k };
+  const len = Math.hypot(rawDx, rawDy) || 1;
+  const maxMove = Math.max(attackerRect.width, attackerRect.height) * 1.15;
+
+  // base touch factor (keeps it from full overlap)
+  const baseK = 0.9;
+
+  // clamp so far targets don't yeet the card
+  const k = clamp((maxMove / len) * baseK, 0.55, 0.92);
+
+  return { dx: rawDx * k, dy: rawDy * k };
 }
 
 function safeEscape(v: string) {
@@ -46,78 +57,98 @@ function safeEscape(v: string) {
   }
 }
 
-function getElsByUnitId(unitId: string) {
-  return Array.from(document.querySelectorAll<HTMLElement>(`[data-unit-id="${safeEscape(String(unitId))}"]`));
-}
-
-function pickSlotOrCard(unitId: string) {
-  const list = getElsByUnitId(unitId);
+/**
+ * IMPORTANT: there are multiple nodes with the same data-unit-id.
+ * We prefer the outer slot (.bb-slot) because it contains .bb-motion-layer.
+ */
+function getBestUnitRootById(unitId: string) {
+  const list = Array.from(document.querySelectorAll<HTMLElement>(`[data-unit-id="${safeEscape(String(unitId))}"]`));
   if (!list.length) return null;
 
   const slot = list.find((el) => el.classList.contains('bb-slot'));
   if (slot) return slot;
 
-  const card = list.find((el) => el.classList.contains('bb-card'));
-  if (card) return card;
-
   for (const el of list) {
     const up = el.closest('.bb-slot') as HTMLElement | null;
     if (up) return up;
   }
+
+  const hasMotion = list.find((el) => !!el.querySelector('.bb-motion-layer'));
+  if (hasMotion) return hasMotion;
+
   return list[0];
 }
 
-function findCard(root: HTMLElement) {
-  if (root.classList.contains('bb-card')) return root;
-  return root.querySelector<HTMLElement>('.bb-card') || root;
+function findMotionLayer(slotOrRoot: HTMLElement) {
+  const slot = slotOrRoot.classList.contains('bb-slot') ? slotOrRoot : (slotOrRoot.closest('.bb-slot') as HTMLElement | null);
+  if (slot) {
+    const ml = slot.querySelector<HTMLElement>('.bb-motion-layer');
+    if (ml) return ml;
+  }
+  return slotOrRoot.querySelector<HTMLElement>('.bb-motion-layer') || null;
+}
+
+function findCard(slotOrRoot: HTMLElement) {
+  if (slotOrRoot.classList.contains('bb-card')) return slotOrRoot;
+  return slotOrRoot.querySelector<HTMLElement>('.bb-card') || null;
 }
 
 /**
- * Picks the REAL topmost DOM node at the attacker card center.
- * This solves the "we animate an element, but another overlay is visible" issue.
+ * Animate element using WAAPI if possible; otherwise fallback to a safe CSS-transition.
  */
-function findTopVisibleForAttack(attackerCard: HTMLElement, attackerId: string): HTMLElement {
-  const r = attackerCard.getBoundingClientRect();
-  const c = rectCenter(r);
-
-  const el = document.elementFromPoint(c.x, c.y) as HTMLElement | null;
-  if (!el) return attackerCard;
-
-  const slot = attackerCard.closest('.bb-slot') as HTMLElement | null;
-  const inSameSlot = (cand: HTMLElement) => (slot ? slot.contains(cand) : false);
-
-  let cur: HTMLElement | null = el;
-  for (let i = 0; i < 14 && cur; i++) {
-    if (cur.getAttribute('data-unit-id') === attackerId) return cur;
-    if (cur.classList.contains('bb-card')) return cur;
-    if (cur.classList.contains('bb-slot')) return cur;
-    if (inSameSlot(cur) && cur.className && cur.className.toString().includes('bb-')) return cur;
-    cur = cur.parentElement;
+function animateTranslate(el: HTMLElement, dx: number, dy: number) {
+  // WAAPI path (best — doesn't fight React className updates)
+  const anyEl = el as unknown as { animate?: any };
+  if (typeof anyEl.animate === 'function') {
+    try {
+      anyEl.animate(
+        [
+          { transform: 'translate3d(0px,0px,0px) scale(1)' },
+          { transform: `translate3d(${dx}px, ${dy}px, 0px) scale(1.06)` },
+          { transform: 'translate3d(0px,0px,0px) scale(1)' },
+        ],
+        {
+          duration: DURATION_MS + RETURN_MS,
+          easing: 'cubic-bezier(.18,.9,.22,1)',
+          fill: 'none',
+        },
+      );
+      return;
+    } catch {
+      // fallback below
+    }
   }
 
-  if (slot && slot.contains(el)) return el;
-  return attackerCard;
+  // Fallback: inline transform with transition (still SSR-safe; no portals)
+  const prevTransition = el.style.transition;
+  const prevTransform = el.style.transform;
+
+  el.style.willChange = 'transform';
+  el.style.transition = `transform ${DURATION_MS}ms cubic-bezier(.18,.9,.22,1)`;
+
+  // Start (ensure it commits)
+  el.style.transform = 'translate3d(0px,0px,0px)';
+
+  requestAnimationFrame(() => {
+    el.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+    window.setTimeout(() => {
+      el.style.transition = `transform ${RETURN_MS}ms cubic-bezier(.18,.9,.22,1)`;
+      el.style.transform = 'translate3d(0px,0px,0px)';
+
+      window.setTimeout(() => {
+        el.style.transition = prevTransition;
+        el.style.transform = prevTransform;
+        el.style.willChange = '';
+      }, RETURN_MS + 40);
+    }, DURATION_MS);
+  });
 }
 
-type Active = {
-  el: HTMLElement;
-  transform: string;
-  transition: string;
-  willChange: string;
-  z: string;
-  t1: number | null;
-  t2: number | null;
-};
-
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
-  const seen = useRef<Set<string>>(new Set());
-  const active = useRef<WeakMap<HTMLElement, Active>>(new WeakMap());
+  const seenIdsRef = useRef<Set<string>>(new Set());
 
-  const [mounted, setMounted] = useState(false);
-  const [hud, setHud] = useState('');
-  const [cnt, setCnt] = useState(0);
-
-  const debug = useMemo(() => {
+  // Debug switch: ?fxdebug=1
+  const debugEnabled = useMemo(() => {
     try {
       return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fxdebug') === '1';
     } catch {
@@ -125,154 +156,83 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     }
   }, []);
 
-  useEffect(() => setMounted(true), []);
-
   useEffect(() => {
-    if (!mounted) return;
+    if (typeof window === 'undefined') return;
+    if (!events || events.length === 0) return;
 
-    const rafs: number[] = [];
-    const timers: any[] = [];
-    if (debug) setCnt((events || []).length);
+    let raf = 0;
+    let alive = true;
 
-    const stop = (el: HTMLElement) => {
-      const st = active.current.get(el);
-      if (!st) return;
+    const run = () => {
+      if (!alive) return;
 
-      try {
-        if (st.t1) window.clearTimeout(st.t1);
-        if (st.t2) window.clearTimeout(st.t2);
-      } catch {}
+      for (const e of events) {
+        if (!e || e.type !== 'attack') continue;
+        if (!e.id) continue;
+        if (seenIdsRef.current.has(e.id)) continue;
 
-      try {
-        el.style.transform = st.transform;
-        el.style.transition = st.transition;
-        el.style.willChange = st.willChange;
-        el.style.zIndex = st.z;
-      } catch {}
+        // mark seen early to avoid duplicates
+        seenIdsRef.current.add(e.id);
 
-      active.current.delete(el);
-    };
+        const attempt = (framesLeft: number) => {
+          if (!alive) return;
 
-    const kick = (el: HTMLElement, dx: number, dy: number) => {
-      if (active.current.has(el)) return;
+          const aRoot = getBestUnitRootById(e.attackerId);
+          const tRoot = getBestUnitRootById(e.targetId);
 
-      const st: Active = {
-        el,
-        transform: el.style.transform || '',
-        transition: el.style.transition || '',
-        willChange: el.style.willChange || '',
-        z: el.style.zIndex || '',
-        t1: null,
-        t2: null,
-      };
-      active.current.set(el, st);
+          const aCard = aRoot ? findCard(aRoot) : null;
+          const tCard = tRoot ? findCard(tRoot) : null;
 
-      el.style.willChange = 'transform';
-      el.style.zIndex = '80';
+          const motion = aRoot ? findMotionLayer(aRoot) : null;
 
-      el.style.transition = 'none';
-      el.style.transform = 'translate3d(0px, 0px, 0px)';
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      el.offsetHeight;
+          if (!aCard || !tCard || !motion) {
+            if (framesLeft > 0) {
+              raf = window.requestAnimationFrame(() => attempt(framesLeft - 1));
+            } else if (debugEnabled) {
+              // eslint-disable-next-line no-console
+              console.log('[FX] attack missing DOM', {
+                id: e.id,
+                attackerId: e.attackerId,
+                targetId: e.targetId,
+                hasAttackerRoot: !!aRoot,
+                hasTargetRoot: !!tRoot,
+                hasAttackerCard: !!aCard,
+                hasTargetCard: !!tCard,
+                hasMotion: !!motion,
+              });
+            }
+            return;
+          }
 
-      el.style.transition = `transform ${DURATION}ms cubic-bezier(.18,.9,.22,1)`;
-      el.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+          const aRect = aCard.getBoundingClientRect();
+          const tRect = tCard.getBoundingClientRect();
+          const { dx, dy } = computeTouchDelta(aRect, tRect);
 
-      st.t1 = window.setTimeout(() => {
-        el.style.transition = `transform ${RETURN_DURATION}ms cubic-bezier(.2,.8,.2,1)`;
-        el.style.transform = 'translate3d(0px, 0px, 0px)';
+          // Animate ORIGINAL: move the existing wrapper that contains the card
+          animateTranslate(motion, dx, dy);
 
-        st.t2 = window.setTimeout(() => stop(el), RETURN_DURATION + 40);
-      }, DURATION + 10);
-    };
+          // Target feedback (optional; safe attribute so React won't wipe className)
+          tCard.setAttribute('data-fx-attack-target', '1');
+          window.setTimeout(() => {
+            try {
+              tCard.removeAttribute('data-fx-attack-target');
+            } catch {}
+          }, 240);
+        };
 
-    const tryOnce = (attackerId: string, targetId: string) => {
-      const aRoot = pickSlotOrCard(attackerId);
-      const tRoot = pickSlotOrCard(targetId);
-      if (!aRoot || !tRoot) return false;
-
-      const aCard = findCard(aRoot);
-      const tCard = findCard(tRoot);
-
-      const ar = aCard.getBoundingClientRect();
-      const tr = tCard.getBoundingClientRect();
-      if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
-
-      const { dx, dy } = computeTouchDelta(ar, tr);
-
-      const moveEl = findTopVisibleForAttack(aCard, attackerId);
-
-      if (debug) {
-        const tag = moveEl === aCard ? 'bb-card' : moveEl.classList.contains('bb-slot') ? 'bb-slot' : moveEl.tagName;
-        setHud(`FX: OK\nmove=elementFromPoint(${tag})\ndx=${Math.round(dx)} dy=${Math.round(dy)}`);
-        timers.push(window.setTimeout(() => setHud(''), 900));
+        attempt(RETRY_FRAMES);
       }
-
-      kick(moveEl, dx, dy);
-      return true;
     };
 
-    const runWithRetry = (attackerId: string, targetId: string) => {
-      let frame = 0;
-      const tick = () => {
-        frame += 1;
-        const ok = tryOnce(attackerId, targetId);
-        if (ok) return;
-
-        if (frame < RETRY_FRAMES) rafs.push(requestAnimationFrame(tick));
-        else if (debug) {
-          setHud(`FX: failed (DOM/rect)\nattacker=${attackerId}\ntarget=${targetId}`);
-          timers.push(window.setTimeout(() => setHud(''), 1200));
-        }
-      };
-      rafs.push(requestAnimationFrame(tick));
-    };
-
-    for (const e of events || []) {
-      if (e.type !== 'attack') continue;
-      if (!e.id || !e.attackerId || !e.targetId) continue;
-      if (seen.current.has(e.id)) continue;
-
-      seen.current.add(e.id);
-      timers.push(window.setTimeout(() => seen.current.delete(e.id), DURATION + RETURN_DURATION + 900));
-
-      runWithRetry(String(e.attackerId), String(e.targetId));
-    }
+    // Kick once per events array update
+    run();
 
     return () => {
-      for (const r of rafs) cancelAnimationFrame(r);
-      for (const t of timers) clearTimeout(t);
-      try {
-        active.current = new WeakMap();
-      } catch {}
+      alive = false;
+      if (raf) window.cancelAnimationFrame(raf);
     };
-  }, [events, debug, mounted]);
+  }, [events, debugEnabled]);
 
-  if (!mounted) return null;
-
-  // NO PORTAL: avoids React #418 in Telegram WebView (invalid container / html).
-  if (!debug) return null;
-
-  return (
-    <>
-      <style>{`
-        .bb-fx-debug-hud {
-          position: fixed;
-          right: 10px;
-          bottom: 10px;
-          z-index: 10000;
-          pointer-events: none;
-          font: 12px/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-          color: rgba(255,255,255,.92);
-          background: rgba(0,0,0,.55);
-          padding: 8px 10px;
-          border-radius: 10px;
-          backdrop-filter: blur(6px);
-          max-width: 70vw;
-          white-space: pre-wrap;
-        }
-      `}</style>
-      <div className="bb-fx-debug-hud">{`FX events: ${cnt}\n${hud}`}</div>
-    </>
-  );
+  // No visual layer needed; we only animate existing DOM nodes.
+  return null;
 }
