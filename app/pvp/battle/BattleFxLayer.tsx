@@ -48,17 +48,11 @@ function safeEscape(v: string) {
 }
 
 /**
- * У вас в DOM ДВА элемента с одинаковым data-unit-id:
- *  - .bb-slot (внешний контейнер)
- *  - .bb-card (внутренний)
- *
- * document.querySelector вернет ПЕРВЫЙ попавшийся, что иногда оказывается .bb-card,
- * а внутри .bb-card НЕТ .bb-motion-layer (она sibling/родитель).
- *
- * Поэтому:
- * 1) берём ВСЕ совпадения querySelectorAll
- * 2) приоритет: .bb-slot, потом любой элемент, который содержит .bb-motion-layer
- * 3) fallback: первый элемент
+ * IMPORTANT:
+ * In your DOM there are TWO nodes with the same data-unit-id:
+ *   - .bb-slot (outer)
+ *   - .bb-card (inner)
+ * querySelector() can return the wrong one. We must pick the slot.
  */
 function getBestUnitRootById(unitId: string) {
   const list = Array.from(document.querySelectorAll<HTMLElement>(`[data-unit-id="${safeEscape(String(unitId))}"]`));
@@ -67,38 +61,30 @@ function getBestUnitRootById(unitId: string) {
   const slot = list.find((el) => el.classList.contains('bb-slot'));
   if (slot) return slot;
 
-  const hasMotion = list.find((el) => !!el.querySelector('.bb-motion-layer'));
-  if (hasMotion) return hasMotion;
-
-  // maybe data-unit-id is on inner bb-card; go up to nearest slot
   for (const el of list) {
     const up = el.closest('.bb-slot') as HTMLElement | null;
     if (up) return up;
   }
 
+  // fallback: something that contains motion-layer
+  const hasMotion = list.find((el) => !!el.querySelector('.bb-motion-layer'));
+  if (hasMotion) return hasMotion;
+
   return list[0];
 }
 
-function findVisualCardEl(unitRoot: HTMLElement): HTMLElement {
-  if (unitRoot.classList.contains('bb-card')) return unitRoot;
-  return unitRoot.querySelector<HTMLElement>('.bb-card') || unitRoot;
-}
-
-function findMotionLayerFromAny(unitRoot: HTMLElement): HTMLElement | null {
-  // preferred: inside slot
-  const slot = unitRoot.classList.contains('bb-slot') ? unitRoot : (unitRoot.closest('.bb-slot') as HTMLElement | null);
+function findMotionLayer(slotOrRoot: HTMLElement) {
+  const slot = slotOrRoot.classList.contains('bb-slot') ? slotOrRoot : (slotOrRoot.closest('.bb-slot') as HTMLElement | null);
   if (slot) {
     const ml = slot.querySelector<HTMLElement>('.bb-motion-layer');
     if (ml) return ml;
   }
+  return slotOrRoot.querySelector<HTMLElement>('.bb-motion-layer');
+}
 
-  // fallback: inside provided root
-  const inside = unitRoot.querySelector<HTMLElement>('.bb-motion-layer');
-  if (inside) return inside;
-
-  // fallback: if root is bb-card, motion-layer is likely a parent sibling in slot
-  const up2 = unitRoot.closest('.bb-slot') as HTMLElement | null;
-  return up2 ? up2.querySelector<HTMLElement>('.bb-motion-layer') : null;
+function findCardEl(slotOrRoot: HTMLElement) {
+  if (slotOrRoot.classList.contains('bb-card')) return slotOrRoot;
+  return slotOrRoot.querySelector<HTMLElement>('.bb-card') || slotOrRoot;
 }
 
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
@@ -116,27 +102,58 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     }
   }, []);
 
-  const css = useMemo(
+  const injectedCss = useMemo(
     () => `
-      .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,.85) !important; }
-      .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,.85) !important; }
+/* =========================
+   FX injected by BattleFxLayer
+   (avoids dependency on external CSS imports)
+   ========================= */
 
-      .bb-fx-debug-hud {
-        position: fixed;
-        right: 10px;
-        bottom: 10px;
-        z-index: 10000;
-        pointer-events: none;
-        font: 12px/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-        color: rgba(255,255,255,.92);
-        background: rgba(0,0,0,.55);
-        padding: 8px 10px;
-        border-radius: 10px;
-        backdrop-filter: blur(6px);
-        max-width: 70vw;
-        white-space: pre-wrap;
-      }
-    `,
+@keyframes bb_fx_motion_lunge_to_target {
+  0%   { transform: translate3d(0px, 0px, 0) scale(1); }
+  55%  { transform: translate3d(var(--atk-dx, 0px), var(--atk-dy, 0px), 0) scale(1.03); }
+  70%  { transform: translate3d(calc(var(--atk-dx, 0px) * 0.92), calc(var(--atk-dy, 0px) * 0.92), 0) scale(1.00); }
+  100% { transform: translate3d(0px, 0px, 0) scale(1); }
+}
+
+@keyframes bb_fx_target_hit {
+  0% { transform: translate3d(0,0,0) scale(1); filter: brightness(1); }
+  55% { transform: translate3d(0,0,0) scale(0.985); filter: brightness(1.15); }
+  100% { transform: translate3d(0,0,0) scale(1); filter: brightness(1); }
+}
+
+/* Attack movement: we animate the wrapper that YOU already have in page.tsx */
+.bb-motion-layer[data-fx-attacking="1"]{
+  animation: bb_fx_motion_lunge_to_target ${ATTACK_DURATION}ms cubic-bezier(.18,.9,.22,1) both !important;
+  will-change: transform;
+  z-index: 60;
+}
+
+/* Target hit: minimal, doesn't move layout */
+.bb-card[data-fx-attack-target="1"]{
+  animation: bb_fx_target_hit 220ms cubic-bezier(.2,.8,.2,1) both !important;
+}
+
+/* Debug helpers */
+.bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,.85) !important; }
+.bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,.85) !important; }
+
+.bb-fx-debug-hud {
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  z-index: 10000;
+  pointer-events: none;
+  font: 12px/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  color: rgba(255,255,255,.92);
+  background: rgba(0,0,0,.55);
+  padding: 8px 10px;
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  max-width: 70vw;
+  white-space: pre-wrap;
+}
+`,
     []
   );
 
@@ -168,46 +185,38 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       const targetRoot = getBestUnitRootById(targetId);
       if (!attackerRoot || !targetRoot) return false;
 
-      const motionEl = findMotionLayerFromAny(attackerRoot);
-      const attackerForRect = motionEl || findVisualCardEl(attackerRoot);
+      const motionEl = findMotionLayer(attackerRoot);
+      const attackerCard = findCardEl(attackerRoot);
+      const targetCard = findCardEl(targetRoot);
 
-      const targetCard = findVisualCardEl(targetRoot);
+      if (!motionEl) {
+        if (debugEnabled) {
+          setDebugMsg(`FX: motion-layer NOT FOUND\nattackerId=${attackerId}\nroot=${attackerRoot.className}`);
+        }
+        return false;
+      }
 
-      const ar = attackerForRect.getBoundingClientRect();
+      const ar = attackerCard.getBoundingClientRect();
       const tr = targetCard.getBoundingClientRect();
       if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
 
       const { dx, dy } = computeTouchDelta(ar, tr);
 
       if (debugEnabled) {
-        attackerForRect.classList.add('bb-fx-debug-outline-attacker');
+        attackerCard.classList.add('bb-fx-debug-outline-attacker');
         targetCard.classList.add('bb-fx-debug-outline-target');
         timers.push(
           window.setTimeout(() => {
-            attackerForRect.classList.remove('bb-fx-debug-outline-attacker');
+            attackerCard.classList.remove('bb-fx-debug-outline-attacker');
             targetCard.classList.remove('bb-fx-debug-outline-target');
           }, 500)
         );
       }
 
-      if (!motionEl) {
-        if (debugEnabled) {
-          const hint = attackerRoot.classList.contains('bb-card')
-            ? 'root=bb-card (likely wrong pick)'
-            : attackerRoot.classList.contains('bb-slot')
-            ? 'root=bb-slot (ok)'
-            : `root=${attackerRoot.className}`;
-          setDebugMsg(`FX: .bb-motion-layer NOT FOUND\n${hint}\nattackerId=${attackerId}`);
-          timers.push(window.setTimeout(() => setDebugMsg(''), 1200));
-        }
-        return false;
-      }
-
-      // Trigger animation via DATA ATTRIBUTES (React won't wipe them)
+      // Trigger via DATA ATTRIBUTES (React won't wipe them)
       motionEl.style.setProperty('--atk-dx', `${dx}px`);
       motionEl.style.setProperty('--atk-dy', `${dy}px`);
 
-      // restart: flip attribute off->on
       motionEl.removeAttribute('data-fx-attacking');
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       motionEl.offsetHeight;
@@ -221,7 +230,11 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       timers.push(window.setTimeout(() => cleanup(motionEl, targetCard), ATTACK_DURATION + 120));
 
       if (debugEnabled) {
-        setDebugMsg(`FX: OK\nmotion-layer=yes\ndx=${Math.round(dx)} dy=${Math.round(dy)}\nattacker=${attackerId}\ntarget=${targetId}`);
+        setDebugMsg(
+          `FX: OK\nroot=${attackerRoot.classList.contains('bb-slot') ? 'bb-slot' : attackerRoot.tagName}\nmotion-layer=yes\ndx=${Math.round(
+            dx
+          )} dy=${Math.round(dy)}`
+        );
         timers.push(window.setTimeout(() => setDebugMsg(''), 900));
       }
 
@@ -266,7 +279,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
 
   return createPortal(
     <>
-      {debugEnabled ? <style>{css}</style> : null}
+      <style>{injectedCss}</style>
       {debugEnabled ? <div className="bb-fx-debug-hud">{`FX events: ${debugCount}\n${debugMsg}`}</div> : null}
     </>,
     document.body
