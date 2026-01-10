@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 
 export type FxEvent =
   | {
@@ -13,7 +12,7 @@ export type FxEvent =
 
 const DURATION = 360;
 const RETURN_DURATION = 220;
-const RETRY_FRAMES = 24;
+const RETRY_FRAMES = 28;
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
@@ -74,10 +73,8 @@ function findCard(root: HTMLElement) {
 }
 
 /**
- * FINAL HACK:
- * Sometimes the visually top layer is NOT the DOM node we are animating.
- * So we select the ACTUAL TOPMOST element under the attacker card center using elementFromPoint,
- * then walk up to a reasonable container (bb-card / bb-slot / data-unit-id) and animate THAT.
+ * Picks the REAL topmost DOM node at the attacker card center.
+ * This solves the "we animate an element, but another overlay is visible" issue.
  */
 function findTopVisibleForAttack(attackerCard: HTMLElement, attackerId: string): HTMLElement {
   const r = attackerCard.getBoundingClientRect();
@@ -117,8 +114,6 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const active = useRef<WeakMap<HTMLElement, Active>>(new WeakMap());
 
   const [mounted, setMounted] = useState(false);
-  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
-
   const [hud, setHud] = useState('');
   const [cnt, setCnt] = useState(0);
 
@@ -130,39 +125,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     }
   }, []);
 
-  useEffect(() => {
-    setMounted(true);
-
-    // Create a stable portal root once.
-    // This avoids React trying to reconcile against document.body/html in WebView edge cases.
-    try {
-      const existing = document.getElementById('bb-fx-portal-root') as HTMLElement | null;
-      if (existing) {
-        setPortalRoot(existing);
-        return;
-      }
-
-      const root = document.createElement('div');
-      root.id = 'bb-fx-portal-root';
-      root.style.position = 'fixed';
-      root.style.inset = '0';
-      root.style.pointerEvents = 'none';
-      root.style.zIndex = '9999';
-      document.body?.appendChild(root);
-      setPortalRoot(root);
-
-      return () => {
-        // cleanup only if we created it
-        try {
-          if (root.parentNode) root.parentNode.removeChild(root);
-        } catch {
-          // ignore
-        }
-      };
-    } catch {
-      setPortalRoot(null);
-    }
-  }, []);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!mounted) return;
@@ -285,32 +248,31 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     };
   }, [events, debug, mounted]);
 
-  if (!mounted || !portalRoot) return null;
+  if (!mounted) return null;
 
-  const css = debug
-    ? `
-    .bb-fx-debug-hud {
-      position: fixed;
-      right: 10px;
-      bottom: 10px;
-      z-index: 10000;
-      pointer-events: none;
-      font: 12px/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-      color: rgba(255,255,255,.92);
-      background: rgba(0,0,0,.55);
-      padding: 8px 10px;
-      border-radius: 10px;
-      backdrop-filter: blur(6px);
-      max-width: 70vw;
-      white-space: pre-wrap;
-    }`
-    : '';
+  // NO PORTAL: avoids React #418 in Telegram WebView (invalid container / html).
+  if (!debug) return null;
 
-  return createPortal(
+  return (
     <>
-      {debug ? <style>{css}</style> : null}
-      {debug ? <div className="bb-fx-debug-hud">{`FX events: ${cnt}\n${hud}`}</div> : null}
-    </>,
-    portalRoot
+      <style>{`
+        .bb-fx-debug-hud {
+          position: fixed;
+          right: 10px;
+          bottom: 10px;
+          z-index: 10000;
+          pointer-events: none;
+          font: 12px/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+          color: rgba(255,255,255,.92);
+          background: rgba(0,0,0,.55);
+          padding: 8px 10px;
+          border-radius: 10px;
+          backdrop-filter: blur(6px);
+          max-width: 70vw;
+          white-space: pre-wrap;
+        }
+      `}</style>
+      <div className="bb-fx-debug-hud">{`FX events: ${cnt}\n${hud}`}</div>
+    </>
   );
 }
