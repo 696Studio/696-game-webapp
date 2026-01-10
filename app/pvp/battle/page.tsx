@@ -1730,18 +1730,16 @@ const hpPct = useMemo(() => {
     if (!renderUnit) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+        <div className="bb-motion-layer" data-fx-motion="1" style={{ willChange: "transform" }}>
       <div className="bb-fx-anchor">
         
         {isDyingUi ? <div className="bb-death" /> : null}
       </div>
       <div
-        className="bb-motion-layer"
-        data-unit-id={renderUnit?.instanceId}
         ref={(el) => {
           if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
         }}
-      >
-      <div
+        data-unit-id={renderUnit?.instanceId}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
@@ -1935,7 +1933,7 @@ const hpPct = useMemo(() => {
           }
         }
       `}</style>
-      </div>
+        </div>
       </div>
 
     );

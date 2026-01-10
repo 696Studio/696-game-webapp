@@ -11,8 +11,7 @@ export type FxEvent =
       targetId: string;
     };
 
-const LUNGE_DURATION = 420;
-const TARGET_HIT_DURATION = 240;
+const ATTACK_DURATION = 520;
 const RETRY_FRAMES = 18;
 
 function clamp(n: number, a: number, b: number) {
@@ -29,57 +28,63 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
   const dx = bc.x - ac.x;
   const dy = bc.y - ac.y;
 
-  // чтобы не улетало слишком далеко
-  const k = 0.92;
+  const k = 0.9;
   const maxMove = Math.max(a.width, a.height) * 1.15;
   const len = Math.hypot(dx, dy) || 1;
-  const safeK = clamp((maxMove / len) * k, 0.55, 1.0);
+  const safeK = clamp((maxMove / len) * k, 0.55, 0.92);
 
   return { dx: dx * safeK, dy: dy * safeK };
 }
 
 function safeEscape(v: string) {
-  // CSS.escape может отсутствовать в старых вебвью
   try {
     const cssAny = CSS as unknown as { escape?: (s: string) => string };
     return typeof cssAny !== 'undefined' && typeof cssAny.escape === 'function'
       ? cssAny.escape(v)
-      : v.replace(/"/g, '\"');
+      : v.replace(/"/g, '\\"');
   } catch {
-    return v.replace(/"/g, '\"');
+    return v.replace(/"/g, '\\"');
   }
 }
 
-function qUnit(unitId: string) {
-  const id = safeEscape(String(unitId));
-  // Prefer the dedicated motion layer (no transform conflicts)
-  const motion = document.querySelector<HTMLElement>(`.bb-motion-layer[data-unit-id="${id}"]`);
+function getElByUnitId(unitId: string) {
+  return document.querySelector<HTMLElement>(`[data-unit-id="${safeEscape(String(unitId))}"]`);
+}
+
+function pickMotionLayer(attackerRoot: HTMLElement): HTMLElement {
+  // Prefer slot wrapper → motion layer inside it.
+  const slot = attackerRoot.closest('.bb-slot') as HTMLElement | null;
+  const scope = slot ?? attackerRoot;
+
+  const motion = scope.querySelector<HTMLElement>('.bb-motion-layer[data-fx-motion="1"]');
   if (motion) return motion;
 
-  // Fallbacks (older markup)
-  const slot = document.querySelector<HTMLElement>(`.bb-slot[data-unit-id="${id}"]`);
-  if (slot) return slot;
+  // Fallbacks: try the attackerRoot itself (if someone put data-unit-id on motion layer)
+  if (attackerRoot.classList.contains('bb-motion-layer')) return attackerRoot;
 
-  return document.querySelector<HTMLElement>(`[data-unit-id="${id}"]`);
+  // Last resort: move visual card
+  const card = scope.querySelector<HTMLElement>('.bb-card, [class*="bb-card"], [class*="card"], [class*="Card"]');
+  return card ?? scope;
 }
 
-function qTargetCard(unitId: string) {
-  const root = qUnit(unitId);
-  if (!root) return null;
-
-  // If root is the motion layer, find the card inside
-  const card = root.querySelector<HTMLElement>('.bb-card');
-  if (card) return card;
-
-  // If root itself is card
-  if ((root.className || '').toString().includes('bb-card')) return root;
-
-  return null;
+function pickTargetVisual(targetRoot: HTMLElement): HTMLElement {
+  const slot = targetRoot.closest('.bb-slot') as HTMLElement | null;
+  const scope = slot ?? targetRoot;
+  const card = scope.querySelector<HTMLElement>('.bb-card, [class*="bb-card"], [class*="card"], [class*="Card"]');
+  return card ?? scope;
 }
+
+type ActiveAnimState = {
+  anim: Animation;
+  restore: {
+    transition: string;
+    animation: string;
+    willChange: string;
+  };
+};
 
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
-  const timersByElRef = useRef<WeakMap<HTMLElement, number[]>>(new WeakMap());
 
   const [mounted, setMounted] = useState(false);
   const [debugMsg, setDebugMsg] = useState<string>('');
@@ -93,9 +98,10 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     }
   }, []);
 
+  const activeAnimRef = useRef<WeakMap<HTMLElement, ActiveAnimState>>(new WeakMap());
+
   const css = useMemo(
     () => `
-      /* Debug helpers */
       .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,.85) !important; }
       .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,.85) !important; }
 
@@ -126,79 +132,103 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     const timers: any[] = [];
     const rafs: number[] = [];
 
-    if (debugEnabled) setDebugCount((events || []).length);
+    if (debugEnabled) {
+      setDebugCount((events || []).length);
+    }
 
-    const clearTimersForEl = (el: HTMLElement) => {
-      const list = timersByElRef.current.get(el);
-      if (!list) return;
-      for (const t of list) clearTimeout(t);
-      timersByElRef.current.delete(el);
-    };
+    const stopActive = (el: HTMLElement) => {
+      const st = activeAnimRef.current.get(el);
+      if (!st) return;
 
-    const addTimerForEl = (el: HTMLElement, t: number) => {
-      const list = timersByElRef.current.get(el) || [];
-      list.push(t);
-      timersByElRef.current.set(el, list);
-      timers.push(t);
-    };
-
-    const startLunge = (attackerEl: HTMLElement, targetId: string, dx: number, dy: number) => {
-      clearTimersForEl(attackerEl);
-
-      attackerEl.style.setProperty('--atk-dx', `${dx}px`);
-      attackerEl.style.setProperty('--atk-dy', `${dy}px`);
-
-      attackerEl.classList.remove('is-attacking'); // reset if stuck
-      // reflow to restart animation reliably
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      attackerEl.offsetWidth;
-      attackerEl.classList.add('is-attacking');
-
-      const t1 = window.setTimeout(() => {
-        attackerEl.classList.remove('is-attacking');
-        attackerEl.style.removeProperty('--atk-dx');
-        attackerEl.style.removeProperty('--atk-dy');
-      }, LUNGE_DURATION + 40);
-      addTimerForEl(attackerEl, t1);
-
-      // impact on target card (optional)
-      const targetCard = qTargetCard(targetId);
-      if (targetCard) {
-        clearTimersForEl(targetCard);
-        targetCard.classList.remove('is-attack-target');
-        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-        targetCard.offsetWidth;
-        targetCard.classList.add('is-attack-target');
-
-        const t2 = window.setTimeout(() => targetCard.classList.remove('is-attack-target'), TARGET_HIT_DURATION + 40);
-        addTimerForEl(targetCard, t2);
+      try {
+        st.anim.cancel();
+      } catch {
+        // ignore
       }
+
+      try {
+        el.style.transition = st.restore.transition;
+        el.style.animation = st.restore.animation;
+        el.style.willChange = st.restore.willChange;
+      } catch {
+        // ignore
+      }
+
+      activeAnimRef.current.delete(el);
+    };
+
+    const startAttack = (moveEl: HTMLElement, dx: number, dy: number) => {
+      if (activeAnimRef.current.has(moveEl)) return;
+
+      const cs = window.getComputedStyle(moveEl);
+      const base = cs.transform && cs.transform !== 'none' ? cs.transform : 'none';
+
+      const restore = {
+        transition: moveEl.style.transition || '',
+        animation: moveEl.style.animation || '',
+        willChange: moveEl.style.willChange || '',
+      };
+
+      // Cut off competing transform anims during this very short move
+      moveEl.style.transition = 'none';
+      moveEl.style.animation = 'none';
+      moveEl.style.willChange = 'transform';
+
+      const t0 = base;
+      const t1 = base === 'none'
+        ? `translate3d(${dx}px, ${dy}px, 0) scale(1.03)`
+        : `${base} translate3d(${dx}px, ${dy}px, 0) scale(1.03)`;
+      const t2 = base === 'none'
+        ? `translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)`
+        : `${base} translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)`;
+      const t3 = base;
+
+      const anim = moveEl.animate([{ transform: t0 }, { transform: t1 }, { transform: t2 }, { transform: t3 }], {
+        duration: ATTACK_DURATION,
+        easing: 'cubic-bezier(.18,.9,.22,1)',
+        fill: 'forwards',
+      });
+
+      const finish = () => stopActive(moveEl);
+      anim.onfinish = finish;
+      anim.oncancel = finish;
+
+      activeAnimRef.current.set(moveEl, { anim, restore });
+      timers.push(window.setTimeout(() => stopActive(moveEl), ATTACK_DURATION + 120));
     };
 
     const tryOnce = (attackerId: string, targetId: string) => {
-      const attackerEl = qUnit(attackerId);
-      const targetEl = qUnit(targetId);
+      const attackerRoot = getElByUnitId(attackerId);
+      const targetRoot = getElByUnitId(targetId);
+      if (!attackerRoot || !targetRoot) return false;
 
-      if (!attackerEl || !targetEl) return false;
+      const moveEl = pickMotionLayer(attackerRoot);
+      const targetEl = pickTargetVisual(targetRoot);
 
-      const ar = attackerEl.getBoundingClientRect();
+      const ar = moveEl.getBoundingClientRect();
       const tr = targetEl.getBoundingClientRect();
       if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
 
       const { dx, dy } = computeTouchDelta(ar, tr);
 
       if (debugEnabled) {
-        attackerEl.classList.add('bb-fx-debug-outline-attacker');
+        moveEl.classList.add('bb-fx-debug-outline-attacker');
         targetEl.classList.add('bb-fx-debug-outline-target');
         timers.push(
           window.setTimeout(() => {
-            attackerEl.classList.remove('bb-fx-debug-outline-attacker');
+            moveEl.classList.remove('bb-fx-debug-outline-attacker');
             targetEl.classList.remove('bb-fx-debug-outline-target');
-          }, 520)
+          }, 500)
         );
+
+        // extra: show what we picked
+        if (!moveEl.classList.contains('bb-motion-layer')) {
+          setDebugMsg(`FX: motion layer not found, moving: ${moveEl.className || moveEl.tagName}`);
+          timers.push(window.setTimeout(() => setDebugMsg(''), 900));
+        }
       }
 
-      startLunge(attackerEl, targetId, dx, dy);
+      startAttack(moveEl, dx, dy);
       return true;
     };
 
@@ -225,7 +255,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       if (seenIdsRef.current.has(e.id)) continue;
 
       seenIdsRef.current.add(e.id);
-      timers.push(window.setTimeout(() => seenIdsRef.current.delete(e.id), LUNGE_DURATION + 800));
+      timers.push(window.setTimeout(() => seenIdsRef.current.delete(e.id), ATTACK_DURATION + 800));
 
       runWithRetry(String(e.attackerId), String(e.targetId));
     }
@@ -233,7 +263,11 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     return () => {
       for (const t of timers) clearTimeout(t);
       for (const r of rafs) cancelAnimationFrame(r);
-      timersByElRef.current = new WeakMap();
+      try {
+        activeAnimRef.current = new WeakMap();
+      } catch {
+        // ignore
+      }
     };
   }, [events, debugEnabled, mounted]);
 
