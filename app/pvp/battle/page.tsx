@@ -1729,7 +1729,7 @@ const hpPct = useMemo(() => {
     if (isHidden) return null;
     if (!renderUnit) return null;
     return (
-      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
       <div className="bb-fx-anchor">
         
         {isDyingUi ? <div className="bb-death" /> : null}
@@ -2009,6 +2009,7 @@ const hpPct = useMemo(() => {
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
+      <BattleFxLayer events={fxEvents} />
       <style
         dangerouslySetInnerHTML={{
           __html: `

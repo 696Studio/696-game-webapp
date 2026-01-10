@@ -104,6 +104,7 @@ function startAttackMove(moveEl: HTMLElement, dx: number, dy: number) {
 
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const [mounted, setMounted] = useState(false);
   const [debugMsg, setDebugMsg] = useState<string>('');
   const [debugCount, setDebugCount] = useState<number>(0);
 
@@ -151,6 +152,10 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     `,
     []
   );
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const timers: any[] = [];
@@ -221,6 +226,8 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       for (const r of rafs) cancelAnimationFrame(r);
     };
   }, [events, debugEnabled]);
+
+  if (!mounted) return null;
 
   return createPortal(
     <>
