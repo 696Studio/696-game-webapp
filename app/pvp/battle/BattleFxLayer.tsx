@@ -28,6 +28,7 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
   const dx = bc.x - ac.x;
   const dy = bc.y - ac.y;
 
+  // чтобы не улетало слишком далеко
   const k = 0.9;
   const maxMove = Math.max(a.width, a.height) * 1.15;
   const len = Math.hypot(dx, dy) || 1;
@@ -37,52 +38,32 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
 }
 
 function safeEscape(v: string) {
+  // CSS.escape может отсутствовать в старых вебвью
   try {
     const cssAny = CSS as unknown as { escape?: (s: string) => string };
-    return typeof cssAny !== 'undefined' && typeof cssAny.escape === 'function'
-      ? cssAny.escape(v)
-      : v.replace(/"/g, '\\"');
+    return typeof cssAny !== 'undefined' && typeof cssAny.escape === 'function' ? cssAny.escape(v) : v.replace(/"/g, '\\"');
   } catch {
     return v.replace(/"/g, '\\"');
   }
 }
 
-function getElByUnitId(unitId: string) {
+function getUnitRootById(unitId: string) {
   return document.querySelector<HTMLElement>(`[data-unit-id="${safeEscape(String(unitId))}"]`);
 }
 
-function pickMotionLayer(attackerRoot: HTMLElement): HTMLElement {
-  // Prefer slot wrapper → motion layer inside it.
-  const slot = attackerRoot.closest('.bb-slot') as HTMLElement | null;
-  const scope = slot ?? attackerRoot;
-
-  const motion = scope.querySelector<HTMLElement>('.bb-motion-layer[data-fx-motion="1"]');
-  if (motion) return motion;
-
-  // Fallbacks: try the attackerRoot itself (if someone put data-unit-id on motion layer)
-  if (attackerRoot.classList.contains('bb-motion-layer')) return attackerRoot;
-
-  // Last resort: move visual card
-  const card = scope.querySelector<HTMLElement>('.bb-card, [class*="bb-card"], [class*="card"], [class*="Card"]');
-  return card ?? scope;
-}
-
-function pickTargetVisual(targetRoot: HTMLElement): HTMLElement {
-  const slot = targetRoot.closest('.bb-slot') as HTMLElement | null;
-  const scope = slot ?? targetRoot;
-  const card = scope.querySelector<HTMLElement>('.bb-card, [class*="bb-card"], [class*="card"], [class*="Card"]');
-  return card ?? scope;
-}
-
-type ActiveAnimState = {
-  anim: Animation;
-  restore: {
-    transition: string;
-    animation: string;
-    willChange: string;
-  };
-};
-
+/**
+ * КЛЮЧЕВАЯ ИДЕЯ (чтобы не конфликтовать с вашей версткой/transform'ами):
+ * У вас УЖЕ есть рабочая CSS-анимация в battle.animations.css:
+ *   .bb-card.is-attacking { animation: bb_card_lunge_to_target ... }
+ * которая использует CSS vars:
+ *   --atk-dx / --atk-dy
+ *
+ * Значит самый надёжный путь — не изобретать новые transform-ы, а ТРИГГЕРИТЬ
+ * существующую систему: выставить --atk-dx/--atk-dy на .bb-card и добавить классы
+ * is-attacking / is-attack-target.
+ *
+ * Это двигает ОРИГИНАЛ (не клон) и не требует переносов DOM (без removeChild крашей).
+ */
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
 
@@ -98,32 +79,6 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     }
   }, []);
 
-  const activeAnimRef = useRef<WeakMap<HTMLElement, ActiveAnimState>>(new WeakMap());
-
-  const css = useMemo(
-    () => `
-      .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,.85) !important; }
-      .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,.85) !important; }
-
-      .bb-fx-debug-hud {
-        position: fixed;
-        right: 10px;
-        bottom: 10px;
-        z-index: 10000;
-        pointer-events: none;
-        font: 12px/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-        color: rgba(255,255,255,.92);
-        background: rgba(0,0,0,.55);
-        padding: 8px 10px;
-        border-radius: 10px;
-        backdrop-filter: blur(6px);
-        max-width: 60vw;
-        white-space: pre-wrap;
-      }
-    `,
-    []
-  );
-
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -132,103 +87,68 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     const timers: any[] = [];
     const rafs: number[] = [];
 
-    if (debugEnabled) {
-      setDebugCount((events || []).length);
-    }
+    if (debugEnabled) setDebugCount((events || []).length);
 
-    const stopActive = (el: HTMLElement) => {
-      const st = activeAnimRef.current.get(el);
-      if (!st) return;
-
+    const cleanupAttack = (attackerCard: HTMLElement, targetCard: HTMLElement) => {
       try {
-        st.anim.cancel();
-      } catch {
-        // ignore
-      }
-
+        attackerCard.classList.remove('is-attacking');
+        attackerCard.style.removeProperty('--atk-dx');
+        attackerCard.style.removeProperty('--atk-dy');
+      } catch {}
       try {
-        el.style.transition = st.restore.transition;
-        el.style.animation = st.restore.animation;
-        el.style.willChange = st.restore.willChange;
-      } catch {
-        // ignore
-      }
-
-      activeAnimRef.current.delete(el);
+        targetCard.classList.remove('is-attack-target');
+      } catch {}
     };
 
-    const startAttack = (moveEl: HTMLElement, dx: number, dy: number) => {
-      if (activeAnimRef.current.has(moveEl)) return;
-
-      const cs = window.getComputedStyle(moveEl);
-      const base = cs.transform && cs.transform !== 'none' ? cs.transform : 'none';
-
-      const restore = {
-        transition: moveEl.style.transition || '',
-        animation: moveEl.style.animation || '',
-        willChange: moveEl.style.willChange || '',
-      };
-
-      // Cut off competing transform anims during this very short move
-      moveEl.style.transition = 'none';
-      moveEl.style.animation = 'none';
-      moveEl.style.willChange = 'transform';
-
-      const t0 = base;
-      const t1 = base === 'none'
-        ? `translate3d(${dx}px, ${dy}px, 0) scale(1.03)`
-        : `${base} translate3d(${dx}px, ${dy}px, 0) scale(1.03)`;
-      const t2 = base === 'none'
-        ? `translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)`
-        : `${base} translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)`;
-      const t3 = base;
-
-      const anim = moveEl.animate([{ transform: t0 }, { transform: t1 }, { transform: t2 }, { transform: t3 }], {
-        duration: ATTACK_DURATION,
-        easing: 'cubic-bezier(.18,.9,.22,1)',
-        fill: 'forwards',
-      });
-
-      const finish = () => stopActive(moveEl);
-      anim.onfinish = finish;
-      anim.oncancel = finish;
-
-      activeAnimRef.current.set(moveEl, { anim, restore });
-      timers.push(window.setTimeout(() => stopActive(moveEl), ATTACK_DURATION + 120));
+    const findCardEl = (root: HTMLElement) => {
+      // В page.tsx data-unit-id стоит и на .bb-card, и на .bb-slot.
+      // Нам нужна именно визуальная карта, на которую повешен CSS из battle.animations.css.
+      if (root.classList.contains('bb-card')) return root;
+      const inner = root.querySelector<HTMLElement>('.bb-card');
+      return inner || root;
     };
 
     const tryOnce = (attackerId: string, targetId: string) => {
-      const attackerRoot = getElByUnitId(attackerId);
-      const targetRoot = getElByUnitId(targetId);
+      const attackerRoot = getUnitRootById(attackerId);
+      const targetRoot = getUnitRootById(targetId);
       if (!attackerRoot || !targetRoot) return false;
 
-      const moveEl = pickMotionLayer(attackerRoot);
-      const targetEl = pickTargetVisual(targetRoot);
+      const attackerCard = findCardEl(attackerRoot);
+      const targetCard = findCardEl(targetRoot);
 
-      const ar = moveEl.getBoundingClientRect();
-      const tr = targetEl.getBoundingClientRect();
+      const ar = attackerCard.getBoundingClientRect();
+      const tr = targetCard.getBoundingClientRect();
       if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
 
       const { dx, dy } = computeTouchDelta(ar, tr);
 
       if (debugEnabled) {
-        moveEl.classList.add('bb-fx-debug-outline-attacker');
-        targetEl.classList.add('bb-fx-debug-outline-target');
+        attackerCard.classList.add('bb-fx-debug-outline-attacker');
+        targetCard.classList.add('bb-fx-debug-outline-target');
         timers.push(
           window.setTimeout(() => {
-            moveEl.classList.remove('bb-fx-debug-outline-attacker');
-            targetEl.classList.remove('bb-fx-debug-outline-target');
+            attackerCard.classList.remove('bb-fx-debug-outline-attacker');
+            targetCard.classList.remove('bb-fx-debug-outline-target');
           }, 500)
         );
-
-        // extra: show what we picked
-        if (!moveEl.classList.contains('bb-motion-layer')) {
-          setDebugMsg(`FX: motion layer not found, moving: ${moveEl.className || moveEl.tagName}`);
-          timers.push(window.setTimeout(() => setDebugMsg(''), 900));
-        }
       }
 
-      startAttack(moveEl, dx, dy);
+      // Триггерим вашу CSS-анимацию:
+      attackerCard.style.setProperty('--atk-dx', `${dx}px`);
+      attackerCard.style.setProperty('--atk-dy', `${dy}px`);
+
+      // restart animation reliably
+      attackerCard.classList.remove('is-attacking');
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      attackerCard.offsetHeight;
+      attackerCard.classList.add('is-attacking');
+
+      targetCard.classList.remove('is-attack-target');
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      targetCard.offsetHeight;
+      targetCard.classList.add('is-attack-target');
+
+      timers.push(window.setTimeout(() => cleanupAttack(attackerCard, targetCard), ATTACK_DURATION + 80));
       return true;
     };
 
@@ -242,7 +162,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
         if (frame < RETRY_FRAMES) {
           rafs.push(requestAnimationFrame(tick));
         } else if (debugEnabled) {
-          setDebugMsg(`FX: DOM not found for\nattackerId=${attackerId}\ntargetId=${targetId}\n(data-unit-id mismatch?)`);
+          setDebugMsg(`FX: DOM not found / card not ready\nattackerId=${attackerId}\ntargetId=${targetId}`);
           timers.push(window.setTimeout(() => setDebugMsg(''), 1200));
         }
       };
@@ -263,19 +183,36 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     return () => {
       for (const t of timers) clearTimeout(t);
       for (const r of rafs) cancelAnimationFrame(r);
-      try {
-        activeAnimRef.current = new WeakMap();
-      } catch {
-        // ignore
-      }
     };
   }, [events, debugEnabled, mounted]);
 
   if (!mounted) return null;
 
+  const css = debugEnabled
+    ? `
+      .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,.85) !important; }
+      .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,.85) !important; }
+      .bb-fx-debug-hud {
+        position: fixed;
+        right: 10px;
+        bottom: 10px;
+        z-index: 10000;
+        pointer-events: none;
+        font: 12px/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+        color: rgba(255,255,255,.92);
+        background: rgba(0,0,0,.55);
+        padding: 8px 10px;
+        border-radius: 10px;
+        backdrop-filter: blur(6px);
+        max-width: 60vw;
+        white-space: pre-wrap;
+      }
+    `
+    : '';
+
   return createPortal(
     <>
-      <style>{css}</style>
+      {debugEnabled ? <style>{css}</style> : null}
       {debugEnabled ? <div className="bb-fx-debug-hud">{`FX events: ${debugCount}\n${debugMsg}`}</div> : null}
     </>,
     document.body
