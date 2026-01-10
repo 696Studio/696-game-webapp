@@ -36,9 +36,9 @@ function safeEscape(v: string) {
     const cssAny = CSS as unknown as { escape?: (s: string) => string };
     return typeof cssAny !== 'undefined' && typeof cssAny.escape === 'function'
       ? cssAny.escape(v)
-      : v.replace(/"/g, '\\"');
+      : v.replace(/"/g, '\"');
   } catch {
-    return v.replace(/"/g, '\\"');
+    return v.replace(/"/g, '\"');
   }
 }
 
@@ -72,13 +72,18 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const [mounted, setMounted] = useState(false);
   const seen = useRef<Set<string>>(new Set());
 
-  const debug = useMemo(() => {
+  // URL debug (optional)
+  const urlDebug = useMemo(() => {
     try {
       return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fxdebug') === '1';
     } catch {
       return false;
     }
   }, []);
+
+  // Manual toggle debug (button)
+  const [debugOn, setDebugOn] = useState(false);
+  const debug = urlDebug || debugOn;
 
   const [hud, setHud] = useState('');
   const [cnt, setCnt] = useState(0);
@@ -99,33 +104,38 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       const tSlot = getSlotByUnitId(e.targetId);
       if (!aSlot || !tSlot) return false;
 
-      const aMotion = getMotionLayer(aSlot);
+      const assumedMotion = getMotionLayer(aSlot);
       const tCard = getCard(tSlot);
-      if (!aMotion || !tCard) return false;
+      if (!assumedMotion || !tCard) return false;
 
-      const ar = aMotion.getBoundingClientRect();
+      const ar = assumedMotion.getBoundingClientRect();
       const tr = tCard.getBoundingClientRect();
       if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
 
       const { dx, dy } = computeTouchDelta(ar, tr);
 
-      // Bring above siblings without moving layout
-      const prevZ = aMotion.style.zIndex || '';
-      aMotion.style.zIndex = '60';
-      aMotion.style.willChange = 'transform';
+      // === detect реально видимый слой ===
+      const c = rectCenter(ar);
+      const topEl = document.elementFromPoint(c.x, c.y) as HTMLElement | null;
+      const topMotion = topEl?.closest('.bb-motion-layer') as HTMLElement | null;
+      const topSlot = topEl?.closest('.bb-slot') as HTMLElement | null;
 
-      const prevTgtZ = tCard.style.zIndex || '';
-      tCard.style.zIndex = '55';
-      tCard.classList.add('is-attack-target');
+      let chosen: HTMLElement | null = null;
+      if (topMotion) chosen = topMotion;
+      else if (topSlot) chosen = getMotionLayer(topSlot) || topSlot;
+      else chosen = assumedMotion;
 
-      // Kill any lingering inline transform that could override animations
-      aMotion.style.transform = 'translate3d(0px,0px,0px)';
+      if (!chosen) return false;
 
-      // Prefer WAAPI (most reliable, doesn't depend on your CSS being loaded)
-      const canWAAPI = typeof (aMotion as any).animate === 'function';
+      const prevZ = chosen.style.zIndex || '';
+      chosen.style.zIndex = '60';
+      chosen.style.willChange = 'transform';
+      chosen.style.transform = 'translate3d(0px,0px,0px)';
+
+      const canWAAPI = typeof (chosen as any).animate === 'function';
       if (canWAAPI) {
         try {
-          const anim = (aMotion as any).animate(
+          const anim = (chosen as any).animate(
             [
               { transform: 'translate3d(0px,0px,0px)' },
               { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
@@ -139,44 +149,33 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
           );
           anim.onfinish = () => {
             try {
-              aMotion.style.zIndex = prevZ;
-              aMotion.style.willChange = '';
-              aMotion.style.transform = '';
-            } catch {}
-            try {
-              tCard.classList.remove('is-attack-target');
-              tCard.style.zIndex = prevTgtZ;
+              chosen!.style.zIndex = prevZ;
+              chosen!.style.willChange = '';
+              chosen!.style.transform = '';
             } catch {}
           };
-        } catch {
-          // fall back below
-        }
+        } catch {}
       } else {
-        // Fallback: transition
-        aMotion.style.transition = 'none';
-        aMotion.style.transform = 'translate3d(0px,0px,0px)';
+        chosen.style.transition = 'none';
+        chosen.style.transform = 'translate3d(0px,0px,0px)';
         // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-        aMotion.offsetHeight;
+        chosen.offsetHeight;
 
-        aMotion.style.transition = `transform ${OUT_MS}ms cubic-bezier(.18,.9,.22,1)`;
-        aMotion.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+        chosen.style.transition = `transform ${OUT_MS}ms cubic-bezier(.18,.9,.22,1)`;
+        chosen.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
 
         timers.push(
           window.setTimeout(() => {
-            aMotion.style.transition = `transform ${BACK_MS}ms cubic-bezier(.2,.8,.2,1)`;
-            aMotion.style.transform = 'translate3d(0px,0px,0px)';
+            chosen!.style.transition = `transform ${BACK_MS}ms cubic-bezier(.2,.8,.2,1)`;
+            chosen!.style.transform = 'translate3d(0px,0px,0px)';
 
             timers.push(
               window.setTimeout(() => {
                 try {
-                  aMotion.style.transition = '';
-                  aMotion.style.transform = '';
-                  aMotion.style.zIndex = prevZ;
-                  aMotion.style.willChange = '';
-                } catch {}
-                try {
-                  tCard.classList.remove('is-attack-target');
-                  tCard.style.zIndex = prevTgtZ;
+                  chosen!.style.transition = '';
+                  chosen!.style.transform = '';
+                  chosen!.style.zIndex = prevZ;
+                  chosen!.style.willChange = '';
                 } catch {}
               }, BACK_MS + 40)
             );
@@ -185,21 +184,12 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       }
 
       if (debug) {
+        const same = assumedMotion === chosen ? 'YES' : 'NO';
         setHud(
-          `OK WAAPI=${canWAAPI ? '1' : '0'}\natt=${e.attackerId} tgt=${e.targetId}\ndx=${Math.round(dx)} dy=${Math.round(dy)}`
+          `att=${e.attackerId}\nassumed==chosen: ${same}\ntopEl=${topEl?.className || 'null'}\nchosen=${chosen.className}\ntransform=${getComputedStyle(chosen).transform}`
         );
-        timers.push(window.setTimeout(() => setHud(''), 900));
+        timers.push(window.setTimeout(() => setHud(''), 1200));
       }
-
-      // Clear target feedback
-      timers.push(
-        window.setTimeout(() => {
-          try {
-            tCard.classList.remove('is-attack-target');
-            tCard.style.zIndex = prevTgtZ;
-          } catch {}
-        }, OUT_MS + BACK_MS + 40)
-      );
 
       return true;
     };
@@ -244,8 +234,6 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
 
   if (!mounted) return null;
 
-  if (!debug) return null;
-
   return (
     <>
       <style>{`
@@ -259,10 +247,24 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
           backdrop-filter: blur(6px);
           max-width:70vw; white-space:pre-wrap;
         }
-        /* tiny target feedback if your CSS doesn't include it */
-        .bb-card.is-attack-target{ filter: brightness(1.08); }
+        .bb-fx-debug-toggle{
+          position:fixed; right:10px; bottom:110px;
+          z-index:10001;
+          font:12px system-ui;
+          padding:6px 10px;
+          border-radius:999px;
+          background:rgba(0,0,0,.65);
+          color:#fff;
+          border:1px solid rgba(255,255,255,.25);
+        }
       `}</style>
-      <div className="bb-fx-debug-hud">{`fxEvents: ${cnt}\n${hud}`}</div>
+
+      <button className="bb-fx-debug-toggle" onClick={() => setDebugOn((v) => !v)}>
+        FX DEBUG {debug ? 'ON' : 'OFF'}
+      </button>
+
+      {debug && <div className="bb-fx-debug-hud">{`fxEvents: ${cnt}
+${hud}`}</div>}
     </>
   );
 }
