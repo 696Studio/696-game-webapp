@@ -3,18 +3,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-/**
- * BattleFxLayer — ATTACK TOUCH→BACK (WAAPI + SSR-safe)
- *
- * Key idea:
- * - We move the ORIGINAL card by animating the OUTER slot/wrapper that has data-unit-id
- * - Uses Web Animations API (element.animate) to avoid CSS/transform conflicts
- * - Fully SSR-safe: no document/window access before mount
- *
- * Debug:
- *   Add ?fxdebug=1 to URL to see HUD + outlines.
- */
-
 export type FxEvent =
   | {
       type: 'attack';
@@ -40,7 +28,6 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
   const dx = bc.x - ac.x;
   const dy = bc.y - ac.y;
 
-  // Move mostly towards the target, but cap distance so it "touches" instead of teleporting
   const k = 0.9;
   const maxMove = Math.max(a.width, a.height) * 1.15;
   const len = Math.hypot(dx, dy) || 1;
@@ -49,112 +36,83 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
   return { dx: dx * safeK, dy: dy * safeK };
 }
 
-function hasClassLike(el: HTMLElement, needle: string) {
-  const c = (el.className || '').toString();
-  return c.includes(needle);
+function getElByUnitId(unitId: string) {
+  try {
+    return document.querySelector<HTMLElement>(`[data-unit-id="${CSS.escape(String(unitId))}"]`);
+  } catch {
+    return document.querySelector<HTMLElement>(`[data-unit-id="${String(unitId)}"]`);
+  }
 }
 
-/**
- * We DO NOT move CardArt internals.
- * We move the "best" outer container around the unit.
- */
-function resolveVisualEl(unitRoot: HTMLElement): HTMLElement {
-  // If the root itself is a card box, use it.
-  if (unitRoot.classList.contains('bb-card')) return unitRoot;
-
-  // If root is a slot rendered as `display: contents`, transforms won't apply.
-  try {
-    const d = window.getComputedStyle(unitRoot).display;
-    if (d === 'contents') {
-      const card = unitRoot.querySelector<HTMLElement>('.bb-card');
-      if (card) return card;
-    }
-  } catch {}
-
-  // Prefer the actual card element if it exists.
-  const card = unitRoot.querySelector<HTMLElement>('.bb-card');
-  if (card) return card;
-
+function findBestVisualRoot(unitRoot: HTMLElement): HTMLElement {
+  const cardLike =
+    unitRoot.querySelector<HTMLElement>('.bb-card, [class*="bb-card"], [class*="Card"], [class*="card"]') || null;
+  if (cardLike && cardLike.getBoundingClientRect().width > 0) return cardLike;
   return unitRoot;
 }
 
-/**
- * We DO NOT move CardArt internals.
- * We move the "best" outer container around the unit.
- *
- * Important: if `.bb-slot` is `display: contents`, it cannot be transformed,
- * so we fall back to the `.bb-card` box.
- */
-function findMoveEl(unitRoot: HTMLElement): HTMLElement {
-  // If unitRoot is already the card, move it.
-  if (unitRoot.classList.contains('bb-card')) return unitRoot;
+function makeOverlayFrom(attackerVisual: HTMLElement) {
+  const r = attackerVisual.getBoundingClientRect();
 
-  // 1) Best: slot wrapper (unless it's display:contents)
-  const slot = unitRoot.closest('.bb-slot') as HTMLElement | null;
-  if (slot) {
-    try {
-      const d = window.getComputedStyle(slot).display;
-      if (d !== 'contents') return slot;
-    } catch {
-      return slot;
+  const overlay = document.createElement('div');
+  overlay.className = 'bb-fx-overlay-clone';
+  overlay.style.position = 'fixed';
+  overlay.style.left = `${r.left}px`;
+  overlay.style.top = `${r.top}px`;
+  overlay.style.width = `${r.width}px`;
+  overlay.style.height = `${r.height}px`;
+  overlay.style.zIndex = '9999';
+  overlay.style.pointerEvents = 'none';
+  overlay.style.transform = 'translate3d(0px,0px,0)';
+  overlay.style.willChange = 'transform';
+  overlay.style.contain = 'layout style paint';
+
+  const clone = attackerVisual.cloneNode(true) as HTMLElement;
+  clone.style.width = '100%';
+  clone.style.height = '100%';
+  clone.style.transform = 'none';
+  clone.style.pointerEvents = 'none';
+
+  overlay.appendChild(clone);
+  return overlay;
+}
+
+function animateOverlay(overlay: HTMLElement, dx: number, dy: number) {
+  return overlay.animate(
+    [
+      { transform: 'translate3d(0px, 0px, 0) scale(1)' },
+      { transform: `translate3d(${dx}px, ${dy}px, 0) scale(1.03)`, offset: 0.55 },
+      { transform: `translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.00)`, offset: 0.7 },
+      { transform: 'translate3d(0px, 0px, 0) scale(1)' },
+    ],
+    {
+      duration: ATTACK_DURATION,
+      easing: 'cubic-bezier(.18,.9,.22,1)',
+      fill: 'both',
     }
-    // display:contents -> move the visual card instead
-    const cardInSlot = slot.querySelector<HTMLElement>('.bb-card');
-    if (cardInSlot) return cardInSlot;
-  }
-
-  // 2) Any slot-like wrapper
-  const slotLike = unitRoot.closest('[class*="slot"],[class*="Slot"],[data-slot],[data-slot-id]') as HTMLElement | null;
-  if (slotLike) {
-    try {
-      const d = window.getComputedStyle(slotLike).display;
-      if (d !== 'contents') return slotLike;
-    } catch {
-      return slotLike;
-    }
-    const card = slotLike.querySelector<HTMLElement>('.bb-card');
-    if (card) return card;
-  }
-
-  // 3) Walk up a few levels and pick a container that looks like a slot/card block
-  let cur: HTMLElement | null = unitRoot;
-  for (let i = 0; i < 6 && cur; i++) {
-    if (hasClassLike(cur, 'bb-slot') || hasClassLike(cur, 'slot') || hasClassLike(cur, 'bb-card') || hasClassLike(cur, 'card')) {
-      try {
-        const d = window.getComputedStyle(cur).display;
-        if (d !== 'contents') return cur;
-      } catch {
-        return cur;
-      }
-    }
-    cur = cur.parentElement;
-  }
-
-  return resolveVisualEl(unitRoot);
+  );
 }
 
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
-  const animByElRef = useRef<WeakMap<HTMLElement, Animation>>(new WeakMap());
-
   const [mounted, setMounted] = useState(false);
-  const [debugMsg, setDebugMsg] = useState<string>('');
-  const [debugCount, setDebugCount] = useState<number>(0);
-
-  useEffect(() => setMounted(true), []);
+  const [debugMsg, setDebugMsg] = useState('');
+  const [debugCount, setDebugCount] = useState(0);
 
   const debugEnabled = useMemo(() => {
-    if (!mounted) return false;
     try {
-      return new URLSearchParams(window.location.search).get('fxdebug') === '1';
+      return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fxdebug') === '1';
     } catch {
       return false;
     }
-  }, [mounted]);
+  }, []);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const css = useMemo(
     () => `
-      /* Debug helpers */
       .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,.85) !important; }
       .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,.85) !important; }
 
@@ -185,88 +143,19 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
 
     if (debugEnabled) setDebugCount((events || []).length);
 
-    const getElByUnitId = (unitId: string) =>
-      document.querySelector<HTMLElement>(`[data-unit-id="${CSS.escape(String(unitId))}"]`);
-
-    const animateAttack = (moveEl: HTMLElement, dx: number, dy: number) => {
-      // Cancel previous animation on this element (if any)
-      const prev = animByElRef.current.get(moveEl);
-      try {
-        prev?.cancel();
-      } catch {}
-
-      // Ensure it can sit above neighbors during motion (z-index works only if positioned)
-      const prevPos = moveEl.style.position;
-      if (!prevPos) moveEl.style.position = 'relative';
-      moveEl.style.willChange = 'transform';
-      moveEl.style.zIndex = '60';
-
-      // WAAPI: reliable even when CSS has transform stuff elsewhere
-      let anim: Animation | null = null;
-      try {
-        anim = moveEl.animate(
-          [
-            { transform: 'translate3d(0px, 0px, 0) scale(1)' },
-            { transform: `translate3d(${dx}px, ${dy}px, 0) scale(1.03)`, offset: 0.55 },
-            { transform: `translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)`, offset: 0.7 },
-            { transform: 'translate3d(0px, 0px, 0) scale(1)' }
-          ],
-          { duration: ATTACK_DURATION, easing: 'cubic-bezier(.18,.9,.22,1)', fill: 'both' }
-        );
-      } catch {
-        anim = null;
-      }
-
-      if (anim) {
-        animByElRef.current.set(moveEl, anim);
-        anim.onfinish = () => {
-          moveEl.style.willChange = '';
-          moveEl.style.zIndex = '';
-          // Keep position intact (do not touch layout), but revert our temporary inline position if we set it.
-          if (!prevPos) moveEl.style.position = '';
-          animByElRef.current.delete(moveEl);
-        };
-        anim.oncancel = () => {
-          moveEl.style.willChange = '';
-          moveEl.style.zIndex = '';
-          if (!prevPos) moveEl.style.position = '';
-          animByElRef.current.delete(moveEl);
-        };
-      } else {
-        // Fallback: set inline transform directly (still touch→back)
-        moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.03)`;
-        timers.push(
-          window.setTimeout(() => {
-            moveEl.style.transform = 'translate3d(0px, 0px, 0) scale(1)';
-          }, Math.floor(ATTACK_DURATION * 0.55))
-        );
-        timers.push(
-          window.setTimeout(() => {
-            moveEl.style.transform = '';
-            moveEl.style.willChange = '';
-            moveEl.style.zIndex = '';
-            if (!prevPos) moveEl.style.position = '';
-          }, ATTACK_DURATION + 40)
-        );
-      }
-    };
-
     const tryOnce = (attackerId: string, targetId: string) => {
       const attackerRoot = getElByUnitId(attackerId);
       const targetRoot = getElByUnitId(targetId);
-
       if (!attackerRoot || !targetRoot) return false;
 
-      const attackerVisual = resolveVisualEl(attackerRoot);
-      const targetVisual = resolveVisualEl(targetRoot);
+      const attackerVisual = findBestVisualRoot(attackerRoot);
+      const targetVisual = findBestVisualRoot(targetRoot);
 
       const ar = attackerVisual.getBoundingClientRect();
       const tr = targetVisual.getBoundingClientRect();
       if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
 
       const { dx, dy } = computeTouchDelta(ar, tr);
-
-      const moveEl = findMoveEl(attackerRoot);
 
       if (debugEnabled) {
         attackerVisual.classList.add('bb-fx-debug-outline-attacker');
@@ -279,7 +168,20 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
         );
       }
 
-      animateAttack(moveEl, dx, dy);
+      const overlay = makeOverlayFrom(attackerVisual);
+      document.body.appendChild(overlay);
+
+      const anim = animateOverlay(overlay, dx, dy);
+      anim.onfinish = () => overlay.remove();
+
+      timers.push(
+        window.setTimeout(() => {
+          try {
+            overlay.remove();
+          } catch {}
+        }, ATTACK_DURATION + 140)
+      );
+
       return true;
     };
 
@@ -296,7 +198,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
           setDebugMsg(
             `FX: DOM not found for\nattackerId=${attackerId}\ntargetId=${targetId}\n(data-unit-id mismatch?)`
           );
-          timers.push(window.setTimeout(() => setDebugMsg(''), 1400));
+          timers.push(window.setTimeout(() => setDebugMsg(''), 1200));
         }
       };
       rafs.push(requestAnimationFrame(tick));
@@ -316,10 +218,6 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     return () => {
       for (const t of timers) clearTimeout(t);
       for (const r of rafs) cancelAnimationFrame(r);
-      // Cancel any running animations we started
-      try {
-        // WeakMap isn't iterable; we just let them finish. Safe.
-      } catch {}
     };
   }, [events, debugEnabled, mounted]);
 
