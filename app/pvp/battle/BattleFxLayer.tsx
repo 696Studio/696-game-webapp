@@ -87,14 +87,8 @@ function findTopVisibleForAttack(attackerCard: HTMLElement, attackerId: string):
   if (!el) return attackerCard;
 
   const slot = attackerCard.closest('.bb-slot') as HTMLElement | null;
+  const inSameSlot = (cand: HTMLElement) => (slot ? slot.contains(cand) : false);
 
-  // Helper: is candidate inside same slot (ideal)
-  const inSameSlot = (cand: HTMLElement) => {
-    if (!slot) return false;
-    return slot.contains(cand);
-  };
-
-  // Walk up from elementFromPoint to find best candidate
   let cur: HTMLElement | null = el;
   for (let i = 0; i < 14 && cur; i++) {
     if (cur.getAttribute('data-unit-id') === attackerId) return cur;
@@ -104,9 +98,7 @@ function findTopVisibleForAttack(attackerCard: HTMLElement, attackerId: string):
     cur = cur.parentElement;
   }
 
-  // fallback: if point element is inside same slot, animate it (top layer)
-  if (slot && el && slot.contains(el)) return el;
-
+  if (slot && slot.contains(el)) return el;
   return attackerCard;
 }
 
@@ -125,6 +117,8 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const active = useRef<WeakMap<HTMLElement, Active>>(new WeakMap());
 
   const [mounted, setMounted] = useState(false);
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+
   const [hud, setHud] = useState('');
   const [cnt, setCnt] = useState(0);
 
@@ -136,7 +130,39 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     }
   }, []);
 
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+
+    // Create a stable portal root once.
+    // This avoids React trying to reconcile against document.body/html in WebView edge cases.
+    try {
+      const existing = document.getElementById('bb-fx-portal-root') as HTMLElement | null;
+      if (existing) {
+        setPortalRoot(existing);
+        return;
+      }
+
+      const root = document.createElement('div');
+      root.id = 'bb-fx-portal-root';
+      root.style.position = 'fixed';
+      root.style.inset = '0';
+      root.style.pointerEvents = 'none';
+      root.style.zIndex = '9999';
+      document.body?.appendChild(root);
+      setPortalRoot(root);
+
+      return () => {
+        // cleanup only if we created it
+        try {
+          if (root.parentNode) root.parentNode.removeChild(root);
+        } catch {
+          // ignore
+        }
+      };
+    } catch {
+      setPortalRoot(null);
+    }
+  }, []);
 
   useEffect(() => {
     if (!mounted) return;
@@ -259,7 +285,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     };
   }, [events, debug, mounted]);
 
-  if (!mounted) return null;
+  if (!mounted || !portalRoot) return null;
 
   const css = debug
     ? `
@@ -285,6 +311,6 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       {debug ? <style>{css}</style> : null}
       {debug ? <div className="bb-fx-debug-hud">{`FX events: ${cnt}\n${hud}`}</div> : null}
     </>,
-    document.body
+    portalRoot
   );
 }
