@@ -302,32 +302,44 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       timers.push(window.setTimeout(() => cleanupLift(moveEl), ATTACK_DURATION + 80));
     };
 
-    const tryOnce = (attackerId: string, targetId: string) => {
+        const tryOnce = (attackerId: string, targetId: string) => {
       const attackerRoot = getElByUnitId(attackerId);
       const targetRoot = getElByUnitId(targetId);
       if (!attackerRoot || !targetRoot) return false;
 
-      const attackerVisual = findVisualCardEl(attackerRoot);
+      // Нам нужно двигать "оригинал" целиком: предпочитаем внешний слот/контейнер,
+      // а не внутренности CardArt. Если слот "пустой" (display:contents/0 rect) — fallback на визуальную карту.
       const targetVisual = findVisualCardEl(targetRoot);
 
-      const ar = attackerVisual.getBoundingClientRect();
+      const slot = attackerRoot.closest('.bb-slot') as HTMLElement | null;
+      const attackerVisual = findVisualCardEl(attackerRoot);
+
+      let moveEl: HTMLElement = slot || attackerRoot;
+
+      // Вычисляем прямоугольник от того, что реально будет двигаться
+      let ar = moveEl.getBoundingClientRect();
+      if (!ar.width || !ar.height || isDisplayContents(moveEl)) {
+        moveEl = attackerVisual;
+        ar = moveEl.getBoundingClientRect();
+      }
+
       const tr = targetVisual.getBoundingClientRect();
       if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
 
       const { dx, dy } = computeTouchDelta(ar, tr);
 
       if (debugEnabled) {
-        attackerVisual.classList.add('bb-fx-debug-outline-attacker');
+        moveEl.classList.add('bb-fx-debug-outline-attacker');
         targetVisual.classList.add('bb-fx-debug-outline-target');
         timers.push(
           window.setTimeout(() => {
-            attackerVisual.classList.remove('bb-fx-debug-outline-attacker');
+            moveEl.classList.remove('bb-fx-debug-outline-attacker');
             targetVisual.classList.remove('bb-fx-debug-outline-target');
           }, 500)
         );
       }
 
-      startLiftAttack(attackerVisual, dx, dy);
+      startLiftAttack(moveEl, dx, dy);
       return true;
     };
 
