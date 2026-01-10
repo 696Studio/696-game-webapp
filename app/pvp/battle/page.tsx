@@ -1731,7 +1731,7 @@ const hpPct = useMemo(() => {
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
         <div className="bb-motion-layer" data-fx-motion="1" style={{ willChange: "transform" }}>
-      <div className="bb-fx-anchor">
+          <div className="bb-fx-anchor">
         
         {isDyingUi ? <div className="bb-death" /> : null}
       </div>
@@ -1834,7 +1834,6 @@ const hpPct = useMemo(() => {
               )}
             </div>
 
-            </div>
         </div>
       </div>
       {renderUnit && (
@@ -1932,6 +1931,7 @@ const hpPct = useMemo(() => {
           }
         }
       `}</style>
+        </div>
         </div>
       </div>
 
@@ -2892,7 +2892,7 @@ const hpPct = useMemo(() => {
                   </b>
                 </span>
                 <span className="hud-pill">
-                  Match <b className="tabular-nums">{String(match.id).slice(0, 8)}…</b>
+                  Match <b className="tabular-nums">{match?.id ? String(match.id).slice(0, 8) : "—"}…</b>
                 </span>
                 <span className="hud-pill">
                   tl <b className="tabular-nums">{timeline.length}</b>
