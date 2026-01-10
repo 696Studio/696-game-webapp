@@ -47,8 +47,36 @@ function safeEscape(v: string) {
   }
 }
 
-function getUnitRootById(unitId: string) {
-  return document.querySelector<HTMLElement>(`[data-unit-id="${safeEscape(String(unitId))}"]`);
+/**
+ * У вас в DOM ДВА элемента с одинаковым data-unit-id:
+ *  - .bb-slot (внешний контейнер)
+ *  - .bb-card (внутренний)
+ *
+ * document.querySelector вернет ПЕРВЫЙ попавшийся, что иногда оказывается .bb-card,
+ * а внутри .bb-card НЕТ .bb-motion-layer (она sibling/родитель).
+ *
+ * Поэтому:
+ * 1) берём ВСЕ совпадения querySelectorAll
+ * 2) приоритет: .bb-slot, потом любой элемент, который содержит .bb-motion-layer
+ * 3) fallback: первый элемент
+ */
+function getBestUnitRootById(unitId: string) {
+  const list = Array.from(document.querySelectorAll<HTMLElement>(`[data-unit-id="${safeEscape(String(unitId))}"]`));
+  if (!list.length) return null;
+
+  const slot = list.find((el) => el.classList.contains('bb-slot'));
+  if (slot) return slot;
+
+  const hasMotion = list.find((el) => !!el.querySelector('.bb-motion-layer'));
+  if (hasMotion) return hasMotion;
+
+  // maybe data-unit-id is on inner bb-card; go up to nearest slot
+  for (const el of list) {
+    const up = el.closest('.bb-slot') as HTMLElement | null;
+    if (up) return up;
+  }
+
+  return list[0];
 }
 
 function findVisualCardEl(unitRoot: HTMLElement): HTMLElement {
@@ -56,9 +84,21 @@ function findVisualCardEl(unitRoot: HTMLElement): HTMLElement {
   return unitRoot.querySelector<HTMLElement>('.bb-card') || unitRoot;
 }
 
-function findMotionLayer(unitRoot: HTMLElement): HTMLElement | null {
-  // Prefer wrapper that is meant for motion (added in page.tsx)
-  return unitRoot.querySelector<HTMLElement>('.bb-motion-layer');
+function findMotionLayerFromAny(unitRoot: HTMLElement): HTMLElement | null {
+  // preferred: inside slot
+  const slot = unitRoot.classList.contains('bb-slot') ? unitRoot : (unitRoot.closest('.bb-slot') as HTMLElement | null);
+  if (slot) {
+    const ml = slot.querySelector<HTMLElement>('.bb-motion-layer');
+    if (ml) return ml;
+  }
+
+  // fallback: inside provided root
+  const inside = unitRoot.querySelector<HTMLElement>('.bb-motion-layer');
+  if (inside) return inside;
+
+  // fallback: if root is bb-card, motion-layer is likely a parent sibling in slot
+  const up2 = unitRoot.closest('.bb-slot') as HTMLElement | null;
+  return up2 ? up2.querySelector<HTMLElement>('.bb-motion-layer') : null;
 }
 
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
@@ -124,11 +164,11 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     };
 
     const tryOnce = (attackerId: string, targetId: string) => {
-      const attackerRoot = getUnitRootById(attackerId);
-      const targetRoot = getUnitRootById(targetId);
+      const attackerRoot = getBestUnitRootById(attackerId);
+      const targetRoot = getBestUnitRootById(targetId);
       if (!attackerRoot || !targetRoot) return false;
 
-      const motionEl = findMotionLayer(attackerRoot);
+      const motionEl = findMotionLayerFromAny(attackerRoot);
       const attackerForRect = motionEl || findVisualCardEl(attackerRoot);
 
       const targetCard = findVisualCardEl(targetRoot);
@@ -151,7 +191,15 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       }
 
       if (!motionEl) {
-        if (debugEnabled) setDebugMsg(`FX: .bb-motion-layer NOT FOUND for attackerId=${attackerId}\n(need page.tsx wrapper)`);
+        if (debugEnabled) {
+          const hint = attackerRoot.classList.contains('bb-card')
+            ? 'root=bb-card (likely wrong pick)'
+            : attackerRoot.classList.contains('bb-slot')
+            ? 'root=bb-slot (ok)'
+            : `root=${attackerRoot.className}`;
+          setDebugMsg(`FX: .bb-motion-layer NOT FOUND\n${hint}\nattackerId=${attackerId}`);
+          timers.push(window.setTimeout(() => setDebugMsg(''), 1200));
+        }
         return false;
       }
 
@@ -173,9 +221,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       timers.push(window.setTimeout(() => cleanup(motionEl, targetCard), ATTACK_DURATION + 120));
 
       if (debugEnabled) {
-        setDebugMsg(
-          `FX: OK\nmotion-layer=yes\ndx=${Math.round(dx)} dy=${Math.round(dy)}\nattacker=${attackerId}\ntarget=${targetId}`
-        );
+        setDebugMsg(`FX: OK\nmotion-layer=yes\ndx=${Math.round(dx)} dy=${Math.round(dy)}\nattacker=${attackerId}\ntarget=${targetId}`);
         timers.push(window.setTimeout(() => setDebugMsg(''), 900));
       }
 
