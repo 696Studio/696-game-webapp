@@ -1735,10 +1735,13 @@ const hpPct = useMemo(() => {
         {isDyingUi ? <div className="bb-death" /> : null}
       </div>
       <div
+        className="bb-motion-layer"
+        data-unit-id={renderUnit?.instanceId}
         ref={(el) => {
           if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
         }}
-        data-unit-id={renderUnit?.instanceId}
+      >
+      <div
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
@@ -1932,6 +1935,7 @@ const hpPct = useMemo(() => {
           }
         }
       `}</style>
+      </div>
       </div>
 
     );

@@ -11,7 +11,8 @@ export type FxEvent =
       targetId: string;
     };
 
-const ATTACK_DURATION = 520;
+const LUNGE_DURATION = 420;
+const TARGET_HIT_DURATION = 240;
 const RETRY_FRAMES = 18;
 
 function clamp(n: number, a: number, b: number) {
@@ -29,84 +30,58 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
   const dy = bc.y - ac.y;
 
   // чтобы не улетало слишком далеко
-  const k = 0.9;
+  const k = 0.92;
   const maxMove = Math.max(a.width, a.height) * 1.15;
   const len = Math.hypot(dx, dy) || 1;
-  const safeK = clamp((maxMove / len) * k, 0.55, 0.92);
+  const safeK = clamp((maxMove / len) * k, 0.55, 1.0);
 
   return { dx: dx * safeK, dy: dy * safeK };
 }
 
 function safeEscape(v: string) {
   // CSS.escape может отсутствовать в старых вебвью
-  // fallback: минимальная экранировка кавычек
   try {
     const cssAny = CSS as unknown as { escape?: (s: string) => string };
     return typeof cssAny !== 'undefined' && typeof cssAny.escape === 'function'
       ? cssAny.escape(v)
-      : v.replace(/"/g, '\\"');
+      : v.replace(/"/g, '\"');
   } catch {
-    return v.replace(/"/g, '\\"');
+    return v.replace(/"/g, '\"');
   }
 }
 
-function getElByUnitId(unitId: string) {
-  return document.querySelector<HTMLElement>(`[data-unit-id="${safeEscape(String(unitId))}"]`);
+function qUnit(unitId: string) {
+  const id = safeEscape(String(unitId));
+  // Prefer the dedicated motion layer (no transform conflicts)
+  const motion = document.querySelector<HTMLElement>(`.bb-motion-layer[data-unit-id="${id}"]`);
+  if (motion) return motion;
+
+  // Fallbacks (older markup)
+  const slot = document.querySelector<HTMLElement>(`.bb-slot[data-unit-id="${id}"]`);
+  if (slot) return slot;
+
+  return document.querySelector<HTMLElement>(`[data-unit-id="${id}"]`);
 }
 
-function hasClassLike(el: HTMLElement, needle: string) {
-  const c = (el.className || '').toString();
-  return c.includes(needle);
+function qTargetCard(unitId: string) {
+  const root = qUnit(unitId);
+  if (!root) return null;
+
+  // If root is the motion layer, find the card inside
+  const card = root.querySelector<HTMLElement>('.bb-card');
+  if (card) return card;
+
+  // If root itself is card
+  if ((root.className || '').toString().includes('bb-card')) return root;
+
+  return null;
 }
-
-function findVisualCardEl(unitRoot: HTMLElement): HTMLElement {
-  // 1) если unitRoot уже выглядит как карта
-  if (hasClassLike(unitRoot, 'bb-card') || hasClassLike(unitRoot, 'card')) return unitRoot;
-
-  // 2) ищем явную карточку внутри
-  const inner = unitRoot.querySelector<HTMLElement>('.bb-card, [class*="bb-card"], [class*="Card"], [class*="card"]');
-  if (inner) return inner;
-
-  // 3) поднимаемся вверх: иногда data-unit-id стоит на внутренности
-  let cur: HTMLElement | null = unitRoot;
-  for (let i = 0; i < 6 && cur; i++) {
-    if (hasClassLike(cur, 'bb-card') || hasClassLike(cur, 'card')) return cur;
-    cur = cur.parentElement;
-  }
-
-  // 4) fallback
-  return unitRoot;
-}
-
-function isDisplayContents(el: HTMLElement) {
-  try {
-    return window.getComputedStyle(el).display === 'contents';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * ВАЖНО:
- * Не перемещаем DOM-узлы в другие parents (никаких appendChild/removeChild оригинала),
- * иначе React может крашиться (NotFoundError removeChild) при reconciliation/unmount.
- * Двигаем ОРИГИНАЛ "на месте" — через WAAPI, временно отключая CSS-анимации/transition на transform.
- */
-type ActiveAnimState = {
-  anim: Animation;
-  restore: {
-    transform: string;
-    transition: string;
-    animation: string;
-    willChange: string;
-  };
-};
 
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const timersByElRef = useRef<WeakMap<HTMLElement, number[]>>(new WeakMap());
 
   const [mounted, setMounted] = useState(false);
-
   const [debugMsg, setDebugMsg] = useState<string>('');
   const [debugCount, setDebugCount] = useState<number>(0);
 
@@ -117,8 +92,6 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       return false;
     }
   }, []);
-
-  const activeAnimRef = useRef<WeakMap<HTMLElement, ActiveAnimState>>(new WeakMap());
 
   const css = useMemo(
     () => `
@@ -153,116 +126,79 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     const timers: any[] = [];
     const rafs: number[] = [];
 
-    if (debugEnabled) {
-      setDebugCount((events || []).length);
-    }
+    if (debugEnabled) setDebugCount((events || []).length);
 
-    const stopActive = (el: HTMLElement) => {
-      const st = activeAnimRef.current.get(el);
-      if (!st) return;
-
-      try {
-        st.anim.cancel();
-      } catch {
-        // ignore
-      }
-
-      try {
-        el.style.transform = st.restore.transform;
-        el.style.transition = st.restore.transition;
-        el.style.animation = st.restore.animation;
-        el.style.willChange = st.restore.willChange;
-      } catch {
-        // ignore
-      }
-
-      activeAnimRef.current.delete(el);
+    const clearTimersForEl = (el: HTMLElement) => {
+      const list = timersByElRef.current.get(el);
+      if (!list) return;
+      for (const t of list) clearTimeout(t);
+      timersByElRef.current.delete(el);
     };
 
-    const startInPlaceAttack = (moveEl: HTMLElement, dx: number, dy: number) => {
-      // already animating -> ignore
-      if (activeAnimRef.current.has(moveEl)) return;
+    const addTimerForEl = (el: HTMLElement, t: number) => {
+      const list = timersByElRef.current.get(el) || [];
+      list.push(t);
+      timersByElRef.current.set(el, list);
+      timers.push(t);
+    };
 
-      // snapshot current computed transform to preserve current visual state
-      const cs = window.getComputedStyle(moveEl);
-      const baseComputedTransform = cs.transform && cs.transform !== 'none' ? cs.transform : '';
+    const startLunge = (attackerEl: HTMLElement, targetId: string, dx: number, dy: number) => {
+      clearTimersForEl(attackerEl);
 
-      const restore = {
-        transform: moveEl.style.transform || '',
-        transition: moveEl.style.transition || '',
-        animation: moveEl.style.animation || '',
-        willChange: moveEl.style.willChange || '',
-      };
+      attackerEl.style.setProperty('--atk-dx', `${dx}px`);
+      attackerEl.style.setProperty('--atk-dy', `${dy}px`);
 
-      // temporarily disable competing animations/transitions on transform
-      moveEl.style.transition = 'none';
-      moveEl.style.animation = 'none';
-      moveEl.style.willChange = 'transform';
+      attackerEl.classList.remove('is-attacking'); // reset if stuck
+      // reflow to restart animation reliably
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      attackerEl.offsetWidth;
+      attackerEl.classList.add('is-attacking');
 
-      // We override transform during the hit, but we include the current computed base.
-      // This makes the element actually move even if base transform exists.
-      const t0 = baseComputedTransform ? baseComputedTransform : 'none';
-      const t1 = baseComputedTransform
-        ? `${baseComputedTransform} translate3d(${dx}px, ${dy}px, 0) scale(1.03)`
-        : `translate3d(${dx}px, ${dy}px, 0) scale(1.03)`;
-      const t2 = baseComputedTransform
-        ? `${baseComputedTransform} translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)`
-        : `translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)`;
-      const t3 = baseComputedTransform ? baseComputedTransform : 'none';
+      const t1 = window.setTimeout(() => {
+        attackerEl.classList.remove('is-attacking');
+        attackerEl.style.removeProperty('--atk-dx');
+        attackerEl.style.removeProperty('--atk-dy');
+      }, LUNGE_DURATION + 40);
+      addTimerForEl(attackerEl, t1);
 
-      const anim = moveEl.animate(
-        [{ transform: t0 }, { transform: t1 }, { transform: t2 }, { transform: t3 }],
-        {
-          duration: ATTACK_DURATION,
-          easing: 'cubic-bezier(.18,.9,.22,1)',
-          fill: 'forwards',
-        }
-      );
+      // impact on target card (optional)
+      const targetCard = qTargetCard(targetId);
+      if (targetCard) {
+        clearTimersForEl(targetCard);
+        targetCard.classList.remove('is-attack-target');
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        targetCard.offsetWidth;
+        targetCard.classList.add('is-attack-target');
 
-      const finish = () => stopActive(moveEl);
-      anim.onfinish = finish;
-      anim.oncancel = finish;
-
-      activeAnimRef.current.set(moveEl, { anim, restore });
-      timers.push(window.setTimeout(() => stopActive(moveEl), ATTACK_DURATION + 120));
+        const t2 = window.setTimeout(() => targetCard.classList.remove('is-attack-target'), TARGET_HIT_DURATION + 40);
+        addTimerForEl(targetCard, t2);
+      }
     };
 
     const tryOnce = (attackerId: string, targetId: string) => {
-      const attackerRoot = getElByUnitId(attackerId);
-      const targetRoot = getElByUnitId(targetId);
-      if (!attackerRoot || !targetRoot) return false;
+      const attackerEl = qUnit(attackerId);
+      const targetEl = qUnit(targetId);
 
-      const targetVisual = findVisualCardEl(targetRoot);
+      if (!attackerEl || !targetEl) return false;
 
-      const slot = attackerRoot.closest('.bb-slot') as HTMLElement | null;
-      const attackerVisual = findVisualCardEl(attackerRoot);
-
-      // prefer moving slot (whole unit), but only if it has a real box
-      let moveEl: HTMLElement = slot || attackerRoot;
-      let ar = moveEl.getBoundingClientRect();
-
-      if (!ar.width || !ar.height || isDisplayContents(moveEl)) {
-        moveEl = attackerVisual;
-        ar = moveEl.getBoundingClientRect();
-      }
-
-      const tr = targetVisual.getBoundingClientRect();
+      const ar = attackerEl.getBoundingClientRect();
+      const tr = targetEl.getBoundingClientRect();
       if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
 
       const { dx, dy } = computeTouchDelta(ar, tr);
 
       if (debugEnabled) {
-        moveEl.classList.add('bb-fx-debug-outline-attacker');
-        targetVisual.classList.add('bb-fx-debug-outline-target');
+        attackerEl.classList.add('bb-fx-debug-outline-attacker');
+        targetEl.classList.add('bb-fx-debug-outline-target');
         timers.push(
           window.setTimeout(() => {
-            moveEl.classList.remove('bb-fx-debug-outline-attacker');
-            targetVisual.classList.remove('bb-fx-debug-outline-target');
-          }, 500)
+            attackerEl.classList.remove('bb-fx-debug-outline-attacker');
+            targetEl.classList.remove('bb-fx-debug-outline-target');
+          }, 520)
         );
       }
 
-      startInPlaceAttack(moveEl, dx, dy);
+      startLunge(attackerEl, targetId, dx, dy);
       return true;
     };
 
@@ -289,7 +225,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       if (seenIdsRef.current.has(e.id)) continue;
 
       seenIdsRef.current.add(e.id);
-      timers.push(window.setTimeout(() => seenIdsRef.current.delete(e.id), ATTACK_DURATION + 800));
+      timers.push(window.setTimeout(() => seenIdsRef.current.delete(e.id), LUNGE_DURATION + 800));
 
       runWithRetry(String(e.attackerId), String(e.targetId));
     }
@@ -297,13 +233,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     return () => {
       for (const t of timers) clearTimeout(t);
       for (const r of rafs) cancelAnimationFrame(r);
-
-      // cancel any remaining animations we started
-      try {
-        activeAnimRef.current = new WeakMap();
-      } catch {
-        // ignore
-      }
+      timersByElRef.current = new WeakMap();
     };
   }, [events, debugEnabled, mounted]);
 
