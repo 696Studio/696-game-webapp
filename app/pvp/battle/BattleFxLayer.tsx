@@ -28,6 +28,7 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
   const dx = bc.x - ac.x;
   const dy = bc.y - ac.y;
 
+  // чтобы не улетало слишком далеко
   const k = 0.9;
   const maxMove = Math.max(a.width, a.height) * 1.15;
   const len = Math.hypot(dx, dy) || 1;
@@ -36,68 +37,71 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
   return { dx: dx * safeK, dy: dy * safeK };
 }
 
-function getElByUnitId(unitId: string) {
+function safeEscape(v: string) {
+  // CSS.escape может отсутствовать в старых вебвью
+  // fallback: минимальная экранировка кавычек
   try {
-    return document.querySelector<HTMLElement>(`[data-unit-id="${CSS.escape(String(unitId))}"]`);
+    const cssAny = CSS as unknown as { escape?: (s: string) => string };
+    return typeof cssAny !== 'undefined' && typeof cssAny.escape === 'function'
+      ? cssAny.escape(v)
+      : v.replace(/"/g, '\\"');
   } catch {
-    return document.querySelector<HTMLElement>(`[data-unit-id="${String(unitId)}"]`);
+    return v.replace(/"/g, '\\"');
   }
 }
 
-function findBestVisualRoot(unitRoot: HTMLElement): HTMLElement {
-  const cardLike =
-    unitRoot.querySelector<HTMLElement>('.bb-card, [class*="bb-card"], [class*="Card"], [class*="card"]') || null;
-  if (cardLike && cardLike.getBoundingClientRect().width > 0) return cardLike;
+function getElByUnitId(unitId: string) {
+  return document.querySelector<HTMLElement>(`[data-unit-id="${safeEscape(String(unitId))}"]`);
+}
+
+function hasClassLike(el: HTMLElement, needle: string) {
+  const c = (el.className || '').toString();
+  return c.includes(needle);
+}
+
+function findVisualCardEl(unitRoot: HTMLElement): HTMLElement {
+  // 1) если unitRoot уже выглядит как карта
+  if (hasClassLike(unitRoot, 'bb-card') || hasClassLike(unitRoot, 'card')) return unitRoot;
+
+  // 2) ищем явную карточку внутри
+  const inner = unitRoot.querySelector<HTMLElement>('.bb-card, [class*="bb-card"], [class*="Card"], [class*="card"]');
+  if (inner) return inner;
+
+  // 3) поднимаемся вверх: иногда data-unit-id стоит на внутренности
+  let cur: HTMLElement | null = unitRoot;
+  for (let i = 0; i < 6 && cur; i++) {
+    if (hasClassLike(cur, 'bb-card') || hasClassLike(cur, 'card')) return cur;
+    cur = cur.parentElement;
+  }
+
+  // 4) fallback
   return unitRoot;
 }
 
-function makeOverlayFrom(attackerVisual: HTMLElement) {
-  const r = attackerVisual.getBoundingClientRect();
-
-  const overlay = document.createElement('div');
-  overlay.className = 'bb-fx-overlay-clone';
-  overlay.style.position = 'fixed';
-  overlay.style.left = `${r.left}px`;
-  overlay.style.top = `${r.top}px`;
-  overlay.style.width = `${r.width}px`;
-  overlay.style.height = `${r.height}px`;
-  overlay.style.zIndex = '9999';
-  overlay.style.pointerEvents = 'none';
-  overlay.style.transform = 'translate3d(0px,0px,0)';
-  overlay.style.willChange = 'transform';
-  overlay.style.contain = 'layout style paint';
-
-  const clone = attackerVisual.cloneNode(true) as HTMLElement;
-  clone.style.width = '100%';
-  clone.style.height = '100%';
-  clone.style.transform = 'none';
-  clone.style.pointerEvents = 'none';
-
-  overlay.appendChild(clone);
-  return overlay;
+function isDisplayContents(el: HTMLElement) {
+  try {
+    return window.getComputedStyle(el).display === 'contents';
+  } catch {
+    return false;
+  }
 }
 
-function animateOverlay(overlay: HTMLElement, dx: number, dy: number) {
-  return overlay.animate(
-    [
-      { transform: 'translate3d(0px, 0px, 0) scale(1)' },
-      { transform: `translate3d(${dx}px, ${dy}px, 0) scale(1.03)`, offset: 0.55 },
-      { transform: `translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.00)`, offset: 0.7 },
-      { transform: 'translate3d(0px, 0px, 0) scale(1)' },
-    ],
-    {
-      duration: ATTACK_DURATION,
-      easing: 'cubic-bezier(.18,.9,.22,1)',
-      fill: 'both',
-    }
-  );
-}
+type LiftState = {
+  placeholder: HTMLDivElement;
+  parent: Node;
+  nextSibling: Node | null;
+  originalStyle: Partial<CSSStyleDeclaration>;
+  originalClass: string;
+};
 
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
+
   const [mounted, setMounted] = useState(false);
-  const [debugMsg, setDebugMsg] = useState('');
-  const [debugCount, setDebugCount] = useState(0);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+
+  const [debugMsg, setDebugMsg] = useState<string>('');
+  const [debugCount, setDebugCount] = useState<number>(0);
 
   const debugEnabled = useMemo(() => {
     try {
@@ -107,12 +111,22 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     }
   }, []);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // чтобы не "таскать" один и тот же элемент параллельно
+  const activeLiftRef = useRef<WeakMap<HTMLElement, LiftState>>(new WeakMap());
 
   const css = useMemo(
     () => `
+      .bb-fx-overlay-root {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 100vw;
+        height: 100vh;
+        pointer-events: none;
+        z-index: 9999;
+      }
+
+      /* Debug helpers */
       .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,.85) !important; }
       .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,.85) !important; }
 
@@ -135,21 +149,166 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     []
   );
 
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     if (!mounted) return;
 
     const timers: any[] = [];
     const rafs: number[] = [];
 
-    if (debugEnabled) setDebugCount((events || []).length);
+    if (debugEnabled) {
+      setDebugCount((events || []).length);
+    }
+
+    const overlayRoot = overlayRef.current;
+    if (!overlayRoot) return;
+
+    const cleanupLift = (moveEl: HTMLElement) => {
+      const st = activeLiftRef.current.get(moveEl);
+      if (!st) return;
+
+      try {
+        // вернуть элемент в DOM
+        if (st.nextSibling && st.nextSibling.parentNode === st.parent) {
+          st.parent.insertBefore(moveEl, st.nextSibling);
+        } else {
+          st.parent.appendChild(moveEl);
+        }
+      } catch {
+        // если не удалось, просто попробуем вставить рядом с placeholder
+        try {
+          st.placeholder.parentNode?.insertBefore(moveEl, st.placeholder);
+        } catch {
+          // ignore
+        }
+      }
+
+      try {
+        st.placeholder.remove();
+      } catch {
+        // ignore
+      }
+
+      // восстановить стиль
+      try {
+        moveEl.style.position = st.originalStyle.position || '';
+        moveEl.style.left = st.originalStyle.left || '';
+        moveEl.style.top = st.originalStyle.top || '';
+        moveEl.style.width = st.originalStyle.width || '';
+        moveEl.style.height = st.originalStyle.height || '';
+        moveEl.style.margin = st.originalStyle.margin || '';
+        moveEl.style.transform = st.originalStyle.transform || '';
+        moveEl.style.zIndex = st.originalStyle.zIndex || '';
+        moveEl.style.pointerEvents = st.originalStyle.pointerEvents || '';
+        moveEl.style.willChange = st.originalStyle.willChange || '';
+      } catch {
+        // ignore
+      }
+
+      try {
+        moveEl.className = st.originalClass;
+      } catch {
+        // ignore
+      }
+
+      activeLiftRef.current.delete(moveEl);
+    };
+
+    const startLiftAttack = (moveEl: HTMLElement, dx: number, dy: number) => {
+      // уже "таскаем" — не дёргаем снова
+      if (activeLiftRef.current.has(moveEl)) return;
+
+      const rect = moveEl.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      // display:contents контейнеры не двигаются — но мы двигаем visual card.
+      // если вдруг сюда попал contents, пробуем взять ребёнка.
+      if (isDisplayContents(moveEl)) {
+        const child = moveEl.querySelector<HTMLElement>(':scope > *');
+        if (child) moveEl = child;
+      }
+
+      const parent = moveEl.parentNode;
+      if (!parent) return;
+
+      const placeholder = document.createElement('div');
+      placeholder.style.width = `${rect.width}px`;
+      placeholder.style.height = `${rect.height}px`;
+      placeholder.style.visibility = 'hidden';
+      placeholder.style.pointerEvents = 'none';
+
+      const nextSibling = moveEl.nextSibling;
+      parent.insertBefore(placeholder, nextSibling);
+
+      const originalClass = moveEl.className;
+      const originalStyle: Partial<CSSStyleDeclaration> = {
+        position: moveEl.style.position,
+        left: moveEl.style.left,
+        top: moveEl.style.top,
+        width: moveEl.style.width,
+        height: moveEl.style.height,
+        margin: moveEl.style.margin,
+        transform: moveEl.style.transform,
+        zIndex: moveEl.style.zIndex,
+        pointerEvents: moveEl.style.pointerEvents,
+        willChange: moveEl.style.willChange,
+      };
+
+      activeLiftRef.current.set(moveEl, { placeholder, parent, nextSibling, originalStyle, originalClass });
+
+      // переносим ОРИГИНАЛ в overlay
+      overlayRoot.appendChild(moveEl);
+
+      // фиксируем позицию (в пикселях) на экране
+      moveEl.style.position = 'fixed';
+      moveEl.style.left = `${rect.left}px`;
+      moveEl.style.top = `${rect.top}px`;
+      moveEl.style.width = `${rect.width}px`;
+      moveEl.style.height = `${rect.height}px`;
+      moveEl.style.margin = '0';
+      moveEl.style.zIndex = '10000';
+      moveEl.style.pointerEvents = 'none';
+      moveEl.style.willChange = 'transform';
+
+      // WAAPI анимация — не зависит от CSS keyframes
+      const anim = moveEl.animate(
+        [
+          { transform: 'translate3d(0px, 0px, 0) scale(1)' },
+          { transform: `translate3d(${dx}px, ${dy}px, 0) scale(1.03)` },
+          { transform: `translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)` },
+          { transform: 'translate3d(0px, 0px, 0) scale(1)' },
+        ],
+        {
+          duration: ATTACK_DURATION,
+          easing: 'cubic-bezier(.18,.9,.22,1)',
+          fill: 'forwards',
+        }
+      );
+
+      const finish = () => {
+        try {
+          anim.cancel();
+        } catch {
+          // ignore
+        }
+        cleanupLift(moveEl);
+      };
+
+      anim.onfinish = finish;
+      anim.oncancel = finish;
+
+      // страховка: если вдруг onfinish не сработал
+      timers.push(window.setTimeout(() => cleanupLift(moveEl), ATTACK_DURATION + 80));
+    };
 
     const tryOnce = (attackerId: string, targetId: string) => {
       const attackerRoot = getElByUnitId(attackerId);
       const targetRoot = getElByUnitId(targetId);
       if (!attackerRoot || !targetRoot) return false;
 
-      const attackerVisual = findBestVisualRoot(attackerRoot);
-      const targetVisual = findBestVisualRoot(targetRoot);
+      const attackerVisual = findVisualCardEl(attackerRoot);
+      const targetVisual = findVisualCardEl(targetRoot);
 
       const ar = attackerVisual.getBoundingClientRect();
       const tr = targetVisual.getBoundingClientRect();
@@ -168,20 +327,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
         );
       }
 
-      const overlay = makeOverlayFrom(attackerVisual);
-      document.body.appendChild(overlay);
-
-      const anim = animateOverlay(overlay, dx, dy);
-      anim.onfinish = () => overlay.remove();
-
-      timers.push(
-        window.setTimeout(() => {
-          try {
-            overlay.remove();
-          } catch {}
-        }, ATTACK_DURATION + 140)
-      );
-
+      startLiftAttack(attackerVisual, dx, dy);
       return true;
     };
 
@@ -195,9 +341,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
         if (frame < RETRY_FRAMES) {
           rafs.push(requestAnimationFrame(tick));
         } else if (debugEnabled) {
-          setDebugMsg(
-            `FX: DOM not found for\nattackerId=${attackerId}\ntargetId=${targetId}\n(data-unit-id mismatch?)`
-          );
+          setDebugMsg(`FX: DOM not found for\nattackerId=${attackerId}\ntargetId=${targetId}\n(data-unit-id mismatch?)`);
           timers.push(window.setTimeout(() => setDebugMsg(''), 1200));
         }
       };
@@ -218,6 +362,13 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     return () => {
       for (const t of timers) clearTimeout(t);
       for (const r of rafs) cancelAnimationFrame(r);
+
+      // если размонтировали во время lift — постараемся вернуть элементы
+      try {
+        activeLiftRef.current = new WeakMap();
+      } catch {
+        // ignore
+      }
     };
   }, [events, debugEnabled, mounted]);
 
@@ -226,7 +377,8 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   return createPortal(
     <>
       <style>{css}</style>
-      {debugEnabled ? <div className="bb-fx-debug-hud">{`FX events: ${debugCount}\n${debugMsg}`}</div> : null}
+      <div ref={overlayRef} className="bb-fx-overlay-root" />
+      {debugEnabled ? <div className="bb-fx-debug-hud">{`FX events: ${(events || []).length}\n${debugMsg}`}</div> : null}
     </>,
     document.body
   );
