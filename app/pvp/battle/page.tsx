@@ -2004,6 +2004,7 @@ const hpPct = useMemo(() => {
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
+      <BattleFxLayer events={fxEvents} />
       <style
         dangerouslySetInnerHTML={{
           __html: `
