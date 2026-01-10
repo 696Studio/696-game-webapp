@@ -3127,6 +3127,29 @@ const hpPct = useMemo(() => {
 }
 
 export default function BattlePage() {
+  // IMPORTANT: Fix React hydration crash (#418) in Telegram WebView.
+  // Even though this file is a Client Component, Next.js still pre-renders it on the server.
+  // Any client-only differences (viewport/theme, timers, DOM measurements, etc.) can cause
+  // hydration mismatch and crash. We make the battle page render only after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+        <div className="w-full max-w-md ui-card p-5 text-center">
+          <div className="text-sm font-semibold">Загрузка…</div>
+          <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
+          <div className="mt-4 ui-progress">
+            <div className="w-1/3 opacity-70 animate-pulse" />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <Suspense
       fallback={
