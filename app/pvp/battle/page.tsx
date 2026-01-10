@@ -2004,6 +2004,8 @@ const hpPct = useMemo(() => {
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
+      {/* FX BUILD STAMP (remove later) */}
+      <div className="bb-fx-build-stamp">FXDBG_STAMP_v3</div>
       <BattleFxLayer events={fxEvents} />
       <style
         dangerouslySetInnerHTML={{
@@ -2859,7 +2861,9 @@ const hpPct = useMemo(() => {
                   seek(pct * durationSec);
                 }}
               >
-                <div style={{ width: `${progressPct}%` }} />
+                <div style={{ width: `${progressPct}%
+.bb-fx-build-stamp{position:fixed;left:10px;top:10px;z-index:20000;background:rgba(255,0,0,.75);color:#fff;font:12px/1.2 system-ui;padding:6px 10px;border-radius:10px;pointer-events:none}
+` }} />
               </div>
 
               <div className="scrub-row">
