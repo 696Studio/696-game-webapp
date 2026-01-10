@@ -11,9 +11,9 @@ export type FxEvent =
       targetId: string;
     };
 
-const DURATION = 360; // туда
-const RETURN_DURATION = 220; // обратно
-const RETRY_FRAMES = 18;
+const DURATION = 360;
+const RETURN_DURATION = 220;
+const RETRY_FRAMES = 24;
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
@@ -29,7 +29,6 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
   const dx = bc.x - ac.x;
   const dy = bc.y - ac.y;
 
-  // ограничим движение, чтобы "касалась" цели, но не улетала
   const maxMove = Math.max(a.width, a.height) * 1.05;
   const len = Math.hypot(dx, dy) || 1;
   const k = clamp(maxMove / len, 0.45, 0.95);
@@ -48,53 +47,86 @@ function safeEscape(v: string) {
   }
 }
 
-/**
- * В DOM 2 узла с одинаковым data-unit-id (.bb-slot и .bb-card).
- * querySelector может вернуть не то. Берём ВСЕ и выбираем .bb-slot.
- */
-function getBestUnitRootById(unitId: string) {
-  const list = Array.from(document.querySelectorAll<HTMLElement>(`[data-unit-id="${safeEscape(String(unitId))}"]`));
+function getElsByUnitId(unitId: string) {
+  return Array.from(document.querySelectorAll<HTMLElement>(`[data-unit-id="${safeEscape(String(unitId))}"]`));
+}
+
+function pickSlotOrCard(unitId: string) {
+  const list = getElsByUnitId(unitId);
   if (!list.length) return null;
 
   const slot = list.find((el) => el.classList.contains('bb-slot'));
   if (slot) return slot;
 
+  const card = list.find((el) => el.classList.contains('bb-card'));
+  if (card) return card;
+
   for (const el of list) {
     const up = el.closest('.bb-slot') as HTMLElement | null;
     if (up) return up;
   }
-
   return list[0];
 }
 
-function findMotionLayer(root: HTMLElement): HTMLElement | null {
-  const slot = root.classList.contains('bb-slot') ? root : (root.closest('.bb-slot') as HTMLElement | null);
-  if (slot) return slot.querySelector<HTMLElement>('.bb-motion-layer') || null;
-  return root.querySelector<HTMLElement>('.bb-motion-layer') || null;
-}
-
-function findCardEl(root: HTMLElement): HTMLElement | null {
+function findCard(root: HTMLElement) {
   if (root.classList.contains('bb-card')) return root;
-  return root.querySelector<HTMLElement>('.bb-card') || null;
+  return root.querySelector<HTMLElement>('.bb-card') || root;
 }
 
-type ActiveState = {
+/**
+ * FINAL HACK:
+ * Sometimes the visually top layer is NOT the DOM node we are animating.
+ * So we select the ACTUAL TOPMOST element under the attacker card center using elementFromPoint,
+ * then walk up to a reasonable container (bb-card / bb-slot / data-unit-id) and animate THAT.
+ */
+function findTopVisibleForAttack(attackerCard: HTMLElement, attackerId: string): HTMLElement {
+  const r = attackerCard.getBoundingClientRect();
+  const c = rectCenter(r);
+
+  const el = document.elementFromPoint(c.x, c.y) as HTMLElement | null;
+  if (!el) return attackerCard;
+
+  const slot = attackerCard.closest('.bb-slot') as HTMLElement | null;
+
+  // Helper: is candidate inside same slot (ideal)
+  const inSameSlot = (cand: HTMLElement) => {
+    if (!slot) return false;
+    return slot.contains(cand);
+  };
+
+  // Walk up from elementFromPoint to find best candidate
+  let cur: HTMLElement | null = el;
+  for (let i = 0; i < 14 && cur; i++) {
+    if (cur.getAttribute('data-unit-id') === attackerId) return cur;
+    if (cur.classList.contains('bb-card')) return cur;
+    if (cur.classList.contains('bb-slot')) return cur;
+    if (inSameSlot(cur) && cur.className && cur.className.toString().includes('bb-')) return cur;
+    cur = cur.parentElement;
+  }
+
+  // fallback: if point element is inside same slot, animate it (top layer)
+  if (slot && el && slot.contains(el)) return el;
+
+  return attackerCard;
+}
+
+type Active = {
   el: HTMLElement;
-  restoreTransform: string;
-  restoreTransition: string;
-  restoreWillChange: string;
-  restoreZ: string;
+  transform: string;
+  transition: string;
+  willChange: string;
+  z: string;
   t1: number | null;
   t2: number | null;
 };
 
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
-  const seenIdsRef = useRef<Set<string>>(new Set());
-  const activeRef = useRef<WeakMap<HTMLElement, ActiveState>>(new WeakMap());
+  const seen = useRef<Set<string>>(new Set());
+  const active = useRef<WeakMap<HTMLElement, Active>>(new WeakMap());
 
   const [mounted, setMounted] = useState(false);
-  const [hud, setHud] = useState<string>('');
-  const [cnt, setCnt] = useState<number>(0);
+  const [hud, setHud] = useState('');
+  const [cnt, setCnt] = useState(0);
 
   const debug = useMemo(() => {
     try {
@@ -111,11 +143,10 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
 
     const rafs: number[] = [];
     const timers: any[] = [];
-
     if (debug) setCnt((events || []).length);
 
     const stop = (el: HTMLElement) => {
-      const st = activeRef.current.get(el);
+      const st = active.current.get(el);
       if (!st) return;
 
       try {
@@ -124,46 +155,41 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       } catch {}
 
       try {
-        el.style.transform = st.restoreTransform;
-        el.style.transition = st.restoreTransition;
-        el.style.willChange = st.restoreWillChange;
-        el.style.zIndex = st.restoreZ;
+        el.style.transform = st.transform;
+        el.style.transition = st.transition;
+        el.style.willChange = st.willChange;
+        el.style.zIndex = st.z;
       } catch {}
 
-      activeRef.current.delete(el);
+      active.current.delete(el);
     };
 
     const kick = (el: HTMLElement, dx: number, dy: number) => {
-      if (activeRef.current.has(el)) return;
+      if (active.current.has(el)) return;
 
-      const st: ActiveState = {
+      const st: Active = {
         el,
-        restoreTransform: el.style.transform || '',
-        restoreTransition: el.style.transition || '',
-        restoreWillChange: el.style.willChange || '',
-        restoreZ: el.style.zIndex || '',
+        transform: el.style.transform || '',
+        transition: el.style.transition || '',
+        willChange: el.style.willChange || '',
+        z: el.style.zIndex || '',
         t1: null,
         t2: null,
       };
+      active.current.set(el, st);
 
-      activeRef.current.set(el, st);
-
-      // ВАЖНО: никакого re-parent, только inline style.
       el.style.willChange = 'transform';
-      el.style.zIndex = '60';
+      el.style.zIndex = '80';
 
-      // 1) reset transition, force reflow
       el.style.transition = 'none';
       el.style.transform = 'translate3d(0px, 0px, 0px)';
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       el.offsetHeight;
 
-      // 2) fly to target
       el.style.transition = `transform ${DURATION}ms cubic-bezier(.18,.9,.22,1)`;
       el.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
 
       st.t1 = window.setTimeout(() => {
-        // 3) return back
         el.style.transition = `transform ${RETURN_DURATION}ms cubic-bezier(.2,.8,.2,1)`;
         el.style.transform = 'translate3d(0px, 0px, 0px)';
 
@@ -172,17 +198,12 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     };
 
     const tryOnce = (attackerId: string, targetId: string) => {
-      const aRoot = getBestUnitRootById(attackerId);
-      const tRoot = getBestUnitRootById(targetId);
+      const aRoot = pickSlotOrCard(attackerId);
+      const tRoot = pickSlotOrCard(targetId);
       if (!aRoot || !tRoot) return false;
 
-      const motion = findMotionLayer(aRoot);
-      const aCard = findCardEl(aRoot);
-      const tCard = findCardEl(tRoot);
-
-      // если motion-layer почему-то нет — двигаем bb-card напрямую (последний шанс)
-      const moveEl = motion || aCard;
-      if (!moveEl || !aCard || !tCard) return false;
+      const aCard = findCard(aRoot);
+      const tCard = findCard(tRoot);
 
       const ar = aCard.getBoundingClientRect();
       const tr = tCard.getBoundingClientRect();
@@ -190,22 +211,12 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
 
       const { dx, dy } = computeTouchDelta(ar, tr);
 
-      if (debug) {
-        setHud(
-          `FX: OK\nroot=${aRoot.classList.contains('bb-slot') ? 'bb-slot' : aRoot.tagName}\nmove=${motion ? 'motion-layer' : 'bb-card'}\ndx=${Math.round(
-            dx
-          )} dy=${Math.round(dy)}`
-        );
-        timers.push(window.setTimeout(() => setHud(''), 900));
+      const moveEl = findTopVisibleForAttack(aCard, attackerId);
 
-        aCard.classList.add('bb-fx-debug-outline-attacker');
-        tCard.classList.add('bb-fx-debug-outline-target');
-        timers.push(
-          window.setTimeout(() => {
-            aCard.classList.remove('bb-fx-debug-outline-attacker');
-            tCard.classList.remove('bb-fx-debug-outline-target');
-          }, 450)
-        );
+      if (debug) {
+        const tag = moveEl === aCard ? 'bb-card' : moveEl.classList.contains('bb-slot') ? 'bb-slot' : moveEl.tagName;
+        setHud(`FX: OK\nmove=elementFromPoint(${tag})\ndx=${Math.round(dx)} dy=${Math.round(dy)}`);
+        timers.push(window.setTimeout(() => setHud(''), 900));
       }
 
       kick(moveEl, dx, dy);
@@ -219,9 +230,8 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
         const ok = tryOnce(attackerId, targetId);
         if (ok) return;
 
-        if (frame < RETRY_FRAMES) {
-          rafs.push(requestAnimationFrame(tick));
-        } else if (debug) {
+        if (frame < RETRY_FRAMES) rafs.push(requestAnimationFrame(tick));
+        else if (debug) {
           setHud(`FX: failed (DOM/rect)\nattacker=${attackerId}\ntarget=${targetId}`);
           timers.push(window.setTimeout(() => setHud(''), 1200));
         }
@@ -232,10 +242,10 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     for (const e of events || []) {
       if (e.type !== 'attack') continue;
       if (!e.id || !e.attackerId || !e.targetId) continue;
-      if (seenIdsRef.current.has(e.id)) continue;
+      if (seen.current.has(e.id)) continue;
 
-      seenIdsRef.current.add(e.id);
-      timers.push(window.setTimeout(() => seenIdsRef.current.delete(e.id), DURATION + RETURN_DURATION + 900));
+      seen.current.add(e.id);
+      timers.push(window.setTimeout(() => seen.current.delete(e.id), DURATION + RETURN_DURATION + 900));
 
       runWithRetry(String(e.attackerId), String(e.targetId));
     }
@@ -243,18 +253,16 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     return () => {
       for (const r of rafs) cancelAnimationFrame(r);
       for (const t of timers) clearTimeout(t);
-      // restore any active animations
       try {
-        activeRef.current = new WeakMap();
+        active.current = new WeakMap();
       } catch {}
     };
   }, [events, debug, mounted]);
 
   if (!mounted) return null;
 
-  const css = `
-    .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,.85) !important; }
-    .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,.85) !important; }
+  const css = debug
+    ? `
     .bb-fx-debug-hud {
       position: fixed;
       right: 10px;
@@ -269,8 +277,8 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       backdrop-filter: blur(6px);
       max-width: 70vw;
       white-space: pre-wrap;
-    }
-  `;
+    }`
+    : '';
 
   return createPortal(
     <>
