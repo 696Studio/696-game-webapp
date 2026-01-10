@@ -1,19 +1,23 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
- * BattleFxLayer — TOUCH → BACK (MOVE SLOT, NOT CARD)
+ * BattleFxLayer — ATTACK TOUCH→BACK (HARDENED + DEBUG)
  *
- * Почему раньше могло "не двигаться":
- * - реальная .bb-card уже анимируется по transform (flipIn / reveal), и transform-анимации конфликтуют.
+ * Если "ничего не двигается", причина почти всегда одна из:
+ * 1) events пустые (fxEvents не приходят)
+ * 2) data-unit-id не совпадает / стоит не на том узле
+ * 3) мы двигаем не тот контейнер (нет .bb-slot)
  *
- * Решение:
- * - двигаем ближайший контейнер слота: attackerRoot.closest('.bb-slot')
- *   У .bb-slot обычно нет transform-анимаций, поэтому движение 100% видно.
- *
- * Это НЕ меняет layout (transform не влияет на поток), и НЕ трогает координаты аватарок/HP/HUD.
+ * Этот файл:
+ * - двигает "лучший" контейнер вокруг карты (slot/wrapper/сам unit)
+ * - делает ретраи, чтобы дождаться DOM после ремоунта
+ * - имеет режим debug (?fxdebug=1) — показывает:
+ *    • счётчик событий
+ *    • подсветку найденных attacker/target
+ *    • всплывающий текст, если DOM не найден
  */
 
 export type FxEvent =
@@ -25,14 +29,14 @@ export type FxEvent =
     };
 
 const ATTACK_DURATION = 520;
-const RETRY_FRAMES = 12;
+const RETRY_FRAMES = 18;
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
 function getElByUnitId(unitId: string) {
-  return document.querySelector<HTMLElement>(`[data-unit-id="${CSS.escape(unitId)}"]`);
+  return document.querySelector<HTMLElement>(`[data-unit-id="${CSS.escape(String(unitId))}"]`);
 }
 
 function rectCenter(r: DOMRect) {
@@ -53,22 +57,96 @@ function computeTouchDelta(a: DOMRect, b: DOMRect) {
   return { dx: dx * safeK, dy: dy * safeK };
 }
 
+function hasClassLike(el: HTMLElement, needle: string) {
+  const c = (el.className || '').toString();
+  return c.includes(needle);
+}
+
+function findMoveEl(unitRoot: HTMLElement): HTMLElement {
+  // 1) нормальный путь
+  const slot = unitRoot.closest('.bb-slot') as HTMLElement | null;
+  if (slot) return slot;
+
+  // 2) любые "slot"-подобные контейнеры
+  const slotLike = unitRoot.closest('[class*="slot"],[class*="Slot"],[data-slot], [data-slot-id]') as HTMLElement | null;
+  if (slotLike) return slotLike;
+
+  // 3) поднимаемся вверх в пределах 5 уровней и берём первый контейнер,
+  // который похож на слот/карточный контейнер
+  let cur: HTMLElement | null = unitRoot;
+  for (let i = 0; i < 5 && cur; i++) {
+    if (hasClassLike(cur, 'bb-slot') || hasClassLike(cur, 'slot') || hasClassLike(cur, 'card') || hasClassLike(cur, 'bb-card')) {
+      return cur;
+    }
+    cur = cur.parentElement;
+  }
+
+  // 4) fallback: сам root
+  return unitRoot;
+}
+
+function startAttackMove(moveEl: HTMLElement, dx: number, dy: number) {
+  moveEl.style.setProperty('--fx-dx', `${dx}px`);
+  moveEl.style.setProperty('--fx-dy', `${dy}px`);
+
+  // перезапуск анимации
+  moveEl.classList.remove('bb-attack-move');
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  moveEl.offsetHeight;
+  moveEl.classList.add('bb-attack-move');
+
+  window.setTimeout(() => {
+    moveEl.classList.remove('bb-attack-move');
+    moveEl.style.removeProperty('--fx-dx');
+    moveEl.style.removeProperty('--fx-dy');
+  }, ATTACK_DURATION + 40);
+}
+
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const [debugMsg, setDebugMsg] = useState<string>('');
+  const [debugCount, setDebugCount] = useState<number>(0);
+
+  const debugEnabled = useMemo(() => {
+    try {
+      return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fxdebug') === '1';
+    } catch {
+      return false;
+    }
+  }, []);
 
   const css = useMemo(
     () => `
-      @keyframes bb_slot_lunge_touch_back {
+      @keyframes bb_attack_touch_back {
         0%   { transform: translate3d(0px, 0px, 0) scale(1); }
         55%  { transform: translate3d(var(--fx-dx), var(--fx-dy), 0) scale(1.03); }
         70%  { transform: translate3d(calc(var(--fx-dx) * 0.92), calc(var(--fx-dy) * 0.92), 0) scale(1.00); }
         100% { transform: translate3d(0px, 0px, 0) scale(1); }
       }
-
-      .bb-slot.bb-slot-attack {
-        animation: bb_slot_lunge_touch_back ${ATTACK_DURATION}ms cubic-bezier(.18,.9,.22,1) both !important;
+      .bb-attack-move {
+        animation: bb_attack_touch_back ${ATTACK_DURATION}ms cubic-bezier(.18,.9,.22,1) both !important;
         will-change: transform;
-        z-index: 60; /* поверх соседних слотов */
+        z-index: 60;
+      }
+
+      /* Debug helpers */
+      .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,.85) !important; }
+      .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,.85) !important; }
+
+      .bb-fx-debug-hud {
+        position: fixed;
+        right: 10px;
+        bottom: 10px;
+        z-index: 10000;
+        pointer-events: none;
+        font: 12px/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+        color: rgba(255,255,255,.92);
+        background: rgba(0,0,0,.55);
+        padding: 8px 10px;
+        border-radius: 10px;
+        backdrop-filter: blur(6px);
+        max-width: 60vw;
+        white-space: pre-wrap;
       }
     `,
     []
@@ -78,23 +156,52 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     const timers: any[] = [];
     const rafs: number[] = [];
 
-    const runWithRetry = (attackerId: string, targetId: string, fn: (a: HTMLElement, b: HTMLElement) => void) => {
+    if (debugEnabled) {
+      setDebugCount((events || []).length);
+    }
+
+    const tryOnce = (attackerId: string, targetId: string) => {
+      const attackerRoot = getElByUnitId(attackerId);
+      const targetRoot = getElByUnitId(targetId);
+
+      if (!attackerRoot || !targetRoot) return false;
+
+      const ar = attackerRoot.getBoundingClientRect();
+      const tr = targetRoot.getBoundingClientRect();
+      if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
+
+      const { dx, dy } = computeTouchDelta(ar, tr);
+      const moveEl = findMoveEl(attackerRoot);
+
+      if (debugEnabled) {
+        attackerRoot.classList.add('bb-fx-debug-outline-attacker');
+        targetRoot.classList.add('bb-fx-debug-outline-target');
+        timers.push(
+          window.setTimeout(() => {
+            attackerRoot.classList.remove('bb-fx-debug-outline-attacker');
+            targetRoot.classList.remove('bb-fx-debug-outline-target');
+          }, 500)
+        );
+      }
+
+      startAttackMove(moveEl, dx, dy);
+      return true;
+    };
+
+    const runWithRetry = (attackerId: string, targetId: string) => {
       let frame = 0;
       const tick = () => {
         frame += 1;
-        const attackerRoot = getElByUnitId(attackerId);
-        const targetRoot = getElByUnitId(targetId);
-
-        if (attackerRoot && targetRoot) {
-          fn(attackerRoot, targetRoot);
-          return;
-        }
+        const ok = tryOnce(attackerId, targetId);
+        if (ok) return;
 
         if (frame < RETRY_FRAMES) {
           rafs.push(requestAnimationFrame(tick));
+        } else if (debugEnabled) {
+          setDebugMsg(`FX: DOM not found for\nattackerId=${attackerId}\ntargetId=${targetId}\n(data-unit-id mismatch?)`);
+          timers.push(window.setTimeout(() => setDebugMsg(''), 1200));
         }
       };
-
       rafs.push(requestAnimationFrame(tick));
     };
 
@@ -104,46 +211,24 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       if (seenIdsRef.current.has(e.id)) continue;
 
       seenIdsRef.current.add(e.id);
+      timers.push(window.setTimeout(() => seenIdsRef.current.delete(e.id), ATTACK_DURATION + 800));
 
-      // освобождаем id позже, чтобы не залипало навсегда
-      timers.push(
-        window.setTimeout(() => {
-          seenIdsRef.current.delete(e.id);
-        }, ATTACK_DURATION + 600)
-      );
-
-      runWithRetry(e.attackerId, e.targetId, (attackerRoot, targetRoot) => {
-        const moveEl = (attackerRoot.closest('.bb-slot') as HTMLElement) || attackerRoot;
-        const targetEl = (targetRoot.closest('.bb-slot') as HTMLElement) || targetRoot;
-
-        const ar = attackerRoot.getBoundingClientRect();
-        const tr = targetRoot.getBoundingClientRect();
-        const { dx, dy } = computeTouchDelta(ar, tr);
-
-        moveEl.style.setProperty('--fx-dx', `${dx}px`);
-        moveEl.style.setProperty('--fx-dy', `${dy}px`);
-
-        moveEl.classList.remove('bb-slot-attack');
-        // forced reflow to restart animation
-        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-        moveEl.offsetHeight;
-        moveEl.classList.add('bb-slot-attack');
-
-        timers.push(
-          window.setTimeout(() => {
-            moveEl.classList.remove('bb-slot-attack');
-            moveEl.style.removeProperty('--fx-dx');
-            moveEl.style.removeProperty('--fx-dy');
-          }, ATTACK_DURATION + 40)
-        );
-      });
+      runWithRetry(String(e.attackerId), String(e.targetId));
     }
 
     return () => {
       for (const t of timers) clearTimeout(t);
       for (const r of rafs) cancelAnimationFrame(r);
     };
-  }, [events]);
+  }, [events, debugEnabled]);
 
-  return createPortal(<style>{css}</style>, document.body);
+  return createPortal(
+    <>
+      <style>{css}</style>
+      {debugEnabled ? (
+        <div className="bb-fx-debug-hud">{`FX events: ${debugCount}\n${debugMsg}`}</div>
+      ) : null}
+    </>,
+    document.body
+  );
 }
