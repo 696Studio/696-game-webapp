@@ -10,32 +10,27 @@ export type FxEvent =
       targetId: string;
     };
 
-const ATTACK_MS = 420; // matches bb_motion_lunge_to_target 420ms in battle.animations.css
-const TARGET_HIT_MS = 220;
-const RETRY_FRAMES = 28;
+const OUT_MS = 360;
+const BACK_MS = 180;
+const RETRY_FRAMES = 30;
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
-
 function rectCenter(r: DOMRect) {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
-
 function computeTouchDelta(attacker: DOMRect, target: DOMRect) {
   const ac = rectCenter(attacker);
   const tc = rectCenter(target);
   const dx = tc.x - ac.x;
   const dy = tc.y - ac.y;
 
-  // travel "almost" to the target, not full center-to-center
   const maxMove = Math.max(attacker.width, attacker.height) * 1.12;
   const len = Math.hypot(dx, dy) || 1;
   const k = clamp(maxMove / len, 0.55, 0.92);
-
   return { dx: dx * k, dy: dy * k };
 }
-
 function safeEscape(v: string) {
   try {
     const cssAny = CSS as unknown as { escape?: (s: string) => string };
@@ -47,7 +42,6 @@ function safeEscape(v: string) {
   }
 }
 
-/** Always prefer the real .bb-slot (wrapper), never the inner .bb-card. */
 function getSlotByUnitId(unitId: string): HTMLElement | null {
   const sel = `[data-unit-id="${safeEscape(String(unitId))}"]`;
   const list = Array.from(document.querySelectorAll<HTMLElement>(sel));
@@ -64,29 +58,21 @@ function getSlotByUnitId(unitId: string): HTMLElement | null {
 }
 
 function getMotionLayer(slot: HTMLElement): HTMLElement | null {
-  // prefer explicit marker
-  const byAttr = slot.querySelector<HTMLElement>('.bb-motion-layer[data-fx-motion="1"]');
-  return byAttr || slot.querySelector<HTMLElement>('.bb-motion-layer');
+  return (
+    slot.querySelector<HTMLElement>('.bb-motion-layer[data-fx-motion="1"]') ||
+    slot.querySelector<HTMLElement>('.bb-motion-layer')
+  );
 }
 
 function getCard(slot: HTMLElement): HTMLElement | null {
   return slot.querySelector<HTMLElement>('.bb-card');
 }
 
-type Active = {
-  attackerMotion: HTMLElement;
-  targetCard: HTMLElement;
-  prevAtkZ: string;
-  prevTgtZ: string;
-  t1?: number;
-};
-
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const [mounted, setMounted] = useState(false);
-  const seenIdsRef = useRef<Set<string>>(new Set());
-  const activeRef = useRef<Map<string, Active>>(new Map());
+  const seen = useRef<Set<string>>(new Set());
 
-  const debugEnabled = useMemo(() => {
+  const debug = useMemo(() => {
     try {
       return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fxdebug') === '1';
     } catch {
@@ -94,164 +80,189 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     }
   }, []);
 
-  const injectedCss = useMemo(
-    () => `
-.bb-fx-debug-hud{
-  position:fixed; right:10px; bottom:10px;
-  z-index:10000; pointer-events:none;
-  font:12px/1.2 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;
-  color:rgba(255,255,255,.92);
-  background:rgba(0,0,0,.55);
-  padding:8px 10px; border-radius:10px;
-  backdrop-filter: blur(6px);
-  max-width:70vw; white-space:pre-wrap;
-}
-.bb-fx-debug-outline-attacker{ outline:2px solid rgba(0,255,255,.85) !important; }
-.bb-fx-debug-outline-target{ outline:2px solid rgba(255,0,255,.85) !important; }
-`,
-    []
-  );
+  const [hud, setHud] = useState('');
+  const [cnt, setCnt] = useState(0);
 
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!mounted) return;
-    if (!events || events.length === 0) return;
+    if (!events) return;
+
+    if (debug) setCnt(events.length);
 
     const rafs: number[] = [];
     const timers: number[] = [];
 
-    const cleanupById = (id: string) => {
-      const st = activeRef.current.get(id);
-      if (!st) return;
+    const runOnce = (e: FxEvent) => {
+      const aSlot = getSlotByUnitId(e.attackerId);
+      const tSlot = getSlotByUnitId(e.targetId);
+      if (!aSlot || !tSlot) return false;
 
-      try {
-        st.attackerMotion.classList.remove('is-attacking');
-        st.attackerMotion.style.removeProperty('--atk-dx');
-        st.attackerMotion.style.removeProperty('--atk-dy');
-        st.attackerMotion.style.zIndex = st.prevAtkZ;
-      } catch {}
+      const aMotion = getMotionLayer(aSlot);
+      const tCard = getCard(tSlot);
+      if (!aMotion || !tCard) return false;
 
-      try {
-        st.targetCard.classList.remove('is-attack-target');
-        st.targetCard.style.zIndex = st.prevTgtZ;
-      } catch {}
+      const ar = aMotion.getBoundingClientRect();
+      const tr = tCard.getBoundingClientRect();
+      if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
 
-      if (debugEnabled) {
+      const { dx, dy } = computeTouchDelta(ar, tr);
+
+      // Bring above siblings without moving layout
+      const prevZ = aMotion.style.zIndex || '';
+      aMotion.style.zIndex = '60';
+      aMotion.style.willChange = 'transform';
+
+      const prevTgtZ = tCard.style.zIndex || '';
+      tCard.style.zIndex = '55';
+      tCard.classList.add('is-attack-target');
+
+      // Kill any lingering inline transform that could override animations
+      aMotion.style.transform = 'translate3d(0px,0px,0px)';
+
+      // Prefer WAAPI (most reliable, doesn't depend on your CSS being loaded)
+      const canWAAPI = typeof (aMotion as any).animate === 'function';
+      if (canWAAPI) {
         try {
-          st.attackerMotion.classList.remove('bb-fx-debug-outline-attacker');
-          st.targetCard.classList.remove('bb-fx-debug-outline-target');
-        } catch {}
+          const anim = (aMotion as any).animate(
+            [
+              { transform: 'translate3d(0px,0px,0px)' },
+              { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
+              { transform: 'translate3d(0px,0px,0px)' },
+            ],
+            {
+              duration: OUT_MS + BACK_MS,
+              easing: 'cubic-bezier(.18,.9,.22,1)',
+              fill: 'none',
+            }
+          );
+          anim.onfinish = () => {
+            try {
+              aMotion.style.zIndex = prevZ;
+              aMotion.style.willChange = '';
+              aMotion.style.transform = '';
+            } catch {}
+            try {
+              tCard.classList.remove('is-attack-target');
+              tCard.style.zIndex = prevTgtZ;
+            } catch {}
+          };
+        } catch {
+          // fall back below
+        }
+      } else {
+        // Fallback: transition
+        aMotion.style.transition = 'none';
+        aMotion.style.transform = 'translate3d(0px,0px,0px)';
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        aMotion.offsetHeight;
+
+        aMotion.style.transition = `transform ${OUT_MS}ms cubic-bezier(.18,.9,.22,1)`;
+        aMotion.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+
+        timers.push(
+          window.setTimeout(() => {
+            aMotion.style.transition = `transform ${BACK_MS}ms cubic-bezier(.2,.8,.2,1)`;
+            aMotion.style.transform = 'translate3d(0px,0px,0px)';
+
+            timers.push(
+              window.setTimeout(() => {
+                try {
+                  aMotion.style.transition = '';
+                  aMotion.style.transform = '';
+                  aMotion.style.zIndex = prevZ;
+                  aMotion.style.willChange = '';
+                } catch {}
+                try {
+                  tCard.classList.remove('is-attack-target');
+                  tCard.style.zIndex = prevTgtZ;
+                } catch {}
+              }, BACK_MS + 40)
+            );
+          }, OUT_MS + 10)
+        );
       }
 
-      if (st.t1) {
-        try {
-          window.clearTimeout(st.t1);
-        } catch {}
+      if (debug) {
+        setHud(
+          `OK WAAPI=${canWAAPI ? '1' : '0'}\natt=${e.attackerId} tgt=${e.targetId}\ndx=${Math.round(dx)} dy=${Math.round(dy)}`
+        );
+        timers.push(window.setTimeout(() => setHud(''), 900));
       }
 
-      activeRef.current.delete(id);
-    };
-
-    const runOnce = (attack: FxEvent) => {
-      const attackerSlot = getSlotByUnitId(attack.attackerId);
-      const targetSlot = getSlotByUnitId(attack.targetId);
-      if (!attackerSlot || !targetSlot) return false;
-
-      const attackerMotion = getMotionLayer(attackerSlot);
-      const targetCard = getCard(targetSlot);
-      if (!attackerMotion || !targetCard) return false;
-
-      const aRect = attackerMotion.getBoundingClientRect();
-      const tRect = targetCard.getBoundingClientRect();
-      if (!aRect.width || !aRect.height || !tRect.width || !tRect.height) return false;
-
-      // stop previous with same id if any
-      cleanupById(attack.id);
-
-      const { dx, dy } = computeTouchDelta(aRect, tRect);
-
-      // Save previous z-index (style only — doesn't touch layout positions)
-      const prevAtkZ = attackerMotion.style.zIndex || '';
-      const prevTgtZ = targetCard.style.zIndex || '';
-
-      // IMPORTANT:
-      // We rely on CSS animation .bb-motion-layer.is-attacking using --atk-dx/--atk-dy.
-      // Do NOT set inline transform here, or it may override the animation.
-      attackerMotion.style.setProperty('--atk-dx', `${dx}px`);
-      attackerMotion.style.setProperty('--atk-dy', `${dy}px`);
-      attackerMotion.style.zIndex = '60';
-
-      targetCard.style.zIndex = '55';
-
-      // Force animation restart reliably
-      attackerMotion.classList.remove('is-attacking');
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      attackerMotion.offsetHeight;
-      attackerMotion.classList.add('is-attacking');
-
-      // Target hit feedback uses existing CSS class .bb-card.is-attack-target
-      targetCard.classList.remove('is-attack-target');
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      targetCard.offsetHeight;
-      targetCard.classList.add('is-attack-target');
-
-      if (debugEnabled) {
-        attackerMotion.classList.add('bb-fx-debug-outline-attacker');
-        targetCard.classList.add('bb-fx-debug-outline-target');
-      }
-
-      const st: Active = { attackerMotion, targetCard, prevAtkZ, prevTgtZ };
-      st.t1 = window.setTimeout(() => cleanupById(attack.id), Math.max(ATTACK_MS, TARGET_HIT_MS) + 90);
-      activeRef.current.set(attack.id, st);
-      timers.push(st.t1);
+      // Clear target feedback
+      timers.push(
+        window.setTimeout(() => {
+          try {
+            tCard.classList.remove('is-attack-target');
+            tCard.style.zIndex = prevTgtZ;
+          } catch {}
+        }, OUT_MS + BACK_MS + 40)
+      );
 
       return true;
     };
 
-    const runWithRetry = (attack: FxEvent) => {
+    const runWithRetry = (e: FxEvent) => {
       let tries = 0;
       const tick = () => {
         tries += 1;
-        const ok = runOnce(attack);
+        const ok = runOnce(e);
         if (ok) return;
-        if (tries < RETRY_FRAMES) rafs.push(window.requestAnimationFrame(tick));
+        if (tries < RETRY_FRAMES) rafs.push(requestAnimationFrame(tick));
+        else if (debug) {
+          setHud(`FAILED\natt=${e.attackerId}\ntgt=${e.targetId}`);
+          timers.push(window.setTimeout(() => setHud(''), 1100));
+        }
       };
-      rafs.push(window.requestAnimationFrame(tick));
+      rafs.push(requestAnimationFrame(tick));
     };
 
-    const pending = (events || []).filter((e) => e && e.type === 'attack' && e.id && !seenIdsRef.current.has(e.id));
-    for (const e of pending) {
-      seenIdsRef.current.add(e.id);
-      // free seen id later (avoid unbounded set)
-      timers.push(window.setTimeout(() => seenIdsRef.current.delete(e.id), 4000));
+    for (const e of events) {
+      if (!e || e.type !== 'attack') continue;
+      if (!e.id || !e.attackerId || !e.targetId) continue;
+      if (seen.current.has(e.id)) continue;
+      seen.current.add(e.id);
+      timers.push(window.setTimeout(() => seen.current.delete(e.id), 4000));
       runWithRetry(e);
     }
 
     return () => {
       for (const r of rafs) {
         try {
-          window.cancelAnimationFrame(r);
+          cancelAnimationFrame(r);
         } catch {}
       }
       for (const t of timers) {
         try {
-          window.clearTimeout(t);
+          clearTimeout(t);
         } catch {}
       }
-      // cleanup active
-      for (const id of Array.from(activeRef.current.keys())) cleanupById(id);
     };
-  }, [mounted, events, debugEnabled]);
+  }, [mounted, events, debug]);
 
   if (!mounted) return null;
 
+  if (!debug) return null;
+
   return (
     <>
-      <style>{injectedCss}</style>
-      {debugEnabled ? (
-        <div className="bb-fx-debug-hud">{`fxEvents: ${events?.length ?? 0}\nseen: ${seenIdsRef.current.size}`}</div>
-      ) : null}
+      <style>{`
+        .bb-fx-debug-hud{
+          position:fixed; right:10px; bottom:10px;
+          z-index:10000; pointer-events:none;
+          font:12px/1.2 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;
+          color:rgba(255,255,255,.92);
+          background:rgba(0,0,0,.55);
+          padding:8px 10px; border-radius:10px;
+          backdrop-filter: blur(6px);
+          max-width:70vw; white-space:pre-wrap;
+        }
+        /* tiny target feedback if your CSS doesn't include it */
+        .bb-card.is-attack-target{ filter: brightness(1.08); }
+      `}</style>
+      <div className="bb-fx-debug-hud">{`fxEvents: ${cnt}\n${hud}`}</div>
     </>
   );
 }
