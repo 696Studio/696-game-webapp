@@ -58,25 +58,79 @@ function hasClassLike(el: HTMLElement, needle: string) {
  * We DO NOT move CardArt internals.
  * We move the "best" outer container around the unit.
  */
+function resolveVisualEl(unitRoot: HTMLElement): HTMLElement {
+  // If the root itself is a card box, use it.
+  if (unitRoot.classList.contains('bb-card')) return unitRoot;
+
+  // If root is a slot rendered as `display: contents`, transforms won't apply.
+  try {
+    const d = window.getComputedStyle(unitRoot).display;
+    if (d === 'contents') {
+      const card = unitRoot.querySelector<HTMLElement>('.bb-card');
+      if (card) return card;
+    }
+  } catch {}
+
+  // Prefer the actual card element if it exists.
+  const card = unitRoot.querySelector<HTMLElement>('.bb-card');
+  if (card) return card;
+
+  return unitRoot;
+}
+
+/**
+ * We DO NOT move CardArt internals.
+ * We move the "best" outer container around the unit.
+ *
+ * Important: if `.bb-slot` is `display: contents`, it cannot be transformed,
+ * so we fall back to the `.bb-card` box.
+ */
 function findMoveEl(unitRoot: HTMLElement): HTMLElement {
-  // 1) Best: slot wrapper
+  // If unitRoot is already the card, move it.
+  if (unitRoot.classList.contains('bb-card')) return unitRoot;
+
+  // 1) Best: slot wrapper (unless it's display:contents)
   const slot = unitRoot.closest('.bb-slot') as HTMLElement | null;
-  if (slot) return slot;
+  if (slot) {
+    try {
+      const d = window.getComputedStyle(slot).display;
+      if (d !== 'contents') return slot;
+    } catch {
+      return slot;
+    }
+    // display:contents -> move the visual card instead
+    const cardInSlot = slot.querySelector<HTMLElement>('.bb-card');
+    if (cardInSlot) return cardInSlot;
+  }
 
   // 2) Any slot-like wrapper
   const slotLike = unitRoot.closest('[class*="slot"],[class*="Slot"],[data-slot],[data-slot-id]') as HTMLElement | null;
-  if (slotLike) return slotLike;
+  if (slotLike) {
+    try {
+      const d = window.getComputedStyle(slotLike).display;
+      if (d !== 'contents') return slotLike;
+    } catch {
+      return slotLike;
+    }
+    const card = slotLike.querySelector<HTMLElement>('.bb-card');
+    if (card) return card;
+  }
 
   // 3) Walk up a few levels and pick a container that looks like a slot/card block
   let cur: HTMLElement | null = unitRoot;
   for (let i = 0; i < 6 && cur; i++) {
-    if (hasClassLike(cur, 'bb-slot') || hasClassLike(cur, 'slot') || hasClassLike(cur, 'card') || hasClassLike(cur, 'bb-card')) {
-      return cur;
+    if (hasClassLike(cur, 'bb-slot') || hasClassLike(cur, 'slot') || hasClassLike(cur, 'bb-card') || hasClassLike(cur, 'card')) {
+      try {
+        const d = window.getComputedStyle(cur).display;
+        if (d !== 'contents') return cur;
+      } catch {
+        return cur;
+      }
     }
     cur = cur.parentElement;
   }
 
-  return unitRoot;
+  return resolveVisualEl(unitRoot);
 }
 
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
@@ -203,8 +257,11 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
 
       if (!attackerRoot || !targetRoot) return false;
 
-      const ar = attackerRoot.getBoundingClientRect();
-      const tr = targetRoot.getBoundingClientRect();
+      const attackerVisual = resolveVisualEl(attackerRoot);
+      const targetVisual = resolveVisualEl(targetRoot);
+
+      const ar = attackerVisual.getBoundingClientRect();
+      const tr = targetVisual.getBoundingClientRect();
       if (!ar.width || !ar.height || !tr.width || !tr.height) return false;
 
       const { dx, dy } = computeTouchDelta(ar, tr);
@@ -212,12 +269,12 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       const moveEl = findMoveEl(attackerRoot);
 
       if (debugEnabled) {
-        attackerRoot.classList.add('bb-fx-debug-outline-attacker');
-        targetRoot.classList.add('bb-fx-debug-outline-target');
+        attackerVisual.classList.add('bb-fx-debug-outline-attacker');
+        targetVisual.classList.add('bb-fx-debug-outline-target');
         timers.push(
           window.setTimeout(() => {
-            attackerRoot.classList.remove('bb-fx-debug-outline-attacker');
-            targetRoot.classList.remove('bb-fx-debug-outline-target');
+            attackerVisual.classList.remove('bb-fx-debug-outline-attacker');
+            targetVisual.classList.remove('bb-fx-debug-outline-target');
           }, 500)
         );
       }

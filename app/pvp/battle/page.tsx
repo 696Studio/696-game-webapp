@@ -1738,6 +1738,7 @@ const hpPct = useMemo(() => {
         ref={(el) => {
           if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
         }}
+        data-unit-id={renderUnit?.instanceId}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
