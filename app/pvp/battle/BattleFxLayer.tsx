@@ -86,19 +86,26 @@ function isDisplayContents(el: HTMLElement) {
   }
 }
 
-type LiftState = {
-  placeholder: HTMLDivElement;
-  parent: Node;
-  nextSibling: Node | null;
-  originalStyle: Partial<CSSStyleDeclaration>;
-  originalClass: string;
+/**
+ * ВАЖНО:
+ * Не перемещаем DOM-узлы в другие parents (никаких appendChild/removeChild оригинала),
+ * иначе React может крашиться (NotFoundError removeChild) при reconciliation/unmount.
+ * Двигаем ОРИГИНАЛ "на месте" — через WAAPI, временно отключая CSS-анимации/transition на transform.
+ */
+type ActiveAnimState = {
+  anim: Animation;
+  restore: {
+    transform: string;
+    transition: string;
+    animation: string;
+    willChange: string;
+  };
 };
 
 export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
 
   const [mounted, setMounted] = useState(false);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
 
   const [debugMsg, setDebugMsg] = useState<string>('');
   const [debugCount, setDebugCount] = useState<number>(0);
@@ -111,21 +118,10 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     }
   }, []);
 
-  // чтобы не "таскать" один и тот же элемент параллельно
-  const activeLiftRef = useRef<WeakMap<HTMLElement, LiftState>>(new WeakMap());
+  const activeAnimRef = useRef<WeakMap<HTMLElement, ActiveAnimState>>(new WeakMap());
 
   const css = useMemo(
     () => `
-      .bb-fx-overlay-root {
-        position: fixed;
-        left: 0;
-        top: 0;
-        width: 100vw;
-        height: 100vh;
-        pointer-events: none;
-        z-index: 9999;
-      }
-
       /* Debug helpers */
       .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,.85) !important; }
       .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,.85) !important; }
@@ -161,124 +157,61 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       setDebugCount((events || []).length);
     }
 
-    const overlayRoot = overlayRef.current;
-    if (!overlayRoot) return;
-
-    const cleanupLift = (moveEl: HTMLElement) => {
-      const st = activeLiftRef.current.get(moveEl);
+    const stopActive = (el: HTMLElement) => {
+      const st = activeAnimRef.current.get(el);
       if (!st) return;
 
       try {
-        // вернуть элемент в DOM
-        if (st.nextSibling && st.nextSibling.parentNode === st.parent) {
-          st.parent.insertBefore(moveEl, st.nextSibling);
-        } else {
-          st.parent.appendChild(moveEl);
-        }
-      } catch {
-        // если не удалось, просто попробуем вставить рядом с placeholder
-        try {
-          st.placeholder.parentNode?.insertBefore(moveEl, st.placeholder);
-        } catch {
-          // ignore
-        }
-      }
-
-      try {
-        st.placeholder.remove();
-      } catch {
-        // ignore
-      }
-
-      // восстановить стиль
-      try {
-        moveEl.style.position = st.originalStyle.position || '';
-        moveEl.style.left = st.originalStyle.left || '';
-        moveEl.style.top = st.originalStyle.top || '';
-        moveEl.style.width = st.originalStyle.width || '';
-        moveEl.style.height = st.originalStyle.height || '';
-        moveEl.style.margin = st.originalStyle.margin || '';
-        moveEl.style.transform = st.originalStyle.transform || '';
-        moveEl.style.zIndex = st.originalStyle.zIndex || '';
-        moveEl.style.pointerEvents = st.originalStyle.pointerEvents || '';
-        moveEl.style.willChange = st.originalStyle.willChange || '';
+        st.anim.cancel();
       } catch {
         // ignore
       }
 
       try {
-        moveEl.className = st.originalClass;
+        el.style.transform = st.restore.transform;
+        el.style.transition = st.restore.transition;
+        el.style.animation = st.restore.animation;
+        el.style.willChange = st.restore.willChange;
       } catch {
         // ignore
       }
 
-      activeLiftRef.current.delete(moveEl);
+      activeAnimRef.current.delete(el);
     };
 
-    const startLiftAttack = (moveEl: HTMLElement, dx: number, dy: number) => {
-      // уже "таскаем" — не дёргаем снова
-      if (activeLiftRef.current.has(moveEl)) return;
+    const startInPlaceAttack = (moveEl: HTMLElement, dx: number, dy: number) => {
+      // already animating -> ignore
+      if (activeAnimRef.current.has(moveEl)) return;
 
-      const rect = moveEl.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
+      // snapshot current computed transform to preserve current visual state
+      const cs = window.getComputedStyle(moveEl);
+      const baseComputedTransform = cs.transform && cs.transform !== 'none' ? cs.transform : '';
 
-      // display:contents контейнеры не двигаются — но мы двигаем visual card.
-      // если вдруг сюда попал contents, пробуем взять ребёнка.
-      if (isDisplayContents(moveEl)) {
-        const child = moveEl.querySelector<HTMLElement>(':scope > *');
-        if (child) moveEl = child;
-      }
-
-      const parent = moveEl.parentNode;
-      if (!parent) return;
-
-      const placeholder = document.createElement('div');
-      placeholder.style.width = `${rect.width}px`;
-      placeholder.style.height = `${rect.height}px`;
-      placeholder.style.visibility = 'hidden';
-      placeholder.style.pointerEvents = 'none';
-
-      const nextSibling = moveEl.nextSibling;
-      parent.insertBefore(placeholder, nextSibling);
-
-      const originalClass = moveEl.className;
-      const originalStyle: Partial<CSSStyleDeclaration> = {
-        position: moveEl.style.position,
-        left: moveEl.style.left,
-        top: moveEl.style.top,
-        width: moveEl.style.width,
-        height: moveEl.style.height,
-        margin: moveEl.style.margin,
-        transform: moveEl.style.transform,
-        zIndex: moveEl.style.zIndex,
-        pointerEvents: moveEl.style.pointerEvents,
-        willChange: moveEl.style.willChange,
+      const restore = {
+        transform: moveEl.style.transform || '',
+        transition: moveEl.style.transition || '',
+        animation: moveEl.style.animation || '',
+        willChange: moveEl.style.willChange || '',
       };
 
-      activeLiftRef.current.set(moveEl, { placeholder, parent, nextSibling, originalStyle, originalClass });
-
-      // переносим ОРИГИНАЛ в overlay
-      overlayRoot.appendChild(moveEl);
-
-      // фиксируем позицию (в пикселях) на экране
-      moveEl.style.position = 'fixed';
-      moveEl.style.left = `${rect.left}px`;
-      moveEl.style.top = `${rect.top}px`;
-      moveEl.style.width = `${rect.width}px`;
-      moveEl.style.height = `${rect.height}px`;
-      moveEl.style.margin = '0';
-      moveEl.style.zIndex = '10000';
-      moveEl.style.pointerEvents = 'none';
+      // temporarily disable competing animations/transitions on transform
+      moveEl.style.transition = 'none';
+      moveEl.style.animation = 'none';
       moveEl.style.willChange = 'transform';
 
-      // WAAPI анимация — не зависит от CSS keyframes
+      // We override transform during the hit, but we include the current computed base.
+      // This makes the element actually move even if base transform exists.
+      const t0 = baseComputedTransform ? baseComputedTransform : 'none';
+      const t1 = baseComputedTransform
+        ? `${baseComputedTransform} translate3d(${dx}px, ${dy}px, 0) scale(1.03)`
+        : `translate3d(${dx}px, ${dy}px, 0) scale(1.03)`;
+      const t2 = baseComputedTransform
+        ? `${baseComputedTransform} translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)`
+        : `translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)`;
+      const t3 = baseComputedTransform ? baseComputedTransform : 'none';
+
       const anim = moveEl.animate(
-        [
-          { transform: 'translate3d(0px, 0px, 0) scale(1)' },
-          { transform: `translate3d(${dx}px, ${dy}px, 0) scale(1.03)` },
-          { transform: `translate3d(${dx * 0.92}px, ${dy * 0.92}px, 0) scale(1.0)` },
-          { transform: 'translate3d(0px, 0px, 0) scale(1)' },
-        ],
+        [{ transform: t0 }, { transform: t1 }, { transform: t2 }, { transform: t3 }],
         {
           duration: ATTACK_DURATION,
           easing: 'cubic-bezier(.18,.9,.22,1)',
@@ -286,38 +219,28 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
         }
       );
 
-      const finish = () => {
-        try {
-          anim.cancel();
-        } catch {
-          // ignore
-        }
-        cleanupLift(moveEl);
-      };
-
+      const finish = () => stopActive(moveEl);
       anim.onfinish = finish;
       anim.oncancel = finish;
 
-      // страховка: если вдруг onfinish не сработал
-      timers.push(window.setTimeout(() => cleanupLift(moveEl), ATTACK_DURATION + 80));
+      activeAnimRef.current.set(moveEl, { anim, restore });
+      timers.push(window.setTimeout(() => stopActive(moveEl), ATTACK_DURATION + 120));
     };
 
-        const tryOnce = (attackerId: string, targetId: string) => {
+    const tryOnce = (attackerId: string, targetId: string) => {
       const attackerRoot = getElByUnitId(attackerId);
       const targetRoot = getElByUnitId(targetId);
       if (!attackerRoot || !targetRoot) return false;
 
-      // Нам нужно двигать "оригинал" целиком: предпочитаем внешний слот/контейнер,
-      // а не внутренности CardArt. Если слот "пустой" (display:contents/0 rect) — fallback на визуальную карту.
       const targetVisual = findVisualCardEl(targetRoot);
 
       const slot = attackerRoot.closest('.bb-slot') as HTMLElement | null;
       const attackerVisual = findVisualCardEl(attackerRoot);
 
+      // prefer moving slot (whole unit), but only if it has a real box
       let moveEl: HTMLElement = slot || attackerRoot;
-
-      // Вычисляем прямоугольник от того, что реально будет двигаться
       let ar = moveEl.getBoundingClientRect();
+
       if (!ar.width || !ar.height || isDisplayContents(moveEl)) {
         moveEl = attackerVisual;
         ar = moveEl.getBoundingClientRect();
@@ -339,7 +262,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
         );
       }
 
-      startLiftAttack(moveEl, dx, dy);
+      startInPlaceAttack(moveEl, dx, dy);
       return true;
     };
 
@@ -375,9 +298,9 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       for (const t of timers) clearTimeout(t);
       for (const r of rafs) cancelAnimationFrame(r);
 
-      // если размонтировали во время lift — постараемся вернуть элементы
+      // cancel any remaining animations we started
       try {
-        activeLiftRef.current = new WeakMap();
+        activeAnimRef.current = new WeakMap();
       } catch {
         // ignore
       }
@@ -389,8 +312,7 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
   return createPortal(
     <>
       <style>{css}</style>
-      <div ref={overlayRef} className="bb-fx-overlay-root" />
-      {debugEnabled ? <div className="bb-fx-debug-hud">{`FX events: ${(events || []).length}\n${debugMsg}`}</div> : null}
+      {debugEnabled ? <div className="bb-fx-debug-hud">{`FX events: ${debugCount}\n${debugMsg}`}</div> : null}
     </>,
     document.body
   );
