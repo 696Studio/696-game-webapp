@@ -297,8 +297,8 @@ function resolveCardArtUrl(raw?: string | null) {
 const BOARD_IMG_W = 1290;
 const BOARD_IMG_H = 2796;
 
-const DEBUG_ARENA = true; // debug overlay for arena sizing
-const DEBUG_GRID = true; // mirrored A/B measurement grid (dev only)
+const DEBUG_ARENA = false; // debug overlay for arena sizing
+const DEBUG_GRID = false; // mirrored A/B measurement grid (dev only)
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -1730,16 +1730,8 @@ const hpPct = useMemo(() => {
     if (!renderUnit) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
-        <div className="bb-motion-layer" data-fx-motion="1" style={{ willChange: "transform" }}>
-      <div className="bb-fx-anchor">
-        
-        {isDyingUi ? <div className="bb-death" /> : null}
-      </div>
-      <div
-        ref={(el) => {
-          if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
-        }}
-        data-unit-id={renderUnit?.instanceId}
+        <div className="bb-motion-layer" data-fx-motion="1" style={{ willChange: "transform" }} ref={(el) => { if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el; }}>
+<div
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
@@ -1838,6 +1830,7 @@ const hpPct = useMemo(() => {
             </div>
         </div>
       </div>
+        </div>
       {renderUnit && (
         <div className="bb-hud" aria-hidden="true">
           <span className="bb-hud-item">
@@ -1933,7 +1926,6 @@ const hpPct = useMemo(() => {
           }
         }
       `}</style>
-        </div>
       </div>
 
     );
@@ -2012,7 +2004,6 @@ const hpPct = useMemo(() => {
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
-      <BattleFxLayer events={fxEvents} />
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -3127,29 +3118,6 @@ const hpPct = useMemo(() => {
 }
 
 export default function BattlePage() {
-  // IMPORTANT: Fix React hydration crash (#418) in Telegram WebView.
-  // Even though this file is a Client Component, Next.js still pre-renders it on the server.
-  // Any client-only differences (viewport/theme, timers, DOM measurements, etc.) can cause
-  // hydration mismatch and crash. We make the battle page render only after mount.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
-    return (
-      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-        <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-sm font-semibold">Загрузка…</div>
-          <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
-          <div className="mt-4 ui-progress">
-            <div className="w-1/3 opacity-70 animate-pulse" />
-          </div>
-        </div>
-      </main>
-    );
-  }
-
   return (
     <Suspense
       fallback={
