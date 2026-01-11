@@ -81,20 +81,21 @@ type ActiveAnim = {
   prevZ: string;
 };
 
-export default function BattleFxLayer({ events, debug, debugAttack }: { events: FxEvent[]; debug?: boolean; debugAttack?: { attackerId?: string; targetId?: string; nonce?: number } }) {
+export default function BattleFxLayer({ events, debug, move }: { events: FxEvent[]; debug?: boolean; move?: boolean }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
   const activeRef = useRef<Map<HTMLElement, ActiveAnim>>(new Map());
   const [mounted, setMounted] = useState(false);
-  const [dbgGeom, setDbgGeom] = useState<null | {
-    a: { x: number; y: number };
-    t: { x: number; y: number };
-    touch: { x: number; y: number };
-    dx: number;
-    dy: number;
-    attackerId: string;
-    targetId: string;
-  }>(null);
-  const debugEnabled = !!debug;
+
+  const debugEnabled = useMemo(() => {
+    if (typeof debug === 'boolean') return debug;
+    try {
+      return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fxdebug') === '1';
+    } catch {
+      return false;
+    }
+  }, [debug]);
+  const moveEnabled = move !== undefined ? !!move : true;
+
 
   const injectedCss = useMemo(
     () => `
@@ -118,7 +119,6 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
 }
 .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,0.85) !important; }
 .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,0.85) !important; }
-.bb-fx-debug-svg { position: fixed; inset: 0; z-index: 9999; pointer-events: none; }
 `,
     []
   );
@@ -127,9 +127,7 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
 
   useEffect(() => {
     if (!mounted) return;
-    const manualNonce = debugAttack?.nonce ?? 0;
-    const manualOk = debugEnabled && manualNonce && debugAttack?.attackerId && debugAttack?.targetId;
-    if ((!events || events.length === 0) && !manualOk) return;
+    if (!events || events.length === 0) return;
 
     const timers: Array<number> = [];
     const rafs: Array<number> = [];
@@ -168,18 +166,20 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
       const aRect = motion.getBoundingClientRect();
       const tRect = targetCard.getBoundingClientRect();
       const { dx, dy } = computeTouchDelta(aRect, tRect);
-      if (debugEnabled) {
-        const ac = rectCenter(aRect);
-        const tc = rectCenter(tRect);
-        setDbgGeom({
-          a: ac,
-          t: tc,
-          touch: { x: ac.x + dx, y: ac.y + dy },
-          dx,
-          dy,
-          attackerId: String(attack.attackerId),
-          targetId: String(attack.targetId),
-        });
+
+      if (!moveEnabled) {
+        // movement disabled: still treat as handled (debug overlay can remain)
+        if (debugEnabled) {
+          motion.classList.add('bb-fx-debug-outline-attacker');
+          targetCard.classList.add('bb-fx-debug-outline-target');
+          timers.push(
+            window.setTimeout(() => {
+              motion.classList.remove('bb-fx-debug-outline-attacker');
+              targetCard.classList.remove('bb-fx-debug-outline-target');
+            }, 900)
+          );
+        }
+        return true;
       }
 
       // WAAPI: this bypasses "className overwritten by React" and any CSS import issues.
@@ -254,13 +254,7 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
     };
 
     // Process only new attack events, in order
-    const manualNonce2 = debugAttack?.nonce ?? 0;
-    const manualEvent: FxEvent | null =
-      debugEnabled && manualNonce2 && debugAttack?.attackerId && debugAttack?.targetId
-        ? { type: 'attack', id: `dbg-${manualNonce2}`, attackerId: String(debugAttack.attackerId), targetId: String(debugAttack.targetId) }
-        : null;
-    const merged = manualEvent ? [...(events || []), manualEvent] : (events || []);
-    const pending = merged.filter((e) => e && e.type === 'attack' && !seenIdsRef.current.has(e.id));
+    const pending = (events || []).filter((e) => e && e.type === 'attack' && !seenIdsRef.current.has(e.id));
 
     for (const e of pending) {
       seenIdsRef.current.add(e.id);
@@ -292,7 +286,7 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
       // stop everything
       for (const el of Array.from(activeRef.current.keys())) stop(el);
     };
-  }, [mounted, events, debugEnabled, debugAttack?.nonce, debugAttack?.attackerId, debugAttack?.targetId]);
+  }, [mounted, events, debugEnabled, moveEnabled]);
 
   if (!mounted) return null;
 
@@ -301,7 +295,7 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
       <style>{injectedCss}</style>
       {debugEnabled ? (
         <div className="bb-fx-debug-hud">
-          {`fxEvents: ${events?.length ?? 0}\nseen: ${seenIdsRef.current.size}\n` + (dbgGeom ? `attacker: ${dbgGeom.attackerId}\ntarget: ${dbgGeom.targetId}\ndx: ${Math.round(dbgGeom.dx)} dy: ${Math.round(dbgGeom.dy)}\n` : '')}
+          {`fxEvents: ${events?.length ?? 0}\nseen: ${seenIdsRef.current.size}\n`}
         </div>
       ) : null}
     </>
