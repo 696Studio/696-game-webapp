@@ -368,12 +368,36 @@ function BattleInner() {
 
   // Local toggle (does not affect layout): lets you enable debug overlay without URL params.
   const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
-
-  
-  // FX toggles (attack motion)
+  // FX debug (attack motion) — separate from layout debug. Safe to toggle.
   const [fxDebug, setFxDebug] = useState(false);
-  const [fxMove, setFxMove] = useState(false);
-// Debug UI is rendered directly in JSX (no portals/DOM mutations).
+  const [fxPickMode, setFxPickMode] = useState<null | 'attacker' | 'target'>(null);
+  const [fxAttackerId, setFxAttackerId] = useState<string>('');
+  const [fxTargetId, setFxTargetId] = useState<string>('');
+  const [fxNonce, setFxNonce] = useState<number>(0);
+
+  useEffect(() => {
+    if (!fxPickMode) return;
+    const onDown = (ev: PointerEvent) => {
+      const el = ev.target as HTMLElement | null;
+      if (!el) return;
+      const slot = (el.closest?.('.bb-slot') as HTMLElement | null) ?? null;
+      const unitId = slot?.getAttribute?.('data-unit-id') ?? '';
+      if (!unitId) return;
+
+      if (fxPickMode === 'attacker') setFxAttackerId(String(unitId));
+      if (fxPickMode === 'target') setFxTargetId(String(unitId));
+      setFxPickMode(null);
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    return () => window.removeEventListener('pointerdown', onDown, true);
+  }, [fxPickMode]);
+
+  const fireFxTest = () => setFxNonce((n) => n + 1);
+
+
+  // Debug UI is rendered directly in JSX (no portals/DOM mutations).
 const isArenaDebug = DEBUG_ARENA || uiDebug;
   const isGridDebug = DEBUG_GRID || uiDebug;
 
@@ -1803,40 +1827,6 @@ const hpPct = useMemo(() => {
         >
           DBG {uiDebug ? "ON" : "OFF"}
         </button>
-        <button
-          type="button"
-          onClick={() => setFxDebug((v) => !v)}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.22)",
-            background: fxDebug ? "rgba(0,200,255,0.22)" : "rgba(0,0,0,0.70)",
-            color: "white",
-            fontSize: 12,
-            fontWeight: 900,
-            letterSpacing: 0.3,
-            marginLeft: 8,
-          }}
-        >
-          DBG FX {fxDebug ? "ON" : "OFF"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setFxMove((v) => !v)}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.22)",
-            background: fxMove ? "rgba(255,255,0,0.18)" : "rgba(0,0,0,0.70)",
-            color: "white",
-            fontSize: 12,
-            fontWeight: 900,
-            letterSpacing: 0.3,
-            marginLeft: 8,
-          }}
-        >
-          FX MOVE {fxMove ? "ON" : "OFF"}
-        </button>
         <div
           style={{
             padding: "6px 8px",
@@ -1852,7 +1842,7 @@ const hpPct = useMemo(() => {
         </div>
       </div>
 
-      <BattleFxLayer events={fxEvents}  debug={fxDebug} move={fxMove} />
+      <BattleFxLayer events={fxEvents}  debug={fxDebug} debugAttack={{ attackerId: fxAttackerId, targetId: fxTargetId, nonce: fxNonce }} />
 
       {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
       {/* Debug UI overlay (no portal) */}
@@ -2268,7 +2258,7 @@ const hpPct = useMemo(() => {
         </div>
       </div>
 
-      <BattleFxLayer events={fxEvents} />
+      <BattleFxLayer events={fxEvents}  debug={fxDebug} debugAttack={{ attackerId: fxAttackerId, targetId: fxTargetId, nonce: fxNonce }} />
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -3407,7 +3397,98 @@ const hpPct = useMemo(() => {
 
               <div className="dbg-cross" style={{ left: debugCover.topX, top: debugCover.topY }} />
               <div className="dbg-cross" style={{ left: debugCover.botX, top: debugCover.botY }} />
-            </>
+            
+      {typeof document !== 'undefined'
+        ? createPortal(
+            <div style={{ position: 'fixed', right: 12, bottom: 92, zIndex: 2147483647, display: 'flex', gap: 8, pointerEvents: 'auto' as any }}>
+              <button
+                type="button"
+                onClick={() => setFxDebug((v) => !v)}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: fxDebug ? 'rgba(0,200,255,0.22)' : 'rgba(0,0,0,0.45)',
+                  color: 'rgba(255,255,255,0.92)',
+                  font: '600 12px/1 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial',
+                  letterSpacing: 0.4,
+                  cursor: 'pointer',
+                }}
+              >
+                {fxDebug ? 'DBG FX: ON' : 'DBG FX: OFF'}
+              </button>
+
+              {fxDebug ? (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.14)',
+                    background: 'rgba(0,0,0,0.45)',
+                    color: 'rgba(255,255,255,0.9)',
+                    font: '12px/1.25 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial',
+                    maxWidth: 320,
+                    backdropFilter: 'blur(6px)',
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setFxPickMode('attacker')}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: fxPickMode === 'attacker' ? 'rgba(0,200,255,0.22)' : 'rgba(255,255,255,0.06)',
+                        color: 'rgba(255,255,255,0.92)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Pick attacker
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFxPickMode('target')}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: fxPickMode === 'target' ? 'rgba(255,0,255,0.20)' : 'rgba(255,255,255,0.06)',
+                        color: 'rgba(255,255,255,0.92)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Pick target
+                    </button>
+                    <button
+                      type="button"
+                      onClick={fireFxTest}
+                      disabled={!fxAttackerId || !fxTargetId}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: !fxAttackerId || !fxTargetId ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,0,0.12)',
+                        color: 'rgba(255,255,255,0.92)',
+                        cursor: !fxAttackerId || !fxTargetId ? 'not-allowed' : 'pointer',
+                        opacity: !fxAttackerId || !fxTargetId ? 0.7 : 1,
+                      }}
+                    >
+                      Fire
+                    </button>
+                  </div>
+                  <div>
+                    <div>attackerId: <b>{fxAttackerId || '—'}</b></div>
+                    <div>targetId: <b>{fxTargetId || '—'}</b></div>
+                    {fxPickMode ? <div style={{ marginTop: 6, opacity: 0.9 }}>Tap a unit to pick: <b>{fxPickMode}</b></div> : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>,
+            document.body
+          )
+        : null}
+</>
           )}
           <svg className="atk-overlay" width="100%" height="100%">
             <defs>
