@@ -2,34 +2,6 @@
 // @ts-nocheck
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
-  // FX debug (attack motion) — separate from layout DBG. Safe to toggle.
-  const [fxDebug, setFxDebug] = useState(false);
-  const [fxPickMode, setFxPickMode] = useState<null | 'attacker' | 'target'>(null);
-  const [fxAttackerId, setFxAttackerId] = useState<string>('');
-  const [fxTargetId, setFxTargetId] = useState<string>('');
-  const [fxNonce, setFxNonce] = useState<number>(0);
-
-  useEffect(() => {
-    if (!fxPickMode) return;
-    const onDown = (ev: PointerEvent) => {
-      const el = ev.target as HTMLElement | null;
-      if (!el) return;
-      const slot = (el.closest?.('.bb-slot') as HTMLElement | null) ?? null;
-      const unitId = slot?.getAttribute?.('data-unit-id') ?? '';
-      if (!unitId) return;
-
-      if (fxPickMode === 'attacker') setFxAttackerId(unitId);
-      if (fxPickMode === 'target') setFxTargetId(unitId);
-      setFxPickMode(null);
-      ev.preventDefault();
-      ev.stopPropagation();
-    };
-    window.addEventListener('pointerdown', onDown, true);
-    return () => window.removeEventListener('pointerdown', onDown, true);
-  }, [fxPickMode]);
-
-  const fireFxTest = () => setFxNonce((n) => n + 1);
-
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
@@ -395,7 +367,35 @@ function BattleInner() {
   const layoutdebug = sp.get("layoutdebug") === "1" || fxdebug;
 
   // Local toggle (does not affect layout): lets you enable debug overlay without URL params.
-  const [uiDebug, setUiDebug] = useState<boolean>(false);
+  const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
+  // FX debug (attack motion) — separate from layout debug. Safe to toggle.
+  const [fxDebug, setFxDebug] = useState(false);
+  const [fxPickMode, setFxPickMode] = useState<null | 'attacker' | 'target'>(null);
+  const [fxAttackerId, setFxAttackerId] = useState<string>('');
+  const [fxTargetId, setFxTargetId] = useState<string>('');
+  const [fxNonce, setFxNonce] = useState<number>(0);
+
+  useEffect(() => {
+    if (!fxPickMode) return;
+    const onDown = (ev: PointerEvent) => {
+      const el = ev.target as HTMLElement | null;
+      if (!el) return;
+      const slot = (el.closest?.('.bb-slot') as HTMLElement | null) ?? null;
+      const unitId = slot?.getAttribute?.('data-unit-id') ?? '';
+      if (!unitId) return;
+
+      if (fxPickMode === 'attacker') setFxAttackerId(String(unitId));
+      if (fxPickMode === 'target') setFxTargetId(String(unitId));
+      setFxPickMode(null);
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    return () => window.removeEventListener('pointerdown', onDown, true);
+  }, [fxPickMode]);
+
+  const fireFxTest = () => setFxNonce((n) => n + 1);
+
 
   // Debug UI is rendered directly in JSX (no portals/DOM mutations).
 const isArenaDebug = DEBUG_ARENA || uiDebug;
@@ -3400,7 +3400,7 @@ const hpPct = useMemo(() => {
             
       {typeof document !== 'undefined'
         ? createPortal(
-            <div style={{ position: 'fixed', right: 12, bottom: 92, zIndex: 2147483647, display: 'flex', gap: 8 }}>
+            <div style={{ position: 'fixed', right: 12, bottom: 92, zIndex: 2147483647, display: 'flex', gap: 8, pointerEvents: 'auto' as any }}>
               <button
                 type="button"
                 onClick={() => setFxDebug((v) => !v)}

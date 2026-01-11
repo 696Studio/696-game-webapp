@@ -94,8 +94,6 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
     attackerId: string;
     targetId: string;
   }>(null);
-
-
   const debugEnabled = !!debug;
 
   const injectedCss = useMemo(
@@ -120,12 +118,7 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
 }
 .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,0.85) !important; }
 .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,0.85) !important; }
-.bb-fx-debug-svg {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-}
+.bb-fx-debug-svg { position: fixed; inset: 0; z-index: 9999; pointer-events: none; }
 `,
     []
   );
