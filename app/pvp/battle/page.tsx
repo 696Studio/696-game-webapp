@@ -368,6 +368,8 @@ function BattleInner() {
 
   // Local toggle (does not affect layout): lets you enable debug overlay without URL params.
   const [uiDebug, setUiDebug] = useState<boolean>(false);
+  // Animation debug overlay for FX (does not change positions).
+  const [animDebug, setAnimDebug] = useState<boolean>(false);
 
   // Debug UI is rendered directly in JSX (no portals/DOM mutations).
 const isArenaDebug = DEBUG_ARENA || uiDebug;
@@ -1785,9 +1787,24 @@ const hpPct = useMemo(() => {
       >
         
         
+              <button
+          onClick={() => setAnimDebug((v) => !v)}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.16)",
+            background: animDebug ? "rgba(0,200,255,0.18)" : "rgba(0,0,0,0.35)",
+            color: "rgba(255,255,255,0.92)",
+            fontSize: 12,
+            lineHeight: 1,
+            fontWeight: 700,
+          }}
+        >
+          DBG FX: {animDebug ? "ON" : "OFF"}
+        </button>
       </div>
 
-      <BattleFxLayer events={fxEvents} />
+      <BattleFxLayer events={fxEvents} debug={animDebug} />
 
       {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
       {/* Debug UI overlay (no portal) */}
@@ -2050,7 +2067,7 @@ const hpPct = useMemo(() => {
         
       </div>
 
-      <BattleFxLayer events={fxEvents} />
+      <BattleFxLayer events={fxEvents} debug={animDebug} />
       <style
         dangerouslySetInnerHTML={{
           __html: `

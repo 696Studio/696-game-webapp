@@ -81,12 +81,28 @@ type ActiveAnim = {
   prevZ: string;
 };
 
-export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
+export default function BattleFxLayer({ events, debug }: { events: FxEvent[]; debug?: boolean }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
   const activeRef = useRef<Map<HTMLElement, ActiveAnim>>(new Map());
   const [mounted, setMounted] = useState(false);
+  // Debug geometry snapshot for the latest attack (viewport coordinates).
+  const [dbgGeom, setDbgGeom] = useState<null | {
+    ts: number;
+    attackerId: string;
+    targetId: string;
+    a: { left: number; top: number; width: number; height: number };
+    b: { left: number; top: number; width: number; height: number };
+    from: { x: number; y: number };
+    to: { x: number; y: number };
+    touch: { x: number; y: number };
+    dx: number;
+    dy: number;
+  }>(null);
+  const dbgRafRef = useRef<number | null>(null);
+  const dbgUntilRef = useRef<number>(0);
 
-  const debugEnabled = useMemo(() => {
+
+  const urlDebugEnabled = useMemo(() => {
     try {
       return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fxdebug') === '1';
     } catch {
@@ -94,7 +110,9 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     }
   }, []);
 
-  const injectedCss = useMemo(
+  const debugEnabled = debug ?? urlDebugEnabled;
+
+const injectedCss = useMemo(
     () => `
 /* =========================
    FX injected by BattleFxLayer (WAAPI + tiny helpers)
@@ -116,6 +134,31 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
 }
 .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,0.85) !important; }
 .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,0.85) !important; }
+
+.bb-fx-debug-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+}
+.bb-fx-debug-layer svg {
+  width: 100%;
+  height: 100%;
+}
+.bb-fx-debug-dot {
+  position: fixed;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  margin-top: -4px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.95);
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.55);
+}
+.bb-fx-debug-dot.a { background: rgba(0,255,255,0.95); }
+.bb-fx-debug-dot.b { background: rgba(255,0,255,0.95); }
+.bb-fx-debug-dot.t { background: rgba(255,255,0,0.95); }
+
 `,
     []
   );
@@ -163,6 +206,44 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
       const aRect = motion.getBoundingClientRect();
       const tRect = targetCard.getBoundingClientRect();
       const { dx, dy } = computeTouchDelta(aRect, tRect);
+      if (debugEnabled) {
+        // Snapshot geometry now and keep updating while the animation is alive.
+        const snap = () => {
+          const aNow = motion.getBoundingClientRect();
+          const bNow = targetCard.getBoundingClientRect();
+          const from = rectCenter(aNow);
+          const to = rectCenter(bNow);
+          const touch = { x: from.x + dx, y: from.y + dy };
+          setDbgGeom({
+            ts: Date.now(),
+            attackerId: attack.attackerId,
+            targetId: attack.targetId,
+            a: { left: aNow.left, top: aNow.top, width: aNow.width, height: aNow.height },
+            b: { left: bNow.left, top: bNow.top, width: bNow.width, height: bNow.height },
+            from,
+            to,
+            touch,
+            dx,
+            dy,
+          });
+        };
+
+        dbgUntilRef.current = performance.now() + ATTACK_DURATION + 300;
+        snap();
+
+        if (dbgRafRef.current == null) {
+          const tick = () => {
+            snap();
+            if (performance.now() < dbgUntilRef.current) {
+              dbgRafRef.current = window.requestAnimationFrame(tick);
+            } else {
+              dbgRafRef.current = null;
+            }
+          };
+          dbgRafRef.current = window.requestAnimationFrame(tick);
+        }
+      }
+
 
       // WAAPI: this bypasses "className overwritten by React" and any CSS import issues.
       const prevTransform = motion.style.transform;
@@ -255,6 +336,10 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     }
 
     return () => {
+      if (dbgRafRef.current != null) {
+        try { window.cancelAnimationFrame(dbgRafRef.current); } catch {}
+        dbgRafRef.current = null;
+      }
       for (const id of timers) {
         try {
           window.clearTimeout(id);
@@ -276,9 +361,40 @@ export default function BattleFxLayer({ events }: { events: FxEvent[] }) {
     <>
       <style>{injectedCss}</style>
       {debugEnabled ? (
-        <div className="bb-fx-debug-hud">
-          {`fxEvents: ${events?.length ?? 0}\nseen: ${seenIdsRef.current.size}\n`}
+        <>
+          <div className="bb-fx-debug-layer">
+            <svg viewBox={`0 0 ${typeof window !== 'undefined' ? window.innerWidth : 1000} ${
+              typeof window !== 'undefined' ? window.innerHeight : 1000
+            }`} preserveAspectRatio="none">
+              {dbgGeom ? (
+                <>
+                  <line x1={dbgGeom.from.x} y1={dbgGeom.from.y} x2={dbgGeom.touch.x} y2={dbgGeom.touch.y} stroke="rgba(0,255,255,0.85)" strokeWidth="2" />
+                  <line x1={dbgGeom.touch.x} y1={dbgGeom.touch.y} x2={dbgGeom.to.x} y2={dbgGeom.to.y} stroke="rgba(255,255,0,0.8)" strokeWidth="2" strokeDasharray="6 4" />
+                </>
+              ) : null}
+            </svg>
+            {dbgGeom ? (
+              <>
+                <div className="bb-fx-debug-dot a" style={{ left: dbgGeom.from.x, top: dbgGeom.from.y }} />
+                <div className="bb-fx-debug-dot t" style={{ left: dbgGeom.touch.x, top: dbgGeom.touch.y }} />
+                <div className="bb-fx-debug-dot b" style={{ left: dbgGeom.to.x, top: dbgGeom.to.y }} />
+              </>
+            ) : null}
+          </div>
+
+          <div className="bb-fx-debug-hud">
+          {
+            `fxEvents: ${events?.length ?? 0}
+seen: ${seenIdsRef.current.size}
+${dbgGeom ? `last: ${dbgGeom.attackerId} -> ${dbgGeom.targetId}
+dx: ${dbgGeom.dx.toFixed(1)}  dy: ${dbgGeom.dy.toFixed(1)}
+from: ${dbgGeom.from.x.toFixed(1)}, ${dbgGeom.from.y.toFixed(1)}
+touch: ${dbgGeom.touch.x.toFixed(1)}, ${dbgGeom.touch.y.toFixed(1)}
+to: ${dbgGeom.to.x.toFixed(1)}, ${dbgGeom.to.y.toFixed(1)}
+` : ''}`
+          }
         </div>
+        </>
       ) : null}
     </>
   );
