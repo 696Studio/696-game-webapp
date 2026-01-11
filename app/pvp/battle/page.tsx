@@ -1337,7 +1337,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   // ✅ TOP: mirror bottom anchors around the arena height.
   // This makes top match bottom perfectly, and bottom stays untouched.
-  const TOP_AVATAR_Y = arenaBox.h - BOTTOM_AVATAR_Y;
+  const TOP_AVATAR_Y = arenaBox.h - BOTTOM_AVATAR_Y - 12;
   const TOP_HP_Y = arenaBox.h - BOTTOM_HP_Y;
   const TOP_NAME_Y = arenaBox.h - BOTTOM_NAME_Y;
 
