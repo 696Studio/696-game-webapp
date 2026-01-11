@@ -302,9 +302,11 @@ const DEBUG_ARENA = false; // debug overlay for arena sizing
 const DEBUG_GRID = false; // mirrored A/B measurement grid
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
-const TOP_RING_NY = 0.1606;
+const TOP_RING_NY = 0.1233;
+const TOP_NAME_NX = 0.5;
+const TOP_NAME_NY = 0.2110;
 const BOT_RING_NX = 0.5;
-const BOT_RING_NY = 0.9564; // was 0.89
+const BOT_RING_NY = 0.8784; // was 0.89
 
 function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
@@ -1330,7 +1332,14 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       return { left: p.x, top, ring, img };
     }, [arenaBox, where]);  
 
-    // ✅ IMPORTANT: top HUD stays as-is. Bottom HUD is placed by hard Y targets.
+    
+
+    const namePos = useMemo(() => {
+      if (!arenaBox) return null;
+      if (where !== 'top') return null;
+      return coverMapPoint(TOP_NAME_NX, TOP_NAME_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+    }, [arenaBox, where]);
+// ✅ IMPORTANT: top HUD stays as-is. Bottom HUD is placed by hard Y targets.
     if (isBottom) {
       if (!pos) return null;
 
@@ -1399,13 +1408,13 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       >
         {/* Top player stays exactly as-is. */}
         <>
-          <div className="map-portrait-ring" style={{ transform: "translateY(6px)" }}>
+          <div className="map-portrait-ring" >
             <div className="map-portrait-img">
               <img src={avatar} alt={tone} />
             </div>
           </div>
 
-          <div className="map-portrait-name" style={{ marginTop: 20, transform: "translateY(6px)" }}>{name}</div>
+          <div className="map-portrait-name" style={namePos ? ({ position: "absolute", left: namePos.x, top: namePos.y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" } as React.CSSProperties) : undefined}>{name}</div>
 
           <div className="map-pillrow" style={{ marginTop: 16 }}>
             <div
@@ -3034,8 +3043,7 @@ const hpPct = useMemo(() => {
         }
         /* DEBUG overlay */
         .dbg-panel {
-          
-          pointer-events: none;position: absolute;
+          position: absolute;
           left: 10px;
           top: calc(env(safe-area-inset-top) + 54px);
           z-index: 50;
@@ -3371,18 +3379,8 @@ const hpPct = useMemo(() => {
 
           {isArenaDebug && debugCover && (
             <>
-              <div className="dbg-panel" style={{
-                left: debugCover.offsetX + debugCover.drawnW / 2,
-                top: debugCover.offsetY + debugCover.drawnH / 2,
-                transform: 'translate(-50%, -50%)',
-                pointerEvents: 'none',
-                fontSize: 9,
-                lineHeight: 1.2,
-                padding: '6px 8px',
-                maxWidth: 220,
-                opacity: 0.85,
-              }}>
-<div>
+              <div className="dbg-panel">
+                <div>
                   <b>ARENA</b> W:{debugCover.arenaW}px H:{debugCover.arenaH}px
                 </div>
                 <div style={{ marginTop: 6 }}>
