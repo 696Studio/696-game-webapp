@@ -610,6 +610,8 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return {
       arenaW: arenaBox.w,
       arenaH: arenaBox.h,
+      arenaLeft: arenaBox.left,
+      arenaTop: arenaBox.top,
       scale,
       drawnW,
       drawnH,
@@ -1284,155 +1286,123 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   }
 
   function MapPortrait({
-    where,
-    name,
-    avatar,
-    tone,
-    hp,
-    hpMax,
-    score,
-    isHit,
-  }: {
-    where: "top" | "bottom";
-    name: string;
-    avatar: string;
-    tone: "enemy" | "you";
-    hp: number;
-    hpMax: number;
-    score: number | null;
-    isHit: boolean;
-  }) {
-    const isBottom = where === "bottom";
+  where,
+  name,
+  avatar,
+  tone,
+  hp,
+  hpMax,
+  score,
+  isHit,
+}: {
+  where: "top" | "bottom";
+  name: string;
+  avatar: string;
+  tone: "enemy" | "you";
+  hp: number;
+  hpMax: number;
+  score: number | null;
+  isHit?: boolean;
+}) {
+  const isBottom = where === "bottom";
 
-    // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
-    // Top player must stay untouched.
-    const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
-    const BOTTOM_HP_Y = 644; // TeamHP bar row
-    const BOTTOM_NAME_Y = 678; // nickname
+  // ✅ Bottom HUD targets (arena pixel coords in BOARD image space)
+  // Bottom is already perfect — do not touch these.
+  const BOTTOM_AVATAR_Y = 765; // avatar ring center
+  const BOTTOM_HP_Y = 644;     // TeamHP row
+  const BOTTOM_NAME_Y = 678;   // nickname baseline
 
-    const pos = useMemo(() => {
-      if (!arenaBox) return null;
-    
-      const p =
-        where === "top"
-          ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
-          : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-    
-      // ✅ responsive portrait size based on arena width
-      const base = Math.min(arenaBox.w, arenaBox.h);
-      const ring = clamp(Math.round(base * 0.083), 84, 148);
-      const img  = Math.round(ring * 0.86);     
-    
-      // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
-      // NOTE: keep 0 unless you intentionally tune with DBG anchors.
-      const yOffset = 0;
+  const pos = useMemo(() => {
+    if (!arenaBox) return null;
 
-      const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
-    
-      return { left: p.x, top, ring, img };
-    }, [arenaBox, where]);  
+    // X anchor: both rings are centered, so we reuse the same nx (0.5)
+    const p = coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
 
-    
+    // responsive portrait size based on arena size
+    const base = Math.min(arenaBox.w, arenaBox.h);
+    const ring = clamp(Math.round(base * 0.083), 84, 148);
+    const img = Math.round(ring * 0.86);
 
-    const namePos = useMemo(() => {
-      if (!arenaBox) return null;
-      if (where !== 'top') return null;
-      return coverMapPoint(TOP_NAME_NX, TOP_NAME_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-    }, [arenaBox, where]);
-// ✅ IMPORTANT: top HUD stays as-is. Bottom HUD is placed by hard Y targets.
-    if (isBottom) {
-      if (!pos) return null;
+    return { left: p.x, ring, img };
+  }, [arenaBox]);
 
-      const vars = {
-        ["--ringSize" as any]: `${pos.ring}px`,
-        ["--imgSize" as any]: `${pos.img}px`,
-      } as React.CSSProperties;
+  if (!pos || !arenaBox) return null;
 
-      return (
-        <>
-          {/* Bottom Avatar Ring (ONLY moved by Y target) */}
-          <div
-            className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you", "is-bottom"].join(" ")}
-            style={{ left: pos.left, top: BOTTOM_AVATAR_Y, transform: "translate(-50%,-50%)", ...vars }}
-          >
-            <div className="map-portrait-ring">
-              <div className="map-portrait-img">
-                <img src={avatar} alt={tone} />
-              </div>
-            </div>
-          </div>
+  const vars = {
+    ["--ringSize" as any]: `${pos.ring}px`,
+    ["--imgSize" as any]: `${pos.img}px`,
+  } as React.CSSProperties;
 
-          {/* Bottom Name */}
-          <div
-            className="map-portrait-name"
-            style={{ position: "absolute", left: pos.left, top: BOTTOM_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
-          >
-            {name}
-          </div>
+  const hpPct = clamp((hp / Math.max(1, hpMax)) * 100, 0, 100);
 
-          {/* Bottom TeamHP + Score Row */}
-          <div
-            className="map-pillrow"
-            style={{ position: "absolute", left: pos.left, top: BOTTOM_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
-          >
-            <div
-              className="map-xp"
-              style={{ ["--xp" as any]: `${clamp((hp / Math.max(1, hpMax)) * 100, 0, 100)}%`, ["--xpHue" as any]: `${Math.round(120 * clamp(hp / Math.max(1, hpMax), 0, 1))}` } as React.CSSProperties}
-            >
-              <div className="map-xp-fill" />
-              <div className="map-xp-knob" />
-            </div>
+  // ✅ TOP: mirror bottom anchors around the arena height.
+  // This makes top match bottom perfectly, and bottom stays untouched.
+  const TOP_AVATAR_Y = arenaBox.h - BOTTOM_AVATAR_Y;
+  const TOP_HP_Y = arenaBox.h - BOTTOM_HP_Y;
+  const TOP_NAME_Y = arenaBox.h - BOTTOM_NAME_Y;
 
-            <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-              {score == null ? "—" : score}
-            </div>
-          </div>
-        </>
-      );
-    }
+  const avatarY = isBottom ? BOTTOM_AVATAR_Y : TOP_AVATAR_Y;
+  const hpY = isBottom ? BOTTOM_HP_Y : TOP_HP_Y;
+  const nameY = isBottom ? BOTTOM_NAME_Y : TOP_NAME_Y;
 
-    return (
+  return (
+    <>
+      {/* Avatar */}
       <div
-        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
-        style={
-          pos
-            ? ({
-                left: pos.left,
-                top: pos.top,
-                transform: "translate(-50%,-50%)",
-                ["--ringSize" as any]: `${pos.ring}px`,
-                ["--imgSize" as any]: `${pos.img}px`,
-              } as React.CSSProperties)
-            : undefined
-        }
+        className={[
+          "map-portrait",
+          tone === "enemy" ? "tone-enemy" : "tone-you",
+          isBottom ? "is-bottom" : "is-top",
+        ].join(" ")}
+        style={{ left: pos.left, top: avatarY, transform: "translate(-50%,-50%)", ...vars }}
       >
-        {/* Top player stays exactly as-is. */}
-        <>
-          <div className="map-portrait-ring" >
-            <div className="map-portrait-img">
-              <img src={avatar} alt={tone} />
-            </div>
+        <div className="map-portrait-ring">
+          <div className="map-portrait-img">
+            <img src={avatar} alt={tone} />
           </div>
-
-          <div className="map-portrait-name" style={namePos ? ({ position: "absolute", left: namePos.x, top: namePos.y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" } as React.CSSProperties) : undefined}>{name}</div>
-
-          <div className="map-pillrow" style={{ marginTop: 16 }}>
-            <div
-              className="map-xp"
-              style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%`, ["--xpHue" as any]: `${Math.round(120 * clamp(hp / 30, 0, 1))}` } as React.CSSProperties}
-            >
-              <div className="map-xp-fill" />
-              <div className="map-xp-knob" />
-            </div>
-
-            <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-              {score == null ? "—" : score}
-            </div>
-          </div>
-        </>
+        </div>
       </div>
-    );
-  }
+
+      {/* Nickname */}
+      <div
+        className="map-portrait-name"
+        style={{
+          position: "absolute",
+          left: pos.left,
+          top: nameY,
+          transform: "translate(-50%,-50%)",
+          zIndex: 6,
+          pointerEvents: "none",
+        }}
+      >
+        {name}
+      </div>
+
+      {/* TeamHP + Score Row */}
+      <div
+        className="map-pillrow"
+        style={{
+          position: "absolute",
+          left: pos.left,
+          top: hpY,
+          transform: "translate(-50%,-50%)",
+          zIndex: 6,
+          pointerEvents: "none",
+        }}
+      >
+        <div className="map-xp" style={{ ["--xp" as any]: `${hpPct}` } as React.CSSProperties}>
+          <div className="map-xp-fill" />
+          <div className="map-xp-knob" />
+        </div>
+
+        <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+          {score == null ? "—" : score}
+        </div>
+      </div>
+    </>
+  );
+}
+
 
   function CardSlot({
   card,
@@ -3110,8 +3080,8 @@ const hpPct = useMemo(() => {
         <div
           style={{
             position: "fixed",
-            left: debugCover ? Math.round(debugCover.offsetX + debugCover.drawnW / 2) : "50%",
-            top: debugCover ? Math.round(debugCover.offsetY + debugCover.drawnH / 2) : "50%",
+            left: debugCover ? Math.round(debugCover.arenaLeft + debugCover.offsetX + debugCover.drawnW / 2) : "50%",
+            top: debugCover ? Math.round(debugCover.arenaTop + debugCover.offsetY + debugCover.drawnH / 2 + 40) : "50%",
             transform: "translate(-50%, -50%)",
             zIndex: 2147483647,
             pointerEvents: "none",
