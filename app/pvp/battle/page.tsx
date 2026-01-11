@@ -3034,7 +3034,8 @@ const hpPct = useMemo(() => {
         }
         /* DEBUG overlay */
         .dbg-panel {
-          position: absolute;
+          
+          pointer-events: none;position: absolute;
           left: 10px;
           top: calc(env(safe-area-inset-top) + 54px);
           z-index: 50;
@@ -3370,8 +3371,18 @@ const hpPct = useMemo(() => {
 
           {isArenaDebug && debugCover && (
             <>
-              <div className="dbg-panel">
-                <div>
+              <div className="dbg-panel" style={{
+                left: debugCover.offsetX + debugCover.drawnW / 2,
+                top: debugCover.offsetY + debugCover.drawnH / 2,
+                transform: 'translate(-50%, -50%)',
+                pointerEvents: 'none',
+                fontSize: 9,
+                lineHeight: 1.2,
+                padding: '6px 8px',
+                maxWidth: 220,
+                opacity: 0.85,
+              }}>
+<div>
                   <b>ARENA</b> W:{debugCover.arenaW}px H:{debugCover.arenaH}px
                 </div>
                 <div style={{ marginTop: 6 }}>
