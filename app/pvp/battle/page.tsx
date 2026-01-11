@@ -367,11 +367,10 @@ function BattleInner() {
   const layoutdebug = sp.get("layoutdebug") === "1" || fxdebug;
 
   // Local toggle (does not affect layout): lets you enable debug overlay without URL params.
-  const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
 
   // Debug UI is rendered directly in JSX (no portals/DOM mutations).
-const isArenaDebug = DEBUG_ARENA || uiDebug;
-  const isGridDebug = DEBUG_GRID || uiDebug;
+  const isArenaDebug = DEBUG_ARENA;
+  const isGridDebug = DEBUG_GRID;
 
   const [dbgClick, setDbgClick] = useState<null | { nx: number; ny: number; x: number; y: number }>(null);
 
@@ -496,6 +495,7 @@ const isArenaDebug = DEBUG_ARENA || uiDebug;
   };
 
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const motionElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
@@ -635,16 +635,25 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, []);
 
   useEffect(() => {
-    const el = arenaRef.current;
-    if (!el) return;
-    const id = window.requestAnimationFrame(() => {
+    const measure = () => {
+      const el = arenaRef.current;
+      if (!el) return;
       const r = el.getBoundingClientRect();
-      const w = Math.max(1, Math.floor(r.width));
-      const h = Math.max(1, Math.floor(r.height));
-      setArenaBox({ w, h, left: r.left, top: r.top });
-    });
-    return () => window.cancelAnimationFrame(id);
-  }, [layoutTick]);
+      setArenaBox({ left: r.left, top: r.top, w: r.width, h: r.height });
+    };
+
+    // measure now + after next paint (layout settles)
+    measure();
+    const raf = window.requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  
+
+  // ANIM_DEBUG_V1: console-only debug for attack motion (enable with ?fxdebug=1)
 
   // ✅ FIX: laneRects hook MUST be above any early returns (hooks order)
   const laneRects = useMemo(() => {
@@ -1183,6 +1192,66 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         targetId: String(a.toId),
       }));
   }, [recentAttacks]);
+
+  useEffect(() => {
+    if (!fxdebug) return;
+    if (!arenaRef.current) return;
+    if (!recentAttacks || recentAttacks.length === 0) return;
+
+    const arenaEl = arenaRef.current;
+
+    const getRectRelArena = (el: HTMLElement) => {
+      const r = el.getBoundingClientRect();
+      const a = arenaEl.getBoundingClientRect();
+      return {
+        left: r.left - a.left,
+        top: r.top - a.top,
+        width: r.width,
+        height: r.height,
+        cx: r.left - a.left + r.width / 2,
+        cy: r.top - a.top + r.height / 2,
+      };
+    };
+
+    for (const atk of recentAttacks) {
+      const fromId =
+        (atk as any).fromId ?? (atk as any).attackerId ?? (atk as any).from ?? (atk as any).attacker;
+      const toId =
+        (atk as any).toId ?? (atk as any).targetId ?? (atk as any).to ?? (atk as any).target;
+      const kind = (atk as any).kind ?? (atk as any).type ?? "attack";
+
+      const fromMotion = fromId ? motionElByIdRef.current[String(fromId)] : null;
+      const fromCard = fromId ? unitElByIdRef.current[String(fromId)] : null;
+      const toCard = toId ? unitElByIdRef.current[String(toId)] : null;
+
+      const info: any = {
+        kind,
+        fromId,
+        toId,
+        hasFromMotion: !!fromMotion,
+        hasFromCard: !!fromCard,
+        hasToCard: !!toCard,
+      };
+
+      try {
+        if (fromMotion) info.fromMotion = getRectRelArena(fromMotion);
+        if (fromCard) info.fromCard = getRectRelArena(fromCard);
+        if (toCard) info.toCard = getRectRelArena(toCard);
+        if (info.fromMotion && info.toCard) {
+          info.delta = {
+            dx: info.toCard.cx - info.fromMotion.cx,
+            dy: info.toCard.cy - info.fromMotion.cy,
+          };
+        }
+      } catch (e) {
+        info.error = String(e);
+      }
+
+      // eslint-disable-next-line no-console
+      console.log("[fxdebug] attack-motion", info);
+    }
+  }, [fxdebug, recentAttacks, layoutTick]);
+
 
 
   const spawnFxByInstance = useMemo(() => {
@@ -1770,240 +1839,11 @@ const hpPct = useMemo(() => {
 
   if (!isTelegramEnv) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-      <div
-        style={{
-          position: "fixed",
-          top: 10,
-          left: 10,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setUiDebug((v) => !v)}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.22)",
-            background: "rgba(0,0,0,0.70)",
-            color: "white",
-            fontSize: 12,
-            fontWeight: 900,
-            letterSpacing: 0.3,
-          }}
-        >
-          DBG {uiDebug ? "ON" : "OFF"}
-        </button>
-        <div
-          style={{
-            padding: "6px 8px",
-            borderRadius: 10,
-            background: "rgba(255,0,180,0.75)",
-            color: "white",
-            fontSize: 11,
-            fontWeight: 900,
-            letterSpacing: 0.2,
-          }}
-        >
-          DBG_V11
-        </div>
-      </div>
-
-      <BattleFxLayer events={fxEvents} />
-
-      {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
-      {/* Debug UI overlay (no portal) */}
-      <div
-        style={{
-          position: "fixed",
-          right: 12,
-          bottom: 12,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setUiDebug((v) => !v)}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.22)",
-            background: "rgba(0,0,0,0.7)",
-            color: "white",
-            fontSize: 13,
-            fontWeight: 800,
-            letterSpacing: 0.3,
-            pointerEvents: "auto",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-          }}
-        >
-          DBG {uiDebug ? "ON" : "OFF"}
-        </button>
-      </div>
-
-      {isArenaDebug ? (
-        <div
-          style={{
-            position: "fixed",
-            left: 12,
-            bottom: 12,
-            zIndex: 2147483647,
-            minWidth: 220,
-            maxWidth: 320,
-            padding: 10,
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.18)",
-            background: "rgba(0,0,0,0.68)",
-            color: "white",
-            fontSize: 12,
-            lineHeight: "14px",
-            pointerEvents: "auto",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          <div style={{ fontWeight: 800, marginBottom: 4 }}>Layout Debug</div>
-          {debugCover ? (
-            <>
-              <div>arenaW/arenaH: {debugCover.arenaW}×{debugCover.arenaH}</div>
-              <div>
-                drawnW/drawnH: {Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
-              </div>
-              <div>
-                offsetX/Y: {Math.round(debugCover.offsetX)},{Math.round(debugCover.offsetY)}
-              </div>
-              <div>scale: {debugCover.scale.toFixed(4)}</div>
-              <div style={{ marginTop: 6, opacity: 0.9 }}>
-                Tap arena → nx/ny: {dbgClick ? `${dbgClick.nx.toFixed(4)} / ${dbgClick.ny.toFixed(4)}` : "—"}
-              </div>
-            </>
-          ) : (
-            <div style={{ opacity: 0.85 }}>debugCover: —</div>
-          )}
-        </div>
-      ) : null}
-
-{uiDebug && (
-        <div
-          className="bb-debug-hud"
-          style={{
-            position: "fixed",
-            left: 12,
-            bottom: 12,
-            zIndex: 999998,
-            maxWidth: 360,
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.16)",
-            background: "rgba(0,0,0,0.55)",
-            color: "white",
-            fontSize: 12,
-            lineHeight: "16px",
-            pointerEvents: "none",
-            backdropFilter: "blur(6px)",
-            WebkitBackdropFilter: "blur(6px)",
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Layout Debug</div>
-          {debugCover ? (
-            <>
-              <div>
-                arenaW/arenaH: {debugCover.arenaW}×{debugCover.arenaH}
-              </div>
-              <div>
-                drawnW/drawnH: {Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
-              </div>
-              <div>scale: {debugCover.scale.toFixed(4)}</div>
-              <div>
-                offsetX/offsetY: {Math.round(debugCover.offsetX)}/{Math.round(debugCover.offsetY)}
-              </div>
-            </>
-          ) : (
-            <div style={{ opacity: 0.8 }}>arena box: not ready</div>
-          )}
-          <div style={{ marginTop: 6, opacity: 0.9 }}>
-            Tap on arena → you&#39;ll get nx/ny.
-          </div>
-          {dbgClick ? (
-            <div style={{ marginTop: 6 }}>
-              <div>
-                click px: {Math.round(dbgClick.x)}, {Math.round(dbgClick.y)}
-              </div>
-              <div>
-                click n: {dbgClick.nx.toFixed(4)}, {dbgClick.ny.toFixed(4)}
-              </div>
-            </div>
-          ) : (
-            <div style={{ marginTop: 6, opacity: 0.75 }}>no click yet</div>
-          )}
-        </div>
-      )}
-
-
-        <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
-          <div className="text-sm ui-subtle">Эта страница работает только внутри Telegram WebApp.</div>
-        </div>
-      </main>
-    );
-  }
-
-  if (loading) {
-    return (
-      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-      <div
-        style={{
-          position: "fixed",
-          top: 10,
-          left: 10,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setUiDebug((v) => !v)}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.22)",
-            background: "rgba(0,0,0,0.70)",
-            color: "white",
-            fontSize: 12,
-            fontWeight: 900,
-            letterSpacing: 0.3,
-          }}
-        >
-          DBG {uiDebug ? "ON" : "OFF"}
-        </button>
-        <div
-          style={{
-            padding: "6px 8px",
-            borderRadius: 10,
-            background: "rgba(255,0,180,0.75)",
-            color: "white",
-            fontSize: 11,
-            fontWeight: 900,
-            letterSpacing: 0.2,
-          }}
-        >
-          DBG_V11
-        </div>
-      </div>
-
-        <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-sm font-semibold">Загрузка…</div>
-          <div className="mt-2 text-sm ui-subtle">Синхронизация сессии.</div>
-          <div className="mt-4 ui-progress">
-            <div className="w-1/3 opacity-70 animate-pulse" />
+      <main style={{ minHeight: '100vh', background: '#020617', color: '#fff', display: 'grid', placeItems: 'center', padding: 24 }}>
+        <div style={{ maxWidth: 720, width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 16, padding: 20 }}>
+          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Открой бой в Telegram WebApp</div>
+          <div style={{ opacity: 0.85, lineHeight: 1.4 }}>
+            Эта страница рассчитана на Telegram Mini App. Открой её из бота или через кнопку в Telegram.
           </div>
         </div>
       </main>
@@ -2012,113 +1852,18 @@ const hpPct = useMemo(() => {
 
   if (timedOut || error) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-      <div
-        style={{
-          position: "fixed",
-          top: 10,
-          left: 10,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setUiDebug((v) => !v)}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.22)",
-            background: "rgba(0,0,0,0.70)",
-            color: "white",
-            fontSize: 12,
-            fontWeight: 900,
-            letterSpacing: 0.3,
-          }}
-        >
-          DBG {uiDebug ? "ON" : "OFF"}
-        </button>
-        <div
-          style={{
-            padding: "6px 8px",
-            borderRadius: 10,
-            background: "rgba(255,0,180,0.75)",
-            color: "white",
-            fontSize: 11,
-            fontWeight: 900,
-            letterSpacing: 0.2,
-          }}
-        >
-          DBG_V11
-        </div>
-      </div>
-
-        <div className="w-full max-w-md ui-card p-5">
-          <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
-          <div className="mt-2 text-sm ui-subtle">Нажми Re-sync и попробуй снова.</div>
-          <button onClick={() => refreshSession?.()} className="mt-5 ui-btn ui-btn-primary w-full" type="button">
-            Re-sync
-          </button>
-        </div>
-      </main>
-    );
-  }
-
-  if (errText) {
-    return (
-      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-      <div
-        style={{
-          position: "fixed",
-          top: 10,
-          left: 10,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setUiDebug((v) => !v)}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.22)",
-            background: "rgba(0,0,0,0.70)",
-            color: "white",
-            fontSize: 12,
-            fontWeight: 900,
-            letterSpacing: 0.3,
-          }}
-        >
-          DBG {uiDebug ? "ON" : "OFF"}
-        </button>
-        <div
-          style={{
-            padding: "6px 8px",
-            borderRadius: 10,
-            background: "rgba(255,0,180,0.75)",
-            color: "white",
-            fontSize: 11,
-            fontWeight: 900,
-            letterSpacing: 0.2,
-          }}
-        >
-          DBG_V11
-        </div>
-      </div>
-
-        <div className="w-full max-w-md ui-card p-5">
-          <div className="text-lg font-semibold">Ошибка</div>
-          <div className="mt-2 text-sm ui-subtle">{errText}</div>
-          <button onClick={() => router.back()} className="mt-5 ui-btn ui-btn-ghost w-full" type="button">
-            Назад
-          </button>
+      <main className="min-h-[100svh] w-full bg-black text-white flex items-center justify-center">
+        <div className="w-full max-w-[560px] mx-auto px-4">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-lg font-semibold mb-1">Бой недоступен</div>
+            <div className="text-sm text-white/70 mb-4">{errText || "Соединение потеряно или матч не найден."}</div>
+            <button
+              className="w-full rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 px-4 py-3 text-sm font-semibold"
+              onClick={() => router.push('/pvp')}
+            >
+              Назад
+            </button>
+          </div>
         </div>
       </main>
     );
@@ -2126,111 +1871,31 @@ const hpPct = useMemo(() => {
 
   if (!match) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-      <div
-        style={{
-          position: "fixed",
-          top: 10,
-          left: 10,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setUiDebug((v) => !v)}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.22)",
-            background: "rgba(0,0,0,0.70)",
-            color: "white",
-            fontSize: 12,
-            fontWeight: 900,
-            letterSpacing: 0.3,
-          }}
-        >
-          DBG {uiDebug ? "ON" : "OFF"}
-        </button>
-        <div
-          style={{
-            padding: "6px 8px",
-            borderRadius: 10,
-            background: "rgba(255,0,180,0.75)",
-            color: "white",
-            fontSize: 11,
-            fontWeight: 900,
-            letterSpacing: 0.2,
-          }}
-        >
-          DBG_V11
-        </div>
-      </div>
-
-        <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-sm font-semibold">Загружаю матч…</div>
-          <div className="mt-2 text-sm ui-subtle">
-            MatchId: <span className="font-semibold">{matchId.slice(0, 8)}…</span>
-          </div>
-          <div className="mt-4 ui-progress">
-            <div className="w-1/3 opacity-70 animate-pulse" />
+      <main className="min-h-[100svh] w-full bg-black text-white flex items-center justify-center">
+        <div className="w-full max-w-[560px] mx-auto px-4">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-lg font-semibold mb-1">Подключаемся к матчу…</div>
+            <div className="text-sm text-white/70">Ждём данные боя. Если висит долго — вернись назад и зайди снова.</div>
           </div>
         </div>
       </main>
     );
   }
-
+  const dbgAnim = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('dbg') === '1';
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
-      {/* DBG_V11: always-visible toggle (Telegram + browser). Should be visible during battle. */}
-      <div
-        style={{
-          position: "fixed",
-          top: 10,
-          left: 10,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setUiDebug((v) => !v)}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.22)",
-            background: "rgba(0,0,0,0.70)",
-            color: "white",
-            fontSize: 12,
-            fontWeight: 900,
-            letterSpacing: 0.3,
-            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-          }}
-        >
-          DBG {uiDebug ? "ON" : "OFF"}
-        </button>
-        <div
-          style={{
-            padding: "6px 8px",
-            borderRadius: 10,
-            background: "rgba(255,0,180,0.75)",
-            color: "white",
-            fontSize: 11,
-            fontWeight: 900,
-            letterSpacing: 0.2,
-          }}
-        >
-          DBG_V11
-        </div>
-      </div>
 
       <BattleFxLayer events={fxEvents} />
+      {dbgAnim && (
+        <div className="fixed left-3 top-3 z-[99999] max-w-[420px] rounded-xl border border-white/10 bg-black/70 p-3 text-white shadow-lg">
+          <div className="text-xs font-semibold mb-2">ANIM DBG (dbg=1)</div>
+          <pre className="text-[10px] leading-snug whitespace-pre-wrap break-words">{JSON.stringify({
+            matchId,
+            fxEventsCount: fxEvents?.length ?? 0,
+            lastFxEvent: (fxEvents && fxEvents.length ? fxEvents[fxEvents.length - 1] : null),
+          }, null, 2)}</pre>
+        </div>
+      )}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -3053,525 +2718,17 @@ const hpPct = useMemo(() => {
         }}
       />
 
-      {/* DEBUG TOGGLE (always visible) */}
-      <button
-        type="button"
-        onClick={() => setUiDebug((v) => !v)}
-        style={{
-          position: "fixed",
-          top: 10,
-          left: 10,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-          padding: "6px 10px",
-          borderRadius: 10,
-          border: "1px solid rgba(255,255,255,0.25)",
-          background: "rgba(0,0,0,0.55)",
-          color: "rgba(255,255,255,0.92)",
-          fontSize: 12,
-          fontWeight: 900,
-          letterSpacing: 1,
-        }}
-      >
-        DBG
-      </button>
-
-      {uiDebug && (
-        <div
-          style={{
-            position: "fixed",
-            left: debugCover ? Math.round(debugCover.arenaLeft + debugCover.offsetX + debugCover.drawnW / 2) : "50%",
-            top: debugCover ? Math.round(debugCover.arenaTop + debugCover.offsetY + debugCover.drawnH / 2 + 40) : "50%",
-            transform: "translate(-50%, -50%)",
-            zIndex: 2147483647,
-            pointerEvents: "none",
-            padding: "6px 8px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.14)",
-            background: "rgba(0,0,0,0.55)",
-            color: "rgba(255,255,255,0.92)",
-            fontSize: 10,
-            lineHeight: 1.2,
-            width: "min(260px, calc(100vw - 16px))",
-            opacity: 0.85,
-          }}
-        >
-          <div style={{ fontWeight: 900, letterSpacing: 0.8, marginBottom: 4 }}>LAYOUT DEBUG</div>
-          <div style={{ opacity: 0.9 }}>Tap on arena to capture nx/ny.</div>
-          <div style={{ marginTop: 6, opacity: 0.9 }}>
-            {dbgClick
-              ? `click nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)} (x=${Math.round(dbgClick.x)} y=${Math.round(dbgClick.y)})`
-              : "click: —"}
-          </div>
-          {debugCover && (
-            <div style={{ marginTop: 8, opacity: 0.9 }}>
-              arena {Math.round(debugCover.arenaW)}×{Math.round(debugCover.arenaH)} scale {debugCover.scale.toFixed(3)}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="w-full max-w-5xl">
-        <header className="board-topbar ui-card rounded-[var(--r-xl)] mb-4">
-          <div className="board-hud">
-            <div className="hud-left">
-              <div className="hud-title">BATTLE</div>
-              <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">
-                Поле боя • {fmtTime(t)} / {fmtTime(durationSec)}
-              </div>
-
-              <div
-                className="mt-2 battle-progress"
-                role="slider"
-                aria-label="Seek"
-                onClick={(e) => {
-                  const el = e.currentTarget as HTMLDivElement;
-                  const rect = el.getBoundingClientRect();
-                  const x = e.clientX - rect.left;
-                  const pct = rect.width > 0 ? x / rect.width : 0;
-                  seek(pct * durationSec);
-                }}
-              >
-                <div style={{ width: `${progressPct}%` }} />
-              </div>
-
-              <div className="scrub-row">
-                <input type="range" min={0} max={durationSec} step={0.05} value={t} onChange={(e) => seek(Number(e.target.value))} />
-
-                <button className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")} onClick={() => setRate(0.5)} type="button">
-                  0.5x
-                </button>
-                <button className={["rate-pill", rate === 1 ? "is-on" : ""].join(" ")} onClick={() => setRate(1)} type="button">
-                  1x
-                </button>
-                <button className={["rate-pill", rate === 2 ? "is-on" : ""].join(" ")} onClick={() => setRate(2)} type="button">
-                  2x
-                </button>
-              </div>
-
-              <div className="hud-sub">
-                <span className="hud-pill">{phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}</span>
-                <span className="hud-pill">
-                  Раунд{" "}
-                  <b className="tabular-nums">
-                    {roundN}/{roundCount}
-                  </b>
-                </span>
-                <span className="hud-pill">
-                  Match <b className="tabular-nums">{String(match.id).slice(0, 8)}…</b>
-                </span>
-                <span className="hud-pill">
-                  tl <b className="tabular-nums">{timeline.length}</b>
-                </span>
-                <span className="hud-pill">
-                  side <b className="tabular-nums">{youSide.toUpperCase()}</b>
-                </span>
-              </div>
-            </div>
-
-            <div className="hud-actions">
-              <button onClick={() => setPlaying((p) => !p)} className="ui-btn ui-btn-ghost" type="button">
-                {playing ? "Пауза" : "▶"}
-              </button>
-              <button
-                onClick={() => {
-                  setPlaying(true);
-                  seek(0);
-                }}
-                className="ui-btn ui-btn-ghost"
-                type="button"
-              >
-                ↺
-              </button>
-              <button onClick={() => router.push("/pvp")} className="ui-btn ui-btn-ghost" type="button">
-                Назад
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <section ref={arenaRef as any} onPointerDownCapture={onArenaPointerDownCapture} className={["board", "arena", boardFxClass].join(" ")}>
-
-          {isArenaDebug && (
-            <div
-              style={{
-                position: "fixed",
-                left: 12,
-                bottom: 12,
-                zIndex: 99999,
-                padding: "10px 12px",
-                borderRadius: 12,
-                background: "rgba(0,0,0,0.55)",
-                color: "rgba(255,255,255,0.92)",
-                fontSize: 12,
-                lineHeight: 1.25,
-                maxWidth: 360,
-                pointerEvents: "none",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {"layoutdebug: tap arena to read nx/ny\n" +
-                (dbgClick
-                  ? `click nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)} (x=${Math.round(dbgClick.x)} y=${Math.round(dbgClick.y)})`
-                  : "click: —")}
-            </div>
-          )}
-
-
-          {isGridDebug && debugCover && (
-            <div
-              aria-hidden="true"
-              style={{
-                position: "absolute",
-                inset: 0,
-                zIndex: 50,
-                pointerEvents: "none",
-                mixBlendMode: "normal",
-              }}
-            >
-              <svg
-                width="100%"
-                height="100%"
-                viewBox={`0 0 ${debugCover.arenaW} ${debugCover.arenaH}`}
-                preserveAspectRatio="none"
-                style={{ display: "block" }}
-              >
-                {/* Drawn image rect */}
-                <rect
-                  x={debugCover.offsetX}
-                  y={debugCover.offsetY}
-                  width={debugCover.drawnW}
-                  height={debugCover.drawnH}
-                  fill="none"
-                  stroke="rgba(0,255,255,0.55)"
-                  strokeWidth={1}
-                />
-
-                {/* Grid lines in normalized space (0..1) */}
-                {Array.from({ length: 11 }).map((_, i) => {
-                  const t = i / 10;
-                  const x = debugCover.offsetX + t * debugCover.drawnW;
-                  const y = debugCover.offsetY + t * debugCover.drawnH;
-                  return (
-                    <g key={i}>
-                      <line x1={x} y1={debugCover.offsetY} x2={x} y2={debugCover.offsetY + debugCover.drawnH} stroke="rgba(255,255,255,0.16)" strokeWidth={1} />
-                      <line x1={debugCover.offsetX} y1={y} x2={debugCover.offsetX + debugCover.drawnW} y2={y} stroke="rgba(255,255,255,0.16)" strokeWidth={1} />
-                      {i !== 0 && i !== 10 && (
-                        <>
-                          <text x={x + 3} y={debugCover.offsetY + 12} fontSize={10} fill="rgba(255,255,255,0.65)">{t.toFixed(1)}</text>
-                          <text x={debugCover.offsetX + 3} y={y - 3} fontSize={10} fill="rgba(255,255,255,0.65)">{t.toFixed(1)}</text>
-                        </>
-                      )}
-                    </g>
-                  );
-                })}
-
-                {/* Center cross */}
-                {(() => {
-                  const cx = debugCover.offsetX + 0.5 * debugCover.drawnW;
-                  const cy = debugCover.offsetY + 0.5 * debugCover.drawnH;
-                  return (
-                    <g>
-                      <line x1={cx - 14} y1={cy} x2={cx + 14} y2={cy} stroke="rgba(0,255,255,0.8)" strokeWidth={2} />
-                      <line x1={cx} y1={cy - 14} x2={cx} y2={cy + 14} stroke="rgba(0,255,255,0.8)" strokeWidth={2} />
-                      <text x={cx + 8} y={cy - 8} fontSize={12} fill="rgba(0,255,255,0.95)">CENTER</text>
-                    </g>
-                  );
-                })()}
-
-                {/* Slot markers */}
-                <g>
-                  <circle cx={debugCover.topX} cy={debugCover.topY} r={8} fill="none" stroke="rgba(255,0,255,0.95)" strokeWidth={2} />
-                  <text x={debugCover.topX + 12} y={debugCover.topY + 4} fontSize={12} fill="rgba(255,0,255,0.95)">TOP RING</text>
-
-                  <circle cx={debugCover.botX} cy={debugCover.botY} r={8} fill="none" stroke="rgba(0,255,0,0.95)" strokeWidth={2} />
-                  <text x={debugCover.botX + 12} y={debugCover.botY + 4} fontSize={12} fill="rgba(0,255,0,0.95)">BOT RING</text>
-                </g>
-
-                {/* Click marker */}
-                {dbgClick && (
-                  <g>
-                    <circle cx={dbgClick.x} cy={dbgClick.y} r={7} fill="none" stroke="rgba(255,255,0,0.95)" strokeWidth={2} />
-                    <text x={dbgClick.x + 10} y={dbgClick.y - 10} fontSize={12} fill="rgba(255,255,0,0.95)">
-                      {`nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)}`}
-                    </text>
-                  </g>
-                )}
-              </svg>
-
-              {/* Debug stats (inside arena, not viewport) */}
-              <div
-                style={{
-                  position: "absolute",
-                  left: 10,
-                  top: 10,
-                  padding: "8px 10px",
-                  borderRadius: 10,
-                  background: "rgba(0,0,0,0.55)",
-                  color: "rgba(255,255,255,0.92)",
-                  fontSize: 12,
-                  lineHeight: 1.25,
-                  whiteSpace: "pre",
-                }}
-              >
-                {`arena ${Math.round(debugCover.arenaW)}×${Math.round(debugCover.arenaH)}\n` +
-                  `drawn ${Math.round(debugCover.drawnW)}×${Math.round(debugCover.drawnH)}\n` +
-                  `off ${Math.round(debugCover.offsetX)},${Math.round(debugCover.offsetY)}  scale ${debugCover.scale.toFixed(3)}`}
-              </div>
-            </div>
-          )}
-
-          {/* FX overlay (independent from card DOM) */}
-          <div className="bb-fx-layer" aria-hidden="true">
-            {fxBursts.map((b) => (
-              <div
-                key={b.id}
-                className={`bb-fx-burst bb-fx-burst--${b.kind}`}
-                style={{
-                  left: b.x,
-                  top: b.y,
-                  width: b.size,
-                  height: b.size,
-                }}
-              >
-                {b.kind === "death" && (
-                  <div
-                    className="bb-fx-burst__atlas"
-                    style={{
-                      // death_burst_strip.png is 194x59 (3 frames with padding)
-                      ["--bb-strip-scale" as any]: (b.size / 59).toFixed(4),
-                    }}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-
-          {isArenaDebug && debugCover && (
-            <>
-              <div className="dbg-panel">
-                <div>
-                  <b>ARENA</b> W:{debugCover.arenaW}px H:{debugCover.arenaH}px
-                </div>
-                <div style={{ marginTop: 6 }}>
-                  <b>IMG</b> scale:{debugCover.scale.toFixed(4)}
-                  <br />
-                  offX:{Math.round(debugCover.offsetX)} offY:{Math.round(debugCover.offsetY)}
-                  <br />
-                  drawn:{Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
-                </div>
-                <div style={{ marginTop: 6 }}>
-                  <b>TOP</b> x:{Math.round(debugCover.topX)} y:{Math.round(debugCover.topY)}
-                  <br />
-                  <b>BOT</b> x:{Math.round(debugCover.botX)} y:{Math.round(debugCover.botY)}
-                </div>
-              </div>
-
-              <div className="dbg-cross" style={{ left: debugCover.topX, top: debugCover.topY }} />
-              <div className="dbg-cross" style={{ left: debugCover.botX, top: debugCover.botY }} />
-            </>
-          )}
-          <svg className="atk-overlay" width="100%" height="100%">
-            <defs>
-              <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.85)" />
-              </marker>
-            </defs>
-
-            {attackCurves.map((c) => (
-              <g key={c.key}>
-                <path className="atk-path-glow" d={c.d} />
-                <path className="atk-path-core" d={c.d} />
-              </g>
-            ))}
-          </svg>
-
-          <div className="corner-info">
-            <div className="h1">
-              РАУНД{" "}
-              <b className="tabular-nums">
-                {roundN}/{roundCount}
-              </b>
-            </div>
-            <div className="line">
-              Победитель: <b>{!roundWinner ? "—" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</b>
-            </div>
-          </div>
-
-          <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hp={topTeam.hp} hpMax={topTeam.hpMax} score={scored ? topScore : null} isHit={topHit} />
-          <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={bottomTeam.hp} hpMax={bottomTeam.hpMax} score={scored ? bottomScore : null} isHit={bottomHit} />
-
-          {roundBanner.visible && (
-            <div
-              key={roundBanner.tick}
-              className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
-            >
-              <div className="title">ROUND END</div>
-              <div className="sub">{roundBanner.text}</div>
-            </div>
-          )}
-
-          <div className="lane">
-            <div
-              className="row"
-              style={
-                laneRects
-                  ? {
-                      top: laneRects.enemy.top,
-                      left: laneRects.enemy.left,
-                      width: laneRects.enemy.width,
-                      height: laneRects.enemy.height,
-                    }
-                  : undefined
-              }
-            >
-              <div className="slots">
-                {topSlots.map((s, i) => (
-                  <CardSlot
-                    key={`top-${i}`}
-                    card={s.card}
-                    fallbackId={s.fallbackId}
-                    unit={s.unit}
-                    unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}
-                    attackFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? attackFxByInstance[inst] : undefined; })()}
-                    spawnFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? spawnFxByInstance[inst] : undefined; })()}
-                    damageFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? damageFxByInstance[inst] : undefined; })()}
-                    isDying={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return !!(inst && deathFxByInstance.has(inst)); })()}
-                    revealed={revealed && (topCardsFull.length > 0 || topCards.length > 0)}
-                    delayMs={i * 70}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div
-              className="row"
-              style={
-                laneRects
-                  ? {
-                      top: laneRects.you.top,
-                      left: laneRects.you.left,
-                      width: laneRects.you.width,
-                      height: laneRects.you.height,
-                    }
-                  : undefined
-              }
-            >
-              <div className="slots">
-                {bottomSlots.map((s, i) => (
-                  <CardSlot
-                    key={`bottom-${i}`}
-                    card={s.card}
-                    fallbackId={s.fallbackId}
-                    unit={s.unit}
-                    unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}
-                    attackFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? attackFxByInstance[inst] : undefined; })()}
-                    spawnFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? spawnFxByInstance[inst] : undefined; })()}
-                    damageFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? damageFxByInstance[inst] : undefined; })()}
-                    isDying={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return !!(inst && deathFxByInstance.has(inst)); })()}
-                    revealed={revealed && (bottomCardsFull.length > 0 || bottomCards.length > 0)}
-                    delayMs={i * 70}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {!playing && t >= durationSec && (
-              <div
-                className="ui-card p-5"
-                style={{
-                  position: "absolute",
-                  left: 14,
-                  right: 14,
-                  bottom: 14,
-                  background: "rgba(0,0,0,0.32)",
-                  backdropFilter: "blur(10px)",
-                  zIndex: 6,
-                }}
-              >
-                <div className="ui-subtitle">Результат матча</div>
-                <div className="mt-2 text-sm ui-subtle">{finalWinnerLabel}</div>
-
-                <div className="mt-4 ui-grid sm:grid-cols-3">
-                  {(rounds ?? []).slice(0, 10).map((r: any, idx: number) => (
-                    <div key={idx} className="ui-card p-4">
-                      <div className="ui-subtitle">Раунд {idx + 1}</div>
-                      <div className="mt-2 text-[12px] ui-subtle">
-                        P1: {r?.p1?.total ?? "—"} • P2: {r?.p2?.total ?? "—"}
-                      </div>
-                      <div className="mt-2 text-[11px] ui-subtle">
-                        Победитель: <span className="font-semibold">{r?.winner ?? "—"}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <button onClick={() => router.push("/pvp")} className="mt-5 ui-btn ui-btn-primary w-full" type="button">
-                  Ок
-                </button>
-              </div>
-            )}
-          </div>
-        </section>
-      </div>
-    </main>
-  );
-}
-
-export default function BattlePage() {
-  // IMPORTANT: Fix React hydration crash (#418) in Telegram WebView.
-  // Even though this file is a Client Component, Next.js still pre-renders it on the server.
-  // Any client-only differences (viewport/theme, timers, DOM measurements, etc.) can cause
-  // hydration mismatch and crash. We make the battle page render only after mount.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
-    return (
-      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-{/* DBG_ALWAYS_V10: if you don't see this magenta label, you're not running this page.tsx */}
-<div
-  style={{
-    position: "fixed",
-    top: 8,
-    right: 8,
-    zIndex: 2147483647,
-    background: "rgba(0,0,0,0.75)",
-    color: "#ff00ff",
-    padding: "6px 10px",
-    borderRadius: 10,
-    fontWeight: 900,
-    fontSize: 14,
-    pointerEvents: "none",
-  }}
->
-  DBG_ALWAYS_V10
-</div>
-
-        <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-sm font-semibold">Загрузка…</div>
-          <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
-          <div className="mt-4 ui-progress">
-            <div className="w-1/3 opacity-70 animate-pulse" />
-          </div>
-        </div>
       </main>
     );
   }
 
+
+export default function Page() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-          <div className="w-full max-w-md ui-card p-5 text-center">
-            <div className="text-sm font-semibold">Загрузка…</div>
-            <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
-            <div className="mt-4 ui-progress">
-              <div className="w-1/3 opacity-70 animate-pulse" />
-            </div>
-          </div>
+        <main style={{ minHeight: '100vh', background: '#020617', color: '#fff', display: 'grid', placeItems: 'center' }}>
+          <div style={{ opacity: 0.85, fontWeight: 700 }}>Loading…</div>
         </main>
       }
     >
