@@ -302,11 +302,9 @@ const DEBUG_ARENA = false; // debug overlay for arena sizing
 const DEBUG_GRID = false; // mirrored A/B measurement grid
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
-const TOP_RING_NY = 0.1233;
-const TOP_NAME_NX = 0.5;
-const TOP_NAME_NY = 0.2110;
+const TOP_RING_NY = 0.165;
 const BOT_RING_NX = 0.5;
-const BOT_RING_NY = 0.8784; // was 0.89
+const BOT_RING_NY = 0.950; // was 0.89
 
 function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
@@ -367,10 +365,13 @@ function BattleInner() {
   const layoutdebug = sp.get("layoutdebug") === "1" || fxdebug;
 
   // Local toggle (does not affect layout): lets you enable debug overlay without URL params.
+  const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
 
-  // Debug UI is rendered directly in JSX (no portals/DOM mutations).
-  const isArenaDebug = DEBUG_ARENA;
-  const isGridDebug = DEBUG_GRID;
+  
+  const [dbgAnim, setDbgAnim] = useState<boolean>(false);
+// Debug UI is rendered directly in JSX (no portals/DOM mutations).
+const isArenaDebug = DEBUG_ARENA || uiDebug;
+  const isGridDebug = DEBUG_GRID || uiDebug;
 
   const [dbgClick, setDbgClick] = useState<null | { nx: number; ny: number; x: number; y: number }>(null);
 
@@ -495,7 +496,6 @@ function BattleInner() {
   };
 
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
-  const motionElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
@@ -610,8 +610,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return {
       arenaW: arenaBox.w,
       arenaH: arenaBox.h,
-      arenaLeft: arenaBox.left,
-      arenaTop: arenaBox.top,
       scale,
       drawnW,
       drawnH,
@@ -628,6 +626,235 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // Top half = "A" (0% at top edge, 100% at midline)
   // Bottom half = "B" (0% at bottom edge, 100% at midline)
   // Labels are repeated on all borders so we can place bottom HUD as a mirror of the top.
+  function DebugGrid() {
+    if (!isGridDebug || !debugCover) return null;
+
+    const box = arenaBox;
+    if (!box) return null;
+
+    const w = debugCover.arenaW;
+    const h = debugCover.arenaH;
+    const halfH = h / 2;
+
+    // density: 5% steps across X, 10% steps within each half on Y (keeps readable)
+    const stepsX = 20; // 0..100% every 5%
+    const stepsYHalf = 10; // 0..100% every 10% within each half
+    const majorEveryX = 2; // label every 10%
+    const majorEveryY = 1; // label every 10% within half
+
+    const mono =
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+
+    const nodes: React.ReactNode[] = [];
+
+    // vertical lines (full height)
+    for (let i = 0; i <= stepsX; i++) {
+      const t = i / stepsX;
+      const x = t * w;
+      const isMajor = i % majorEveryX === 0;
+      nodes.push(
+        <line
+          key={`vx-${i}`}
+          x1={x}
+          y1={0}
+          x2={x}
+          y2={h}
+          stroke="white"
+          strokeOpacity={isMajor ? 0.38 : 0.16}
+          strokeWidth={isMajor ? 2 : 1}
+        />,
+      );
+
+      if (isMajor) {
+        const label = `${Math.round(t * 100)}%`;
+        // top border
+        nodes.push(
+          <text
+            key={`tx-top-${i}`}
+            x={x + 4}
+            y={12}
+            fill="white"
+            opacity={0.75}
+            fontSize={10}
+            fontFamily={mono}
+          >
+            {label}
+          </text>,
+        );
+        // bottom border
+        nodes.push(
+          <text
+            key={`tx-bot-${i}`}
+            x={x + 4}
+            y={h - 4}
+            fill="white"
+            opacity={0.75}
+            fontSize={10}
+            fontFamily={mono}
+          >
+            {label}
+          </text>,
+        );
+      }
+    }
+
+    // horizontal lines: top half (A)
+    for (let i = 0; i <= stepsYHalf; i++) {
+      const t = i / stepsYHalf; // 0..1 in HALF
+      const y = t * halfH;
+      const isMajor = i % majorEveryY === 0;
+      const label = `${Math.round(t * 100)}%`;
+
+      nodes.push(
+        <line
+          key={`hy-a-${i}`}
+          x1={0}
+          y1={y}
+          x2={w}
+          y2={y}
+          stroke="white"
+          strokeOpacity={isMajor ? 0.38 : 0.16}
+          strokeWidth={isMajor ? 2 : 1}
+        />,
+      );
+
+      if (isMajor) {
+        const px = Math.round(y);
+        // left border
+        nodes.push(
+          <text
+            key={`ty-a-l-${i}`}
+            x={4}
+            y={Math.max(10, y - 4)}
+            fill="white"
+            opacity={0.75}
+            fontSize={10}
+            fontFamily={mono}
+          >
+            A {label} y:{px}
+          </text>,
+        );
+        // right border
+        nodes.push(
+          <text
+            key={`ty-a-r-${i}`}
+            x={w - 118}
+            y={Math.max(10, y - 4)}
+            fill="white"
+            opacity={0.75}
+            fontSize={10}
+            fontFamily={mono}
+          >
+            A {label} y:{px}
+          </text>,
+        );
+      }
+    }
+
+    // horizontal lines: bottom half (B) - mirrored labels (0% at bottom edge, 100% at midline)
+    for (let i = 0; i <= stepsYHalf; i++) {
+      const t = i / stepsYHalf; // 0..1 in HALF
+      const y = h - t * halfH;
+      const isMajor = i % majorEveryY === 0;
+      const label = `${Math.round(t * 100)}%`;
+
+      nodes.push(
+        <line
+          key={`hy-b-${i}`}
+          x1={0}
+          y1={y}
+          x2={w}
+          y2={y}
+          stroke="white"
+          strokeOpacity={isMajor ? 0.38 : 0.16}
+          strokeWidth={isMajor ? 2 : 1}
+        />,
+      );
+
+      if (isMajor) {
+        const px = Math.round(y);
+        nodes.push(
+          <text
+            key={`ty-b-l-${i}`}
+            x={4}
+            y={Math.min(h - 4, y - 4)}
+            fill="white"
+            opacity={0.75}
+            fontSize={10}
+            fontFamily={mono}
+          >
+            B {label} y:{px}
+          </text>,
+        );
+        nodes.push(
+          <text
+            key={`ty-b-r-${i}`}
+            x={w - 118}
+            y={Math.min(h - 4, y - 4)}
+            fill="white"
+            opacity={0.75}
+            fontSize={10}
+            fontFamily={mono}
+          >
+            B {label} y:{px}
+          </text>,
+        );
+      }
+    }
+
+    // Midline highlight
+    nodes.push(
+      <line
+        key="midline"
+        x1={0}
+        y1={halfH}
+        x2={w}
+        y2={halfH}
+        stroke="rgba(255,255,255,0.9)"
+        strokeWidth={3}
+        strokeOpacity={0.35}
+      />,
+    );
+
+    return (
+      <div
+        className="dbg-grid"
+        style={{
+          position: "fixed",
+          left: box.left,
+          top: box.top,
+          width: w,
+          height: h,
+          zIndex: 2147483646,
+          pointerEvents: "none",
+        }}
+      >
+        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+          {nodes}
+          {/* Markers based on current nx/ny anchors (to visually verify mapping) */}
+          <g>
+            <circle cx={debugCover.topX} cy={debugCover.topY} r={12} fill="rgba(0,255,255,0.18)" stroke="rgba(0,255,255,0.95)" strokeWidth={2} />
+            <text x={debugCover.topX + 16} y={debugCover.topY + 4} fontSize={12} fontWeight={800} fill="rgba(0,255,255,0.95)">TOP RING</text>
+          </g>
+          <g>
+            <circle cx={debugCover.botX} cy={debugCover.botY} r={12} fill="rgba(255,180,0,0.18)" stroke="rgba(255,180,0,0.95)" strokeWidth={2} />
+            <text x={debugCover.botX + 16} y={debugCover.botY + 4} fontSize={12} fontWeight={800} fill="rgba(255,180,0,0.95)">BOT RING</text>
+          </g>
+          {dbgClick ? (
+            <g>
+              <line x1={dbgClick.x} y1={0} x2={dbgClick.x} y2={h} stroke="rgba(255,255,255,0.85)" strokeWidth={1} />
+              <line x1={0} y1={dbgClick.y} x2={w} y2={dbgClick.y} stroke="rgba(255,255,255,0.85)" strokeWidth={1} />
+              <circle cx={dbgClick.x} cy={dbgClick.y} r={10} fill="rgba(255,0,180,0.20)" stroke="rgba(255,0,180,0.95)" strokeWidth={2} />
+              <text x={dbgClick.x + 14} y={dbgClick.y - 10} fontSize={12} fontWeight={800} fill="rgba(255,255,255,0.95)">
+                {`${dbgClick.nx.toFixed(4)} / ${dbgClick.ny.toFixed(4)}`}
+              </text>
+            </g>
+          ) : null}
+        </svg>
+      </div>
+    );
+  }
+
   useEffect(() => {
     const onResize = () => setLayoutTick((x) => x + 1);
     window.addEventListener("resize", onResize);
@@ -635,25 +862,16 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, []);
 
   useEffect(() => {
-    const measure = () => {
-      const el = arenaRef.current;
-      if (!el) return;
+    const el = arenaRef.current;
+    if (!el) return;
+    const id = window.requestAnimationFrame(() => {
       const r = el.getBoundingClientRect();
-      setArenaBox({ left: r.left, top: r.top, w: r.width, h: r.height });
-    };
-
-    // measure now + after next paint (layout settles)
-    measure();
-    const raf = window.requestAnimationFrame(measure);
-    window.addEventListener("resize", measure);
-    return () => {
-      window.cancelAnimationFrame(raf);
-      window.removeEventListener("resize", measure);
-    };
-  }, []);
-  
-
-  // ANIM_DEBUG_V1: console-only debug for attack motion (enable with ?fxdebug=1)
+      const w = Math.max(1, Math.floor(r.width));
+      const h = Math.max(1, Math.floor(r.height));
+      setArenaBox({ w, h, left: r.left, top: r.top });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [layoutTick]);
 
   // ✅ FIX: laneRects hook MUST be above any early returns (hooks order)
   const laneRects = useMemo(() => {
@@ -999,7 +1217,10 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return Math.max(0, Math.min(100, (t / durationSec) * 100));
   }, [t, durationSec]);
 
-  const phase = useMemo(() => {
+  
+  const timelineMs = Math.max(1, Math.round(durationSec * 1000));
+  const currentMs = Math.round(t * 1000);
+const phase = useMemo(() => {
     let hasReveal = false;
     let hasScore = false;
     let hasEnd = false;
@@ -1193,66 +1414,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       }));
   }, [recentAttacks]);
 
-  useEffect(() => {
-    if (!fxdebug) return;
-    if (!arenaRef.current) return;
-    if (!recentAttacks || recentAttacks.length === 0) return;
-
-    const arenaEl = arenaRef.current;
-
-    const getRectRelArena = (el: HTMLElement) => {
-      const r = el.getBoundingClientRect();
-      const a = arenaEl.getBoundingClientRect();
-      return {
-        left: r.left - a.left,
-        top: r.top - a.top,
-        width: r.width,
-        height: r.height,
-        cx: r.left - a.left + r.width / 2,
-        cy: r.top - a.top + r.height / 2,
-      };
-    };
-
-    for (const atk of recentAttacks) {
-      const fromId =
-        (atk as any).fromId ?? (atk as any).attackerId ?? (atk as any).from ?? (atk as any).attacker;
-      const toId =
-        (atk as any).toId ?? (atk as any).targetId ?? (atk as any).to ?? (atk as any).target;
-      const kind = (atk as any).kind ?? (atk as any).type ?? "attack";
-
-      const fromMotion = fromId ? motionElByIdRef.current[String(fromId)] : null;
-      const fromCard = fromId ? unitElByIdRef.current[String(fromId)] : null;
-      const toCard = toId ? unitElByIdRef.current[String(toId)] : null;
-
-      const info: any = {
-        kind,
-        fromId,
-        toId,
-        hasFromMotion: !!fromMotion,
-        hasFromCard: !!fromCard,
-        hasToCard: !!toCard,
-      };
-
-      try {
-        if (fromMotion) info.fromMotion = getRectRelArena(fromMotion);
-        if (fromCard) info.fromCard = getRectRelArena(fromCard);
-        if (toCard) info.toCard = getRectRelArena(toCard);
-        if (info.fromMotion && info.toCard) {
-          info.delta = {
-            dx: info.toCard.cx - info.fromMotion.cx,
-            dy: info.toCard.cy - info.fromMotion.cy,
-          };
-        }
-      } catch (e) {
-        info.error = String(e);
-      }
-
-      // eslint-disable-next-line no-console
-      console.log("[fxdebug] attack-motion", info);
-    }
-  }, [fxdebug, recentAttacks, layoutTick]);
-
-
 
   const spawnFxByInstance = useMemo(() => {
     const windowSec = 0.35;
@@ -1355,123 +1516,150 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   }
 
   function MapPortrait({
-  where,
-  name,
-  avatar,
-  tone,
-  hp,
-  hpMax,
-  score,
-  isHit,
-}: {
-  where: "top" | "bottom";
-  name: string;
-  avatar: string;
-  tone: "enemy" | "you";
-  hp: number;
-  hpMax: number;
-  score: number | null;
-  isHit?: boolean;
-}) {
-  const isBottom = where === "bottom";
+    where,
+    name,
+    avatar,
+    tone,
+    hp,
+    hpMax,
+    score,
+    isHit,
+  }: {
+    where: "top" | "bottom";
+    name: string;
+    avatar: string;
+    tone: "enemy" | "you";
+    hp: number;
+    hpMax: number;
+    score: number | null;
+    isHit: boolean;
+  }) {
+    const isBottom = where === "bottom";
 
-  // ✅ Bottom HUD targets (arena pixel coords in BOARD image space)
-  // Bottom is already perfect — do not touch these.
-  const BOTTOM_AVATAR_Y = 765; // avatar ring center
-  const BOTTOM_HP_Y = 644;     // TeamHP row
-  const BOTTOM_NAME_Y = 678;   // nickname baseline
+    // ✅ Bottom HUD targets from your debug A/B grid (arena pixel coords)
+    // Top player must stay untouched.
+    const BOTTOM_AVATAR_Y = 765; // avatar ring center (moved up)
+    const BOTTOM_HP_Y = 644; // TeamHP bar row
+    const BOTTOM_NAME_Y = 678; // nickname
 
-  const pos = useMemo(() => {
-    if (!arenaBox) return null;
+    const pos = useMemo(() => {
+      if (!arenaBox) return null;
+    
+      const p =
+        where === "top"
+          ? coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H)
+          : coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+    
+      // ✅ responsive portrait size based on arena width
+      const base = Math.min(arenaBox.w, arenaBox.h);
+      const ring = clamp(Math.round(base * 0.083), 84, 148);
+      const img  = Math.round(ring * 0.86);     
+    
+      // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
+      const yOffset =
+      where === "top"
+        ? Math.round(arenaBox.h * 0.008) // ⬇️ TOP tiny down
+        : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
+    
+      const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
+    
+      return { left: p.x, top, ring, img };
+    }, [arenaBox, where]);  
 
-    // X anchor: both rings are centered, so we reuse the same nx (0.5)
-    const p = coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+    // ✅ IMPORTANT: top HUD stays as-is. Bottom HUD is placed by hard Y targets.
+    if (isBottom) {
+      if (!pos) return null;
 
-    // responsive portrait size based on arena size
-    const base = Math.min(arenaBox.w, arenaBox.h);
-    const ring = clamp(Math.round(base * 0.083), 84, 148);
-    const img = Math.round(ring * 0.86);
+      const vars = {
+        ["--ringSize" as any]: `${pos.ring}px`,
+        ["--imgSize" as any]: `${pos.img}px`,
+      } as React.CSSProperties;
 
-    return { left: p.x, ring, img };
-  }, [arenaBox]);
-
-  if (!pos || !arenaBox) return null;
-
-  const vars = {
-    ["--ringSize" as any]: `${pos.ring}px`,
-    ["--imgSize" as any]: `${pos.img}px`,
-  } as React.CSSProperties;
-
-  const hpPct = clamp((hp / Math.max(1, hpMax)) * 100, 0, 100);
-
-  // ✅ TOP: mirror bottom anchors around the arena height.
-  // This makes top match bottom perfectly, and bottom stays untouched.
-  const TOP_AVATAR_Y = arenaBox.h - BOTTOM_AVATAR_Y - 6;
-  const TOP_HP_Y = arenaBox.h - BOTTOM_HP_Y;
-  const TOP_NAME_Y = arenaBox.h - BOTTOM_NAME_Y;
-
-  const avatarY = isBottom ? BOTTOM_AVATAR_Y : TOP_AVATAR_Y;
-  const hpY = isBottom ? BOTTOM_HP_Y : TOP_HP_Y;
-  const nameY = isBottom ? BOTTOM_NAME_Y : TOP_NAME_Y;
-
-  return (
-    <>
-      {/* Avatar */}
-      <div
-        className={[
-          "map-portrait",
-          tone === "enemy" ? "tone-enemy" : "tone-you",
-          isBottom ? "is-bottom" : "is-top",
-        ].join(" ")}
-        style={{ left: pos.left, top: avatarY, transform: "translate(-50%,-50%)", ...vars }}
-      >
-        <div className="map-portrait-ring">
-          <div className="map-portrait-img">
-            <img src={avatar} alt={tone} />
+      return (
+        <>
+          {/* Bottom Avatar Ring (ONLY moved by Y target) */}
+          <div
+            className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you", "is-bottom"].join(" ")}
+            style={{ left: pos.left, top: BOTTOM_AVATAR_Y, transform: "translate(-50%,-50%)", ...vars }}
+          >
+            <div className="map-portrait-ring">
+              <div className="map-portrait-img">
+                <img src={avatar} alt={tone} />
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Nickname */}
+          {/* Bottom Name */}
+          <div
+            className="map-portrait-name"
+            style={{ position: "absolute", left: pos.left, top: BOTTOM_NAME_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+          >
+            {name}
+          </div>
+
+          {/* Bottom TeamHP + Score Row */}
+          <div
+            className="map-pillrow"
+            style={{ position: "absolute", left: pos.left, top: BOTTOM_HP_Y, transform: "translate(-50%,-50%)", zIndex: 6, pointerEvents: "none" }}
+          >
+            <div
+              className="map-xp"
+              style={{ ["--xp" as any]: `${clamp((hp / Math.max(1, hpMax)) * 100, 0, 100)}%`, ["--xpHue" as any]: `${Math.round(120 * clamp(hp / Math.max(1, hpMax), 0, 1))}` } as React.CSSProperties}
+            >
+              <div className="map-xp-fill" />
+              <div className="map-xp-knob" />
+            </div>
+
+            <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+              {score == null ? "—" : score}
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    return (
       <div
-        className="map-portrait-name"
-        style={{
-          position: "absolute",
-          left: pos.left,
-          top: nameY,
-          transform: "translate(-50%,-50%)",
-          zIndex: 6,
-          pointerEvents: "none",
-        }}
+        className={["map-portrait", tone === "enemy" ? "tone-enemy" : "tone-you"].join(" ")}
+        style={
+          pos
+            ? ({
+                left: pos.left,
+                top: pos.top,
+                transform: "translate(-50%,-50%)",
+                ["--ringSize" as any]: `${pos.ring}px`,
+                ["--imgSize" as any]: `${pos.img}px`,
+              } as React.CSSProperties)
+            : undefined
+        }
       >
-        {name}
+        {/* Top player stays exactly as-is. */}
+        <>
+          <div className="map-portrait-ring" style={{ transform: "translateY(6px)" }}>
+            <div className="map-portrait-img">
+              <img src={avatar} alt={tone} />
+            </div>
+          </div>
+
+          <div className="map-portrait-name" style={{ marginTop: 20, transform: "translateY(6px)" }}>{name}</div>
+
+          <div className="map-pillrow" style={{ marginTop: 16 }}>
+            <div
+              className="map-xp"
+              style={{ ["--xp" as any]: `${clamp((hp / 30) * 100, 0, 100)}%`, ["--xpHue" as any]: `${Math.round(120 * clamp(hp / 30, 0, 1))}` } as React.CSSProperties}
+            >
+              <div className="map-xp-fill" />
+              <div className="map-xp-knob" />
+            </div>
+
+            <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
+              {score == null ? "—" : score}
+            </div>
+          </div>
+        </>
       </div>
-
-      {/* TeamHP + Score Row */}
-      <div
-        className="map-pillrow"
-        style={{
-          position: "absolute",
-          left: pos.left,
-          top: hpY,
-          transform: "translate(-50%,-50%)",
-          zIndex: 6,
-          pointerEvents: "none",
-        }}
-      >
-        <div className="map-xp" style={{ ["--xp" as any]: `${hpPct}` } as React.CSSProperties}>
-          <div className="map-xp-fill" />
-          <div className="map-xp-knob" />
-        </div>
-
-        <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-          {score == null ? "—" : score}
-        </div>
-      </div>
-    </>
-  );
-}
-
+    );
+  }
 
   function CardSlot({
   card,
@@ -1839,11 +2027,240 @@ const hpPct = useMemo(() => {
 
   if (!isTelegramEnv) {
     return (
-      <main style={{ minHeight: '100vh', background: '#020617', color: '#fff', display: 'grid', placeItems: 'center', padding: 24 }}>
-        <div style={{ maxWidth: 720, width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 16, padding: 20 }}>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Открой бой в Telegram WebApp</div>
-          <div style={{ opacity: 0.85, lineHeight: 1.4 }}>
-            Эта страница рассчитана на Telegram Mini App. Открой её из бота или через кнопку в Telegram.
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
+      </div>
+
+      <BattleFxLayer events={fxEvents} />
+
+      {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
+      {/* Debug UI overlay (no portal) */}
+      <div
+        style={{
+          position: "fixed",
+          right: 12,
+          bottom: 12,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.7)",
+            color: "white",
+            fontSize: 13,
+            fontWeight: 800,
+            letterSpacing: 0.3,
+            pointerEvents: "auto",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+      </div>
+
+      {isArenaDebug ? (
+        <div
+          style={{
+            position: "fixed",
+            left: 12,
+            bottom: 12,
+            zIndex: 2147483647,
+            minWidth: 220,
+            maxWidth: 320,
+            padding: 10,
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.18)",
+            background: "rgba(0,0,0,0.68)",
+            color: "white",
+            fontSize: 12,
+            lineHeight: "14px",
+            pointerEvents: "auto",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>Layout Debug</div>
+          {debugCover ? (
+            <>
+              <div>arenaW/arenaH: {debugCover.arenaW}×{debugCover.arenaH}</div>
+              <div>
+                drawnW/drawnH: {Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
+              </div>
+              <div>
+                offsetX/Y: {Math.round(debugCover.offsetX)},{Math.round(debugCover.offsetY)}
+              </div>
+              <div>scale: {debugCover.scale.toFixed(4)}</div>
+              <div style={{ marginTop: 6, opacity: 0.9 }}>
+                Tap arena → nx/ny: {dbgClick ? `${dbgClick.nx.toFixed(4)} / ${dbgClick.ny.toFixed(4)}` : "—"}
+              </div>
+            </>
+          ) : (
+            <div style={{ opacity: 0.85 }}>debugCover: —</div>
+          )}
+        </div>
+      ) : null}
+
+{uiDebug && (
+        <div
+          className="bb-debug-hud"
+          style={{
+            position: "fixed",
+            left: 12,
+            bottom: 12,
+            zIndex: 999998,
+            maxWidth: 360,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.16)",
+            background: "rgba(0,0,0,0.55)",
+            color: "white",
+            fontSize: 12,
+            lineHeight: "16px",
+            pointerEvents: "none",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Layout Debug</div>
+          {debugCover ? (
+            <>
+              <div>
+                arenaW/arenaH: {debugCover.arenaW}×{debugCover.arenaH}
+              </div>
+              <div>
+                drawnW/drawnH: {Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
+              </div>
+              <div>scale: {debugCover.scale.toFixed(4)}</div>
+              <div>
+                offsetX/offsetY: {Math.round(debugCover.offsetX)}/{Math.round(debugCover.offsetY)}
+              </div>
+            </>
+          ) : (
+            <div style={{ opacity: 0.8 }}>arena box: not ready</div>
+          )}
+          <div style={{ marginTop: 6, opacity: 0.9 }}>
+            Tap on arena → you&#39;ll get nx/ny.
+          </div>
+          {dbgClick ? (
+            <div style={{ marginTop: 6 }}>
+              <div>
+                click px: {Math.round(dbgClick.x)}, {Math.round(dbgClick.y)}
+              </div>
+              <div>
+                click n: {dbgClick.nx.toFixed(4)}, {dbgClick.ny.toFixed(4)}
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 6, opacity: 0.75 }}>no click yet</div>
+          )}
+        </div>
+      )}
+
+
+        <div className="w-full max-w-md ui-card p-5 text-center">
+          <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
+          <div className="text-sm ui-subtle">Эта страница работает только внутри Telegram WebApp.</div>
+        </div>
+      </main>
+    );
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
+      </div>
+
+        <div className="w-full max-w-md ui-card p-5 text-center">
+          <div className="text-sm font-semibold">Загрузка…</div>
+          <div className="mt-2 text-sm ui-subtle">Синхронизация сессии.</div>
+          <div className="mt-4 ui-progress">
+            <div className="w-1/3 opacity-70 animate-pulse" />
           </div>
         </div>
       </main>
@@ -1852,18 +2269,113 @@ const hpPct = useMemo(() => {
 
   if (timedOut || error) {
     return (
-      <main className="min-h-[100svh] w-full bg-black text-white flex items-center justify-center">
-        <div className="w-full max-w-[560px] mx-auto px-4">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-lg font-semibold mb-1">Бой недоступен</div>
-            <div className="text-sm text-white/70 mb-4">{errText || "Соединение потеряно или матч не найден."}</div>
-            <button
-              className="w-full rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 px-4 py-3 text-sm font-semibold"
-              onClick={() => router.push('/pvp')}
-            >
-              Назад
-            </button>
-          </div>
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
+      </div>
+
+        <div className="w-full max-w-md ui-card p-5">
+          <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
+          <div className="mt-2 text-sm ui-subtle">Нажми Re-sync и попробуй снова.</div>
+          <button onClick={() => refreshSession?.()} className="mt-5 ui-btn ui-btn-primary w-full" type="button">
+            Re-sync
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (errText) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
+      </div>
+
+        <div className="w-full max-w-md ui-card p-5">
+          <div className="text-lg font-semibold">Ошибка</div>
+          <div className="mt-2 text-sm ui-subtle">{errText}</div>
+          <button onClick={() => router.back()} className="mt-5 ui-btn ui-btn-ghost w-full" type="button">
+            Назад
+          </button>
         </div>
       </main>
     );
@@ -1871,864 +2383,314 @@ const hpPct = useMemo(() => {
 
   if (!match) {
     return (
-      <main className="min-h-[100svh] w-full bg-black text-white flex items-center justify-center">
-        <div className="w-full max-w-[560px] mx-auto px-4">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-lg font-semibold mb-1">Подключаемся к матчу…</div>
-            <div className="text-sm text-white/70">Ждём данные боя. Если висит долго — вернись назад и зайди снова.</div>
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
+      </div>
+
+        <div className="w-full max-w-md ui-card p-5 text-center">
+          <div className="text-sm font-semibold">Загружаю матч…</div>
+          <div className="mt-2 text-sm ui-subtle">
+            MatchId: <span className="font-semibold">{matchId.slice(0, 8)}…</span>
+          </div>
+          <div className="mt-4 ui-progress">
+            <div className="w-1/3 opacity-70 animate-pulse" />
           </div>
         </div>
       </main>
     );
   }
-  const dbgAnim = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('dbg') === '1';
+
   return (
-    <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
-
-      <BattleFxLayer events={fxEvents} />
-      {dbgAnim && (
-        <div className="fixed left-3 top-3 z-[99999] max-w-[420px] rounded-xl border border-white/10 bg-black/70 p-3 text-white shadow-lg">
-          <div className="text-xs font-semibold mb-2">ANIM DBG (dbg=1)</div>
-          <pre className="text-[10px] leading-snug whitespace-pre-wrap break-words">{JSON.stringify({
-            matchId,
-            fxEventsCount: fxEvents?.length ?? 0,
-            lastFxEvent: (fxEvents && fxEvents.length ? fxEvents[fxEvents.length - 1] : null),
-          }, null, 2)}</pre>
-        </div>
-      )}
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-        @keyframes flipIn {
-          0% { transform: rotateY(0deg) scale(0.98); }
-          55% { transform: rotateY(90deg) scale(1.02); }
-          100% { transform: rotateY(180deg) scale(1); }
-        }
-        @keyframes popHit {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.08); }
-          100% { transform: scale(1); }
-        }
-        @keyframes glowPulse {
-          0% { opacity: 0.14; }
-          50% { opacity: 0.32; }
-          100% { opacity: 0.14; }
-        }
-        @keyframes microShake {
-          0% { transform: translate3d(0,0,0); }
-          20% { transform: translate3d(-1px,0,0); }
-          40% { transform: translate3d(1px,0,0); }
-          60% { transform: translate3d(-1px,0,0); }
-          80% { transform: translate3d(1px,0,0); }
-          100% { transform: translate3d(0,0,0); }
-        }
-        @keyframes bannerIn {
-          0% { transform: translateY(10px) scale(0.98); opacity: 0; }
-          60% { transform: translateY(0) scale(1.02); opacity: 1; }
-          100% { transform: translateY(0) scale(1); opacity: 1; }
-        }
-        @keyframes bannerGlow {
-          0% { opacity: 0.0; transform: scale(0.96); }
-          40% { opacity: 0.65; transform: scale(1.05); }
-          100% { opacity: 0.0; transform: scale(1.18); }
-        }
-        @keyframes activePulse {
-          0% { transform: translateZ(0) scale(1); }
-          50% { transform: translateZ(0) scale(1.02); }
-          100% { transform: translateZ(0) scale(1); }
-        }
-        @keyframes slashSwipe {
-          0%   { opacity: 0; transform: translate3d(-18px, 10px, 0) rotate(-18deg) scaleX(0.6); }
-          20%  { opacity: 1; transform: translate3d(0px, 0px, 0) rotate(-18deg) scaleX(1.05); }
-          100% { opacity: 0; transform: translate3d(16px, -10px, 0) rotate(-18deg) scaleX(1.15); }
-        }
-        @keyframes impactRing {
-          0%   { opacity: 0; transform: translate3d(0,0,0) scale(0.6); }
-          25%  { opacity: 1; transform: translate3d(0,0,0) scale(1.05); }
-          100% { opacity: 0; transform: translate3d(0,0,0) scale(1.35); }
-        }
-        @keyframes spawnPop {
-          0%   { opacity: 0; transform: scale(0.92); }
-          60%  { opacity: 1; transform: scale(1.04); }
-          100% { opacity: 1; transform: scale(1); }
-        }
-        @keyframes dmgFlash {
-          0%   { opacity: 0; }
-          20%  { opacity: 0.35; }
-          100% { opacity: 0; }
-        }
-        @keyframes dmgFloat {
-          0%   { opacity: 0; transform: translate3d(-50%, -30%, 0) scale(0.96); }
-          20%  { opacity: 1; transform: translate3d(-50%, -46%, 0) scale(1.02); }
-          100% { opacity: 0; transform: translate3d(-50%, -70%, 0) scale(1.06); }
-        }
-        @keyframes deathFade {
-          0%   { opacity: 0; }
-          30%  { opacity: 0.45; }
-          100% { opacity: 0; }
-        }
-        @keyframes atkPath {
-          0%   { opacity: 0; stroke-dashoffset: 140; }
-          18%  { opacity: 1; }
-          100% { opacity: 0; stroke-dashoffset: 0; }
-        }
-
-        .battle-progress {
-          height: 10px;
-          border-radius: 999px;
-          overflow: hidden;
-          border: 1px solid var(--border);
-          background: rgba(255, 255, 255, 0.04);
-          cursor: pointer;
-        }
-        .battle-progress > div {
-          height: 100%;
-          background: rgba(255, 255, 255, 0.18);
-          box-shadow: 0 0 16px rgba(255, 255, 255, 0.18);
-        }
-
-        .scrub-row {
-          margin-top: 10px;
-          display: flex;
-          gap: 10px;
-          align-items: center;
-          flex-wrap: wrap;
-        }
-        .scrub-row .rate-pill {
-          padding: 7px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(0,0,0,0.18);
-          font-size: 11px;
-          letter-spacing: 0.14em;
-          text-transform: uppercase;
-          opacity: 0.9;
-          cursor: pointer;
-        }
-        .scrub-row .rate-pill.is-on {
-          background: rgba(255,255,255,0.12);
-          border-color: rgba(255,255,255,0.26);
-        }
-        .scrub-row input[type="range"] {
-          flex: 1 1 260px;
-          accent-color: rgba(255, 255, 255, 0.7);
-        }
-
-        .board {
-          border: 1px solid rgba(255,255,255,0.18);
-          border-radius: var(--r-xl);
-          overflow: hidden;
-          background: rgba(255,255,255,0.04);
-        }
-
-        .board-topbar {
-          padding: 14px 14px 10px;
-          border-bottom: 1px solid rgba(255,255,255,0.12);
-          background: linear-gradient(to bottom, rgba(255,255,255,0.07), rgba(0,0,0,0.06));
-        }
-
-        .board-hud {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-        }
-
-        .hud-left { min-width: 0; }
-        .hud-title {
-          font-weight: 900;
-          letter-spacing: 0.22em;
-          text-transform: uppercase;
-          font-size: 13px;
-        }
-
-        .hud-sub {
-          margin-top: 6px;
-          display: flex;
-          gap: 4px;
-          flex-wrap: wrap;
-          align-items: center;
-        }
-
-        .hud-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          padding: 8px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(0,0,0,0.18);
-          font-size: 11px;
-          letter-spacing: 0.14em;
-          text-transform: uppercase;
-          opacity: 0.9;
-        }
-
-        .hud-actions { display: flex; gap: 4px; align-items: center; }
-
-        /* ✅ IMPORTANT: no padding here, because background covers the full box */
-        .arena {
-          position: relative;
-          padding: 0;
-          overflow: hidden;
-          background: rgba(0,0,0,0.22);
-          min-height: 720px;
-        }
-        .arena::before {
-          content: "";
-          position: absolute;
-          inset: 0;
-          background-image: url("/arena/board.png");
-          background-size: cover;
-          background-position: center;
-          background-repeat: no-repeat;
-          filter: saturate(1.02) contrast(1.04);
-          opacity: 1;
-          /* 🚫 no transform scale here, otherwise coverMap won't match */
-        }
-        .arena::after {
-          content: "";
-          position: absolute;
-          inset: -25%;
-          pointer-events: none;
-          background:
-            radial-gradient(980px 420px at 50% 0%, rgba(88,240,255,0.10) 0%, transparent 60%),
-            radial-gradient(780px 560px at 70% 55%, rgba(184,92,255,0.08) 0%, transparent 65%),
-            radial-gradient(780px 560px at 30% 55%, rgba(255,204,87,0.06) 0%, transparent 70%),
-            linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
-          opacity: 0.18;
-          animation: glowPulse 2.2s ease-in-out infinite;
-          mix-blend-mode: screen;
-        }
-
-        .arena > .lane,
-        .arena > .atk-overlay {
-          position: relative;
-          z-index: 1;
-        }
-
-        .arena.fx-p1,
-        .arena.fx-p2,
-        .arena.fx-draw { animation: microShake 240ms ease-out 1; }
-
-        .atk-overlay {
-          position: absolute;
-          inset: 0;
-          z-index: 4;
-          pointer-events: none;
-        }
-        .atk-path-glow {
-          stroke: rgba(255,255,255,0.28);
-          stroke-width: 8;
-          stroke-linecap: round;
-          fill: none;
-          stroke-dasharray: 140;
-          filter: drop-shadow(0 12px 24px rgba(0,0,0,0.35)) drop-shadow(0 0 14px rgba(255,255,255,0.18));
-          animation: atkPath 220ms ease-out both;
-          mix-blend-mode: screen;
-        }
-        .atk-path-core {
-          stroke: rgba(255,255,255,0.85);
-          stroke-width: 3.25;
-          stroke-linecap: round;
-          fill: none;
-          stroke-dasharray: 140;
-          filter: drop-shadow(0 10px 18px rgba(0,0,0,0.35)) drop-shadow(0 0 10px rgba(255,255,255,0.14));
-          animation: atkPath 220ms ease-out both;
-          mix-blend-mode: screen;
-          marker-end: url(#atkArrow);
-        }
-
-        .map-portrait {
-          position: absolute;
-          pointer-events: none;
-          display: grid;
-          justify-items: center;
-          gap: 4px;
-          filter: drop-shadow(0 18px 26px rgba(0,0,0,0.35));
-        }
-        .arena .map-portrait { z-index: 6; }
-.map-portrait-ring {
-  width: var(--ringSize);
-  height: var(--ringSize);
-  border-radius: 999px;
-  background: transparent;
-  display: grid;
-  place-items: center;
-}
-
-.map-portrait-img {
-  width: var(--imgSize);
-  height: var(--imgSize);
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(255,255,255,0.06);
-}
-
-.map-portrait-img img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center;
-  border-radius: 999px;
-  display: block;
-}
-
-        .map-portrait-name {
-          max-width: 260px;
-          padding: 6px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(0,0,0,0.30);
-          backdrop-filter: blur(8px);
-          font-weight: 900;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          font-size: 11px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .map-pillrow {
-          display: flex;
-          gap: 4px;
-          align-items: center;
-        }
-        .map-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          padding: 8px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(0,0,0,0.26);
-          backdrop-filter: blur(10px);
-          font-weight: 900;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-          font-variant-numeric: tabular-nums;
-          font-size: 11px;
-          min-width: 60px;
-          justify-content: center;
-        }
-        .map-pill--score { min-width: 70px; }
-        .map-pill.is-hit { animation: popHit 220ms var(--ease-out) both; }
-/* -----------------------------
-   Fortnite-style XP bar
------------------------------- */
-/* Fortnite-style XP bar (safe) */
-.map-xp {
-  --xp: 0%;                 /* set 0%..100% from inline style */
-  --xpHue: 120;             /* 120=green → 0=red (set from inline style) */
-  --pad: 7px;               /* knob radius (14px / 2) */
-
-  position: relative;
-  width: 120px;
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.10);
-  border: 1px solid rgba(255,255,255,0.22);
-  overflow: hidden;
-  box-shadow:
-    inset 0 0 6px rgba(0,0,0,0.40),
-    0 4px 14px rgba(0,0,0,0.35);
-}
-
-/* Fill (under highlight) */
-.map-xp-fill {
-  position: relative;
-  z-index: 1;
-  height: 100%;
-  width: var(--xp);
-  border-radius: 999px;
-
-  /* Smooth HP color: green (full) -> yellow -> red (low) */
-  background: linear-gradient(
-    90deg,
-    hsl(var(--xpHue) 90% 40%) 0%,
-    hsl(var(--xpHue) 90% 55%) 100%
-  );
-
-  box-shadow:
-    0 0 12px hsl(var(--xpHue) 90% 55% / 0.75),
-    inset 0 0 6px rgba(255,255,255,0.40);
-
-  transition: width 260ms ease-out, background 260ms ease-out, box-shadow 260ms ease-out;
-}
-
-/* Inner highlight (above fill) */
-.map-xp::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: 999px;
-  background: linear-gradient(
-    to bottom,
-    rgba(255,255,255,0.24),
-    rgba(255,255,255,0.06) 35%,
-    transparent 75%
-  );
-  pointer-events: none;
-  opacity: 0.85;
-}
-
-/* Knob (never goes outside) */
-.map-xp-knob {
-  position: absolute;
-  z-index: 3;
-  top: 50%;
-  left: clamp(var(--pad), var(--xp), calc(100% - var(--pad)));
-  transform: translate(-50%, -50%);
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: #ffffff;
-  box-shadow:
-    0 0 10px rgba(120,240,255,0.90),
-    0 2px 8px rgba(0,0,0,0.45);
-}
-
-        /* ✅ Make it SMALL and in the left corner, not overlapping enemy avatar */
-        .corner-info {
-          position: absolute;
-          left: 10px;
-          top: calc(env(safe-area-inset-top) + 10px);
-          z-index: 8;
-          padding: 8px 10px;
-          border-radius: 12px;
-          border: 1px solid rgba(255,255,255,0.14);
-          background: rgba(0,0,0,0.34);
-          backdrop-filter: blur(10px);
-          width: auto;
-          max-width: min(240px, calc(100% - 20px));
-          box-shadow: 0 12px 40px rgba(0,0,0,0.22);
-          pointer-events: none;
-        }
-        .corner-info .h1 {
-          font-weight: 1000;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-          font-size: 11px;
-          opacity: 0.92;
-        }
-        .corner-info .line {
-          margin-top: 6px;
-          font-size: 11px;
-          opacity: 0.86;
-        }
-        .corner-info .line b { font-weight: 900; }
-
-        .round-banner {
-          position: absolute;
-          left: 50%;
-          top: 52%;
-          transform: translate(-50%, -50%);
-          padding: 12px 14px;
-          border-radius: 18px;
-          border: 1px solid rgba(255,255,255,0.20);
-          background: rgba(0,0,0,0.42);
-          backdrop-filter: blur(10px);
-          min-width: min(520px, calc(100% - 28px));
-          text-align: center;
-          box-shadow: 0 12px 40px rgba(0,0,0,0.35);
-          animation: bannerIn 320ms var(--ease-out) both;
-          pointer-events: none;
-          z-index: 7;
-        }
-        .arena .round-banner { z-index: 7; }
-        .round-banner::before {
-          content: "";
-          position: absolute;
-          inset: -18px;
-          border-radius: 22px;
-          background: radial-gradient(closest-side, rgba(255,255,255,0.22), transparent 70%);
-          opacity: 0;
-          animation: bannerGlow 520ms ease-out both;
-        }
-        .round-banner .title {
-          font-weight: 1000;
-          letter-spacing: 0.24em;
-          text-transform: uppercase;
-          font-size: 13px;
-          opacity: 0.9;
-        }
-        .round-banner .sub {
-          margin-top: 6px;
-          font-weight: 900;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-          font-size: 18px;
-        }
-        .round-banner.tone-p1 { border-color: rgba(88,240,255,0.28); }
-        .round-banner.tone-p1 .sub { text-shadow: 0 0 18px rgba(88,240,255,0.18); }
-        .round-banner.tone-p2 { border-color: rgba(184,92,255,0.28); }
-        .round-banner.tone-p2 .sub { text-shadow: 0 0 18px rgba(184,92,255,0.18); }
-        .round-banner.tone-draw { border-color: rgba(255,255,255,0.22); }
-
-        .lane {
-          position: relative;
-          display: grid;
-          gap: 0;
-          min-height: 720px;
-        }
-
-        /* ✅ Row is now centered inside lane rect (top/left/width/height via inline styles) */
-        .row {
-          border-radius: 0;
-          border: 0;
-          background: transparent;
-          backdrop-filter: none;
-          padding: 0;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          position: absolute;
-        }
-
-        .slots {
-          width: 100%;
-          display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
-          gap: 10px;
-          max-width: 860px;
-          padding: 0 10px;
-        }
-
-        .bb-card {
-          width: 100%;
-          aspect-ratio: 3 / 4;
-          max-width: 150px;
-          perspective: 900px;
-          border-radius: 18px;
-          margin: 0 auto;
-        }
-
-        .bb-slot {
-          position: relative;
-          width: 100%;
-          max-width: 150px;
-          margin: 0 auto;
-        }
-
-        .bb-hud {
-          position: absolute;
-          top: 100%;
-          left: 50%;
-          transform: translateX(-50%);
-          margin-top: 6px;
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          font-size: 7px;
-          font-weight: 800;
-          line-height: 1;
-          letter-spacing: 0.08em;
-          color: rgba(255, 255, 255, 0.92);
-          white-space: nowrap;
-          pointer-events: none;
-          z-index: 30;
-          text-shadow: 0 1px 2px rgba(0,0,0,0.35);
-        }
-
-        .bb-hud-sep {
-          opacity: 0.55;
-          font-weight: 900;
-        }
-        .bb-card-inner {
-          width: 100%;
-          height: 100%;
-          border-radius: 18px;
-          transform-style: preserve-3d;
-          transition: transform 420ms var(--ease-out);
-          transform: rotateY(0deg);
-        }
-        .bb-card.is-revealed .bb-card-inner { transform: rotateY(180deg); }
-        .bb-card.is-revealed { animation: flipIn 520ms var(--ease-out) both; }
-
-        .bb-face {
-          position: absolute;
-          inset: 0;
-          border-radius: 18px;
-          backface-visibility: hidden;
-          border: 1px solid rgba(255, 255, 255, 0.22);
-          background: rgba(255, 255, 255, 0.06);
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .bb-back {
-          background:
-            radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
-            linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.34));
-        }
-
-        .bb-front {
-          transform: rotateY(180deg);
-          background:
-            radial-gradient(380px 260px at 50% 10%, rgba(255, 255, 255, 0.16) 0%, transparent 58%),
-            linear-gradient(to bottom, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.26));
-        }
-
-        .bb-mark { font-weight: 900; letter-spacing: 0.24em; font-size: 14px; opacity: 0.75; text-transform: uppercase; }
-        .bb-mark-sm { font-weight: 900; letter-spacing: 0.18em; font-size: 11px; opacity: 0.7; text-transform: uppercase; }
-
-        .bb-art {
-          position: absolute;
-          inset: 18%;
-          z-index: 1;
-          background-size: contain;
-          background-repeat: no-repeat;
-          background-position: center;
-          filter: saturate(1.05) contrast(1.05);
-          transform: none;
-        }
-        .bb-art--ph {
-          background:
-            radial-gradient(420px 260px at 50% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 58%),
-            linear-gradient(to bottom, rgba(0, 0, 0, 0.22), rgba(0,  0, 0, 0.36));
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-.bb-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  z-index: 5;
-  pointer-events: none;
-}
-
-        .bb-fx { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
-
-        .bb-spawn {
-          position: absolute;
-          inset: 0;
-          border-radius: 18px;
-          box-shadow: inset 0 0 0 9999px rgba(255,255,255,0.06), 0 0 22px rgba(255,255,255,0.12);
-          animation: spawnPop 260ms ease-out both;
-        }
-
-        .bb-atkfx { position: absolute; inset: 0; }
-
-        .bb-slash {
-          position: absolute;
-          left: 50%;
-          top: 52%;
-          width: 92%;
-          height: 4px;
-          transform: translate(-50%, -50%) rotate(-18deg);
-          border-radius: 999px;
-          background: rgba(255,255,255,0.85);
-          box-shadow: 0 8px 22px rgba(0,0,0,0.35), 0 0 18px rgba(255,255,255,0.20);
-          animation: slashSwipe 160ms ease-out both;
-          mix-blend-mode: screen;
-        }
-        .bb-impact {
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          width: 84px;
-          height: 84px;
-          transform: translate(-50%, -50%);
-          border-radius: 999px;
-          border: 2px solid rgba(255,255,255,0.55);
-          box-shadow: 0 10px 26px rgba(0,0,0,0.35), 0 0 18px rgba(255,255,255,0.16);
-          animation: impactRing 190ms ease-out both;
-          mix-blend-mode: screen;
-        }
-
-        .bb-dmgflash {
-          position: absolute;
-          inset: 0;
-          border-radius: 18px;
-          background: rgba(255,255,255,0.22);
-          animation: dmgFlash 180ms ease-out both;
-          mix-blend-mode: screen;
-        }
-        .bb-dmgfloat {
-          position: absolute;
-          left: 50%;
-          top: 46%;
-          transform: translate(-50%, -50%);
-          padding: 6px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.22);
-          background: rgba(0,0,0,0.42);
-          backdrop-filter: blur(8px);
-          font-weight: 900;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          font-size: 11px;
-          animation: dmgFloat 320ms ease-out both;
-        }
-
-        .bb-death {
-          position: absolute;
-          inset: -10%;
-          border-radius: 22px;
-          background: radial-gradient(closest-side, rgba(255,255,255,0.10), transparent 70%);
-          animation: deathFade 420ms ease-out both;
-        }
-
-        .bb-overlay {
-          position: absolute;
-          inset: 0;
-          z-index: 7;
-          display: flex;
-          flex-direction: column;
-          justify-content: flex-end;
-          padding: 12px;
-          background: linear-gradient(to top, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0.12), transparent);
-        }
-
-        .bb-title { font-weight: 900; letter-spacing: 0.06em; font-size: 12px; text-transform: uppercase; line-height: 1.15; }
-
-        .bb-subrow { margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
-
-        .bb-chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          padding: 6px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.22);
-          background: rgba(255, 255, 255, 0.08);
-          font-size: 10px;
-          letter-spacing: 0.16em;
-          text-transform: uppercase;
-        }
-
-        .rar-common { box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, 0.02); }
-        .rar-rare { box-shadow: inset 0 0 0 9999px rgba(88, 240, 255, 0.06); }
-        .rar-epic { box-shadow: inset 0 0 0 9999px rgba(184, 92, 255, 0.07); }
-        .rar-legendary { box-shadow: inset 0 0 0 9999px rgba(255, 204, 87, 0.07); }
-
-        .bb-bars { margin-top: 10px; display: grid; gap: 4px; }
-        .bb-bar {
-          height: 7px;
-          border-radius: 999px;
-          overflow: hidden;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(0,0,0,0.22);
-        }
-        .bb-bar > div { height: 100%; background: rgba(255,255,255,0.18); }
-        .bb-bar--hp > div { background: rgba(88, 240, 255, 0.22); }
-        .bb-bar--shield > div { background: rgba(255, 204, 87, 0.18); }
-        .bb-hptext {
-          font-size: 10px;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-          opacity: 0.9;
-        }
-        .bb-shieldnum { opacity: 0.9; }
-
-        .bb-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
-        .bb-tag {
-          display: inline-flex;
-          align-items: center;
-          padding: 4px 8px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(0,0,0,0.18);
-          font-size: 7px;
-          letter-spacing: 0.14em;
-          text-transform: uppercase;
-          opacity: 0.92;
-        }
-
-        .bb-corner {
-          position: absolute;
-          right: 10px;
-          top: 10px;
-          width: 12px;
-          height: 12px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.20);
-          background: rgba(0,0,0,0.18);
-          display: grid;
-          place-items: center;
-        }
-        .bb-corner-dot { width: 6px; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.28); }
-
-        .bb-card.has-unit.is-active { animation: activePulse 180ms ease-out 1; }
-        .bb-card.has-unit.is-dead { opacity: 1 !important; filter: none !important; }
-        .bb-card.has-unit.is-dying { filter: saturate(0.9); }
-
-        @media (max-width: 640px) {
-          .slots { gap: 4px; }
-          .bb-card { max-width: 110px; border-radius: 16px; }
-          .bb-face { border-radius: 16px; }
-          .bb-card-inner { border-radius: 16px; }
-          .round-banner { top: 54%; }
-          .round-banner .sub { font-size: 16px; }
-          .bb-bar { height: 6px; }
-
-.map-portrait-ring { width: var(--ringSize); height: var(--ringSize); }
-.map-portrait-img { width: var(--imgSize); height: var(--imgSize); }
-          .map-portrait-name { max-width: 180px; font-size: 10px; }
-
-          .corner-info { max-width: min(220px, calc(100% - 20px)); }
-        }
-        /* DEBUG overlay */
-        .dbg-panel {
-          position: absolute;
-          left: 10px;
-          top: calc(env(safe-area-inset-top) + 54px);
-          z-index: 50;
-          padding: 8px 10px;
-          border-radius: 12px;
-          border: 1px solid rgba(255,255,255,0.16);
-          background: rgba(0,0,0,0.42);
-          backdrop-filter: blur(10px);
-          font-size: 11px;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          pointer-events: none;
-          max-width: min(320px, calc(100% - 20px));
-        }
-        .dbg-panel b { font-weight: 900; }
-        .dbg-cross {
-          position: absolute;
-          width: 18px;
-          height: 18px;
-          transform: translate(-50%, -50%);
-          z-index: 45;
-          pointer-events: none;
-        }
-        .dbg-cross::before,
-        .dbg-cross::after {
-          content: "";
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          background: rgba(255,255,255,0.95);
-          box-shadow: 0 0 10px rgba(255,255,255,0.25);
-          transform: translate(-50%, -50%);
-        }
-        .dbg-cross::before { width: 18px; height: 2px; }
-        .dbg-cross::after { width: 2px; height: 18px; }
-          `,
+    <main className="min-h-screen bg-black text-white">
+      {/* Top HUD */}
+      <div
+        style={{
+          position: "fixed",
+          zIndex: 9999,
+          right: 12,
+          top: 12,
+          display: "flex",
+          gap: 8,
+          pointerEvents: "auto",
         }}
-      />
+      >
+        <button
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            background: uiDebug ? "rgba(0,255,255,0.25)" : "rgba(0,0,0,0.35)",
+            border: "1px solid rgba(0,255,255,0.45)",
+            borderRadius: 10,
+            padding: "8px 10px",
+            color: "#d9ffff",
+            fontSize: 12,
+            fontWeight: 800,
+          }}
+        >
+          DBG
+        </button>
+        <button
+          onClick={() => setDbgAnim((v: boolean) => !v)}
+          style={{
+            background: dbgAnim ? "rgba(255,0,255,0.22)" : "rgba(0,0,0,0.35)",
+            border: "1px solid rgba(255,0,255,0.40)",
+            borderRadius: 10,
+            padding: "8px 10px",
+            color: "#ffd9ff",
+            fontSize: 12,
+            fontWeight: 800,
+          }}
+        >
+          DBG FX
+        </button>
+      </div>
 
+      {/* Content */}
+      <div className="w-full max-w-[1100px] mx-auto px-3 py-4">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="text-sm opacity-80">
+            Match: <span className="opacity-100 font-semibold">{match?.id ?? "—"}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPlaying((v: boolean) => !v)}
+              className="text-xs px-3 py-2 rounded-lg border border-white/15 bg-white/5"
+            >
+              {playing ? "Pause" : "Play"}
+            </button>
+
+            <input
+              type="range"
+              min={0}
+              max={Math.max(1, timelineMs)}
+              value={Math.min(timelineMs, currentMs)}
+              onChange={(e) => seek(Number(e.target.value) / 1000)}
+              className="w-[260px]"
+            />
+            <div className="text-xs opacity-70 tabular-nums w-[90px] text-right">
+              {Math.round(currentMs)}ms
+            </div>
+          </div>
+        </div>
+
+        {/* Arena */}
+        <div
+          ref={arenaRef}
+          className="relative w-full aspect-[9/16] max-h-[78vh] mx-auto rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-b from-[#06131c] to-[#02060a]"
+          onPointerDownCapture={onArenaPointerDownCapture}
+        >
+          {/* FX overlay (reads DOM + events) */}
+          <BattleFxLayer events={fxEvents} />
+
+          {/* Loading/Error overlays */}
+          {timedOut ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+              <div className="text-center">
+                <div className="text-lg font-bold">Timeout</div>
+                <div className="text-sm opacity-80">{String(error ?? "No response")}</div>
+              </div>
+            </div>
+          ) : error ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+              <div className="text-center">
+                <div className="text-lg font-bold">Error</div>
+                <div className="text-sm opacity-80 whitespace-pre-wrap max-w-[92%]">{String(error)}</div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Enemy row */}
+          <div className="absolute left-0 right-0 top-[8%] px-[6%]">
+            <div className="flex justify-between gap-2">
+              {topSlots.map((slot, i) => {
+                const card = slot.card ?? null;
+                const unit = slot.unit ?? null;
+                const instanceId = unit?.instanceId ?? slot.fallbackId ?? `top-${i}`;
+                const attackFx = attackFxByInstance[instanceId];
+        const isDying = deathFxByInstance.has(instanceId);
+        const revealed = !!dbgAnim;
+
+                return (
+                  <div key={`e-${i}`}>
+                    <CardSlot
+  card={card}
+  unit={unit}
+  fallbackId={slot.fallbackId}
+  unitInstanceId={instanceId}
+  revealed={revealed}
+  isDying={isDying}
+  attackFx={attackFx}
+  damageFx={damageFxByInstance[instanceId] ?? undefined}
+  spawnFx={spawnFxByInstance[instanceId] ?? undefined}
+  delayMs={i * 80}
+/>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Player row */}
+          <div className="absolute left-0 right-0 bottom-[10%] px-[6%]">
+            <div className="flex justify-between gap-2">
+              {bottomSlots.map((slot, i) => {
+                const card = slot.card ?? null;
+                const unit = slot.unit ?? null;
+                const instanceId = unit?.instanceId ?? slot.fallbackId ?? `bot-${i}`;
+                const attackFx = attackFxByInstance[instanceId];
+        const isDying = deathFxByInstance.has(instanceId);
+        const revealed = true;
+
+                return (
+                  <div key={`p-${i}`}>
+                    <CardSlot
+  card={card}
+  unit={unit}
+  fallbackId={slot.fallbackId}
+  unitInstanceId={instanceId}
+  revealed={revealed}
+  isDying={isDying}
+  attackFx={attackFx}
+  damageFx={damageFxByInstance[instanceId] ?? undefined}
+  spawnFx={spawnFxByInstance[instanceId] ?? undefined}
+  delayMs={i * 80}
+/>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Debug overlays */}
+          {uiDebug ? (
+            <div className="absolute left-3 top-3 z-[9998] max-w-[92%] rounded-xl border border-cyan-400/40 bg-black/70 p-3 text-xs leading-snug">
+              <div className="font-extrabold text-cyan-200 mb-2">UI DBG</div>
+              <div className="opacity-85">isTelegramEnv: {String(isTelegramEnv)}</div>
+              <div className="opacity-85">match: {match ? "ok" : "null"}</div>
+              <div className="opacity-85">timelineMs: {timelineMs}</div>
+              <div className="opacity-85">events: {fxEvents.length}</div>
+              <div className="opacity-85">recentAttacks: {recentAttacks?.length ?? 0}</div>
+            </div>
+          ) : null}
+
+          {dbgAnim ? (
+            <div className="absolute right-3 bottom-3 z-[9998] w-[340px] max-w-[92%] rounded-xl border border-fuchsia-400/40 bg-black/70 p-3 text-xs leading-snug">
+              <div className="font-extrabold text-fuchsia-200 mb-2">FX DBG</div>
+              <div className="opacity-85 mb-2">
+                Цель: понять, видит ли FX слой DOM-карты и её координаты, когда приходит событие атаки.
+              </div>
+              <div className="opacity-85">
+                1) Во время боя смотри, увеличивается ли счётчик <b>events</b> сверху.
+              </div>
+              <div className="opacity-85">
+                2) Если атака есть, но карта не двигается — значит проблема в вычислении DOMRect или в том, как FX слой применяет transform.
+              </div>
+              <div className="opacity-85 mt-2">
+                Подсказка: CardSlot ставит <code>data-unit-id</code> и <code>data-side</code>. FX должен искать элементы именно по ним.
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </main>
+  );
+
+}
+
+export default function BattlePage() {
+  // IMPORTANT: Fix React hydration crash (#418) in Telegram WebView.
+  // Even though this file is a Client Component, Next.js still pre-renders it on the server.
+  // Any client-only differences (viewport/theme, timers, DOM measurements, etc.) can cause
+  // hydration mismatch and crash. We make the battle page render only after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{/* DBG_ALWAYS_V10: if you don't see this magenta label, you're not running this page.tsx */}
+<div
+  style={{
+    position: "fixed",
+    top: 8,
+    right: 8,
+    zIndex: 2147483647,
+    background: "rgba(0,0,0,0.75)",
+    color: "#ff00ff",
+    padding: "6px 10px",
+    borderRadius: 10,
+    fontWeight: 900,
+    fontSize: 14,
+    pointerEvents: "none",
+  }}
+>
+  DBG_ALWAYS_V10
+</div>
+
+        <div className="w-full max-w-md ui-card p-5 text-center">
+          <div className="text-sm font-semibold">Загрузка…</div>
+          <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
+          <div className="mt-4 ui-progress">
+            <div className="w-1/3 opacity-70 animate-pulse" />
+          </div>
+        </div>
       </main>
     );
   }
 
-
-export default function Page() {
   return (
     <Suspense
       fallback={
-        <main style={{ minHeight: '100vh', background: '#020617', color: '#fff', display: 'grid', placeItems: 'center' }}>
-          <div style={{ opacity: 0.85, fontWeight: 700 }}>Loading…</div>
+        <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+          <div className="w-full max-w-md ui-card p-5 text-center">
+            <div className="text-sm font-semibold">Загрузка…</div>
+            <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
+            <div className="mt-4 ui-progress">
+              <div className="w-1/3 opacity-70 animate-pulse" />
+            </div>
+          </div>
         </main>
       }
     >
