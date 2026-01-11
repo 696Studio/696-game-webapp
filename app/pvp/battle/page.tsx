@@ -367,11 +367,10 @@ function BattleInner() {
   const layoutdebug = sp.get("layoutdebug") === "1" || fxdebug;
 
   // Local toggle (does not affect layout): lets you enable debug overlay without URL params.
-  const [uiDebug, setUiDebug] = useState<boolean>(false);
-  // Animation debug overlay for FX (does not change positions).
-  const [animDebug, setAnimDebug] = useState<boolean>(false);
+  const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
 
-  // Debug UI is rendered directly in JSX (no portals/DOM mutations).
+    const [fxDebug, setFxDebug] = useState<boolean>(false);
+// Debug UI is rendered directly in JSX (no portals/DOM mutations).
 const isArenaDebug = DEBUG_ARENA || uiDebug;
   const isGridDebug = DEBUG_GRID || uiDebug;
 
@@ -1785,26 +1784,77 @@ const hpPct = useMemo(() => {
           alignItems: "center",
         }}
       >
-        
-        
-              <button
-          onClick={() => setAnimDebug((v) => !v)}
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
           style={{
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.16)",
-            background: animDebug ? "rgba(0,200,255,0.18)" : "rgba(0,0,0,0.35)",
-            color: "rgba(255,255,255,0.92)",
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
             fontSize: 12,
-            lineHeight: 1,
-            fontWeight: 700,
+            fontWeight: 900,
+            letterSpacing: 0.3,
           }}
         >
-          DBG FX: {animDebug ? "ON" : "OFF"}
+          DBG {uiDebug ? "ON" : "OFF"}
         </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
       </div>
 
-      <BattleFxLayer events={fxEvents} debug={animDebug} />
+      <BattleFxLayer events={fxEvents} debug={fxDebug} />
+      {(() => {
+        // Render FX debug toggle in a portal so it's not clipped by transformed/overflow ancestors.
+        if (typeof document === "undefined") return null;
+        return createPortal(
+          <div
+            style={{
+              position: "fixed",
+              right: 12,
+              bottom: 12,
+              zIndex: 2147483647,
+              pointerEvents: "auto",
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setFxDebug((v) => !v)}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.16)",
+                background: fxDebug ? "rgba(0,200,255,0.18)" : "rgba(0,0,0,0.35)",
+                color: "rgba(255,255,255,0.92)",
+                fontSize: 12,
+                lineHeight: 1,
+                fontWeight: 800,
+                letterSpacing: 0.2,
+                boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+              }}
+            >
+              DBG FX: {fxDebug ? "ON" : "OFF"}
+            </button>
+          </div>,
+          document.body
+        );
+      })()}
+
 
       {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
       {/* Debug UI overlay (no portal) */}
@@ -1817,7 +1867,24 @@ const hpPct = useMemo(() => {
           pointerEvents: "auto",
         }}
       >
-        
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.7)",
+            color: "white",
+            fontSize: 13,
+            fontWeight: 800,
+            letterSpacing: 0.3,
+            pointerEvents: "auto",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
       </div>
 
       {isArenaDebug ? (
@@ -1941,8 +2008,35 @@ const hpPct = useMemo(() => {
           alignItems: "center",
         }}
       >
-        
-        
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
       </div>
 
         <div className="w-full max-w-md ui-card p-5 text-center">
@@ -1971,8 +2065,35 @@ const hpPct = useMemo(() => {
           alignItems: "center",
         }}
       >
-        
-        
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
       </div>
 
         <div className="w-full max-w-md ui-card p-5">
@@ -2001,8 +2122,35 @@ const hpPct = useMemo(() => {
           alignItems: "center",
         }}
       >
-        
-        
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
       </div>
 
         <div className="w-full max-w-md ui-card p-5">
@@ -2031,8 +2179,35 @@ const hpPct = useMemo(() => {
           alignItems: "center",
         }}
       >
-        
-        
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
       </div>
 
         <div className="w-full max-w-md ui-card p-5 text-center">
@@ -2050,7 +2225,7 @@ const hpPct = useMemo(() => {
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
-      {/* : always-visible toggle (Telegram + browser). Should be visible during battle. */}
+      {/* DBG_V11: always-visible toggle (Telegram + browser). Should be visible during battle. */}
       <div
         style={{
           position: "fixed",
@@ -2063,11 +2238,39 @@ const hpPct = useMemo(() => {
           alignItems: "center",
         }}
       >
-        
-        
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
       </div>
 
-      <BattleFxLayer events={fxEvents} debug={animDebug} />
+      <BattleFxLayer events={fxEvents} debug={fxDebug} />
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -2891,7 +3094,27 @@ const hpPct = useMemo(() => {
       />
 
       {/* DEBUG TOGGLE (always visible) */}
-      
+      <button
+        type="button"
+        onClick={() => setUiDebug((v) => !v)}
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          padding: "6px 10px",
+          borderRadius: 10,
+          border: "1px solid rgba(255,255,255,0.25)",
+          background: "rgba(0,0,0,0.55)",
+          color: "rgba(255,255,255,0.92)",
+          fontSize: 12,
+          fontWeight: 900,
+          letterSpacing: 1,
+        }}
+      >
+        DBG
+      </button>
 
       {uiDebug && (
         <div
@@ -3348,7 +3571,24 @@ export default function BattlePage() {
   if (!mounted) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-
+{/* DBG_ALWAYS_V10: if you don't see this magenta label, you're not running this page.tsx */}
+<div
+  style={{
+    position: "fixed",
+    top: 8,
+    right: 8,
+    zIndex: 2147483647,
+    background: "rgba(0,0,0,0.75)",
+    color: "#ff00ff",
+    padding: "6px 10px",
+    borderRadius: 10,
+    fontWeight: 900,
+    fontSize: 14,
+    pointerEvents: "none",
+  }}
+>
+  DBG_ALWAYS_V10
+</div>
 
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загрузка…</div>
