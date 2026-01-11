@@ -1888,7 +1888,7 @@ const hpPct = useMemo(() => {
             whiteSpace: "pre-wrap",
           }}
         >
-          <div style={{ fontWeight: 800, marginBottom: 6 }}>Layout Debug</div>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>Layout Debug</div>
           {debugCover ? (
             <>
               <div>arenaW/arenaH: {debugCover.arenaW}×{debugCover.arenaH}</div>
@@ -3101,21 +3101,23 @@ const hpPct = useMemo(() => {
         <div
           style={{
             position: "fixed",
-            top: 48,
-            left: 10,
+            left: debugCover ? Math.round(debugCover.offsetX + debugCover.drawnW / 2) : "50%",
+            top: debugCover ? Math.round(debugCover.offsetY + debugCover.drawnH / 2) : "50%",
+            transform: "translate(-50%, -50%)",
             zIndex: 2147483647,
-            pointerEvents: "auto",
-            padding: "10px 12px",
-            borderRadius: 12,
+            pointerEvents: "none",
+            padding: "6px 8px",
+            borderRadius: 10,
             border: "1px solid rgba(255,255,255,0.14)",
             background: "rgba(0,0,0,0.55)",
             color: "rgba(255,255,255,0.92)",
-            fontSize: 12,
-            lineHeight: 1.25,
-            width: "min(360px, calc(100vw - 20px))",
+            fontSize: 10,
+            lineHeight: 1.2,
+            width: "min(260px, calc(100vw - 16px))",
+            opacity: 0.85,
           }}
         >
-          <div style={{ fontWeight: 900, letterSpacing: 0.8, marginBottom: 6 }}>LAYOUT DEBUG</div>
+          <div style={{ fontWeight: 900, letterSpacing: 0.8, marginBottom: 4 }}>LAYOUT DEBUG</div>
           <div style={{ opacity: 0.9 }}>Tap on arena to capture nx/ny.</div>
           <div style={{ marginTop: 6, opacity: 0.9 }}>
             {dbgClick
