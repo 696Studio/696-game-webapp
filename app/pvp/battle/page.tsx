@@ -3238,6 +3238,110 @@ const hpPct = useMemo(() => {
             </div>
           )}
 
+
+          {isGridDebug && debugCover && (
+            <div
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 50,
+                pointerEvents: "none",
+                mixBlendMode: "normal",
+              }}
+            >
+              <svg
+                width="100%"
+                height="100%"
+                viewBox={`0 0 ${debugCover.arenaW} ${debugCover.arenaH}`}
+                preserveAspectRatio="none"
+                style={{ display: "block" }}
+              >
+                {/* Drawn image rect */}
+                <rect
+                  x={debugCover.offsetX}
+                  y={debugCover.offsetY}
+                  width={debugCover.drawnW}
+                  height={debugCover.drawnH}
+                  fill="none"
+                  stroke="rgba(0,255,255,0.55)"
+                  strokeWidth={1}
+                />
+
+                {/* Grid lines in normalized space (0..1) */}
+                {Array.from({ length: 11 }).map((_, i) => {
+                  const t = i / 10;
+                  const x = debugCover.offsetX + t * debugCover.drawnW;
+                  const y = debugCover.offsetY + t * debugCover.drawnH;
+                  return (
+                    <g key={i}>
+                      <line x1={x} y1={debugCover.offsetY} x2={x} y2={debugCover.offsetY + debugCover.drawnH} stroke="rgba(255,255,255,0.16)" strokeWidth={1} />
+                      <line x1={debugCover.offsetX} y1={y} x2={debugCover.offsetX + debugCover.drawnW} y2={y} stroke="rgba(255,255,255,0.16)" strokeWidth={1} />
+                      {i !== 0 && i !== 10 && (
+                        <>
+                          <text x={x + 3} y={debugCover.offsetY + 12} fontSize={10} fill="rgba(255,255,255,0.65)">{t.toFixed(1)}</text>
+                          <text x={debugCover.offsetX + 3} y={y - 3} fontSize={10} fill="rgba(255,255,255,0.65)">{t.toFixed(1)}</text>
+                        </>
+                      )}
+                    </g>
+                  );
+                })}
+
+                {/* Center cross */}
+                {(() => {
+                  const cx = debugCover.offsetX + 0.5 * debugCover.drawnW;
+                  const cy = debugCover.offsetY + 0.5 * debugCover.drawnH;
+                  return (
+                    <g>
+                      <line x1={cx - 14} y1={cy} x2={cx + 14} y2={cy} stroke="rgba(0,255,255,0.8)" strokeWidth={2} />
+                      <line x1={cx} y1={cy - 14} x2={cx} y2={cy + 14} stroke="rgba(0,255,255,0.8)" strokeWidth={2} />
+                      <text x={cx + 8} y={cy - 8} fontSize={12} fill="rgba(0,255,255,0.95)">CENTER</text>
+                    </g>
+                  );
+                })()}
+
+                {/* Slot markers */}
+                <g>
+                  <circle cx={debugCover.topX} cy={debugCover.topY} r={8} fill="none" stroke="rgba(255,0,255,0.95)" strokeWidth={2} />
+                  <text x={debugCover.topX + 12} y={debugCover.topY + 4} fontSize={12} fill="rgba(255,0,255,0.95)">TOP RING</text>
+
+                  <circle cx={debugCover.botX} cy={debugCover.botY} r={8} fill="none" stroke="rgba(0,255,0,0.95)" strokeWidth={2} />
+                  <text x={debugCover.botX + 12} y={debugCover.botY + 4} fontSize={12} fill="rgba(0,255,0,0.95)">BOT RING</text>
+                </g>
+
+                {/* Click marker */}
+                {dbgClick && (
+                  <g>
+                    <circle cx={dbgClick.x} cy={dbgClick.y} r={7} fill="none" stroke="rgba(255,255,0,0.95)" strokeWidth={2} />
+                    <text x={dbgClick.x + 10} y={dbgClick.y - 10} fontSize={12} fill="rgba(255,255,0,0.95)">
+                      {`nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)}`}
+                    </text>
+                  </g>
+                )}
+              </svg>
+
+              {/* Debug stats (inside arena, not viewport) */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: 10,
+                  top: 10,
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  background: "rgba(0,0,0,0.55)",
+                  color: "rgba(255,255,255,0.92)",
+                  fontSize: 12,
+                  lineHeight: 1.25,
+                  whiteSpace: "pre",
+                }}
+              >
+                {`arena ${Math.round(debugCover.arenaW)}×${Math.round(debugCover.arenaH)}\n` +
+                  `drawn ${Math.round(debugCover.drawnW)}×${Math.round(debugCover.drawnH)}\n` +
+                  `off ${Math.round(debugCover.offsetX)},${Math.round(debugCover.offsetY)}  scale ${debugCover.scale.toFixed(3)}`}
+              </div>
+            </div>
+          )}
+
           {/* FX overlay (independent from card DOM) */}
           <div className="bb-fx-layer" aria-hidden="true">
             {fxBursts.map((b) => (
