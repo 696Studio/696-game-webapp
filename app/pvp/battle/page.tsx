@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
 import CardArt from "../../components/CardArt";
@@ -297,8 +298,8 @@ function resolveCardArtUrl(raw?: string | null) {
 const BOARD_IMG_W = 1290;
 const BOARD_IMG_H = 2796;
 
-const DEBUG_ARENA = true; // debug overlay for arena sizing
-const DEBUG_GRID = true; // mirrored A/B measurement grid (dev only)
+const DEBUG_ARENA = false; // debug overlay for arena sizing
+const DEBUG_GRID = false; // mirrored A/B measurement grid
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
 const TOP_RING_NY = 0.165;
@@ -323,6 +324,20 @@ function coverMapPoint(nx: number, ny: number, containerW: number, containerH: n
   };
 }
 
+function coverUnmapPoint(x: number, y: number, containerW: number, containerH: number, imgW: number, imgH: number) {
+  const scale = Math.max(containerW / imgW, containerH / imgH); // cover
+  const drawnW = imgW * scale;
+  const drawnH = imgH * scale;
+  const offsetX = (containerW - drawnW) / 2;
+  const offsetY = (containerH - drawnH) / 2;
+
+  const nx = (x - offsetX) / drawnW;
+  const ny = (y - offsetY) / drawnH;
+
+  return { nx, ny, scale, drawnW, drawnH, offsetX, offsetY };
+}
+
+
 function coverMapRect(
   nx1: number,
   ny1: number,
@@ -345,6 +360,19 @@ function coverMapRect(
 function BattleInner() {
   const router = useRouter();
   const sp = useSearchParams();
+  // Debug flags (safe in Telegram: just read query params).
+  const fxdebug = sp.get("fxdebug") === "1";
+  const layoutdebug = sp.get("layoutdebug") === "1" || fxdebug;
+
+  // Local toggle (does not affect layout): lets you enable debug overlay without URL params.
+  const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
+
+  // Debug UI is rendered directly in JSX (no portals/DOM mutations).
+const isArenaDebug = DEBUG_ARENA || uiDebug;
+  const isGridDebug = DEBUG_GRID || uiDebug;
+
+  const [dbgClick, setDbgClick] = useState<null | { nx: number; ny: number; x: number; y: number }>(null);
+
   const matchId = sp.get("matchId") || "";
 
   const session = useGameSessionContext() as any;
@@ -441,6 +469,30 @@ function BattleInner() {
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
+
+  const onArenaPointerDownCapture = (ev: React.PointerEvent) => {
+    if (!isArenaDebug) return;
+    if (!debugCover) return;
+    // left button / primary touch only
+    if ((ev as any).button != null && (ev as any).button !== 0) return;
+
+    const arenaEl = arenaRef.current;
+    if (!arenaEl) return;
+
+    const rect = arenaEl.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const y = ev.clientY - rect.top;
+
+    const inv = coverUnmapPoint(x, y, debugCover.arenaW, debugCover.arenaH, BOARD_IMG_W, BOARD_IMG_H);
+    const nx = clamp(inv.nx, 0, 1);
+    const ny = clamp(inv.ny, 0, 1);
+
+    setDbgClick({ nx, ny, x, y });
+    // Also log for copy/paste.
+    // eslint-disable-next-line no-console
+    console.log("[layoutdebug] click:", { nx, ny, x, y });
+  };
+
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
@@ -539,7 +591,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [p1UnitsBySlot, p2UnitsBySlot]);
   const [layoutTick, setLayoutTick] = useState(0);
 
-  const [arenaBox, setArenaBox] = useState<{ w: number; h: number } | null>(null);
+  const [arenaBox, setArenaBox] = useState<{ w: number; h: number; left: number; top: number } | null>(null);
 
   const debugCover = useMemo(() => {
     if (!arenaBox) return null;
@@ -572,206 +624,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // Top half = "A" (0% at top edge, 100% at midline)
   // Bottom half = "B" (0% at bottom edge, 100% at midline)
   // Labels are repeated on all borders so we can place bottom HUD as a mirror of the top.
-  function DebugGrid() {
-    if (!DEBUG_GRID || !debugCover) return null;
-
-    const w = debugCover.arenaW;
-    const h = debugCover.arenaH;
-    const halfH = h / 2;
-
-    // density: 5% steps across X, 10% steps within each half on Y (keeps readable)
-    const stepsX = 20; // 0..100% every 5%
-    const stepsYHalf = 10; // 0..100% every 10% within each half
-    const majorEveryX = 2; // label every 10%
-    const majorEveryY = 1; // label every 10% within half
-
-    const mono =
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
-
-    const nodes: React.ReactNode[] = [];
-
-    // vertical lines (full height)
-    for (let i = 0; i <= stepsX; i++) {
-      const t = i / stepsX;
-      const x = t * w;
-      const isMajor = i % majorEveryX === 0;
-      nodes.push(
-        <line
-          key={`vx-${i}`}
-          x1={x}
-          y1={0}
-          x2={x}
-          y2={h}
-          stroke="white"
-          strokeOpacity={isMajor ? 0.38 : 0.16}
-          strokeWidth={isMajor ? 2 : 1}
-        />,
-      );
-
-      if (isMajor) {
-        const label = `${Math.round(t * 100)}%`;
-        // top border
-        nodes.push(
-          <text
-            key={`tx-top-${i}`}
-            x={x + 4}
-            y={12}
-            fill="white"
-            opacity={0.75}
-            fontSize={10}
-            fontFamily={mono}
-          >
-            {label}
-          </text>,
-        );
-        // bottom border
-        nodes.push(
-          <text
-            key={`tx-bot-${i}`}
-            x={x + 4}
-            y={h - 4}
-            fill="white"
-            opacity={0.75}
-            fontSize={10}
-            fontFamily={mono}
-          >
-            {label}
-          </text>,
-        );
-      }
-    }
-
-    // horizontal lines: top half (A)
-    for (let i = 0; i <= stepsYHalf; i++) {
-      const t = i / stepsYHalf; // 0..1 in HALF
-      const y = t * halfH;
-      const isMajor = i % majorEveryY === 0;
-      const label = `${Math.round(t * 100)}%`;
-
-      nodes.push(
-        <line
-          key={`hy-a-${i}`}
-          x1={0}
-          y1={y}
-          x2={w}
-          y2={y}
-          stroke="white"
-          strokeOpacity={isMajor ? 0.38 : 0.16}
-          strokeWidth={isMajor ? 2 : 1}
-        />,
-      );
-
-      if (isMajor) {
-        const px = Math.round(y);
-        // left border
-        nodes.push(
-          <text
-            key={`ty-a-l-${i}`}
-            x={4}
-            y={Math.max(10, y - 4)}
-            fill="white"
-            opacity={0.75}
-            fontSize={10}
-            fontFamily={mono}
-          >
-            A {label} y:{px}
-          </text>,
-        );
-        // right border
-        nodes.push(
-          <text
-            key={`ty-a-r-${i}`}
-            x={w - 118}
-            y={Math.max(10, y - 4)}
-            fill="white"
-            opacity={0.75}
-            fontSize={10}
-            fontFamily={mono}
-          >
-            A {label} y:{px}
-          </text>,
-        );
-      }
-    }
-
-    // horizontal lines: bottom half (B) - mirrored labels (0% at bottom edge, 100% at midline)
-    for (let i = 0; i <= stepsYHalf; i++) {
-      const t = i / stepsYHalf; // 0..1 in HALF
-      const y = h - t * halfH;
-      const isMajor = i % majorEveryY === 0;
-      const label = `${Math.round(t * 100)}%`;
-
-      nodes.push(
-        <line
-          key={`hy-b-${i}`}
-          x1={0}
-          y1={y}
-          x2={w}
-          y2={y}
-          stroke="white"
-          strokeOpacity={isMajor ? 0.38 : 0.16}
-          strokeWidth={isMajor ? 2 : 1}
-        />,
-      );
-
-      if (isMajor) {
-        const px = Math.round(y);
-        nodes.push(
-          <text
-            key={`ty-b-l-${i}`}
-            x={4}
-            y={Math.min(h - 4, y - 4)}
-            fill="white"
-            opacity={0.75}
-            fontSize={10}
-            fontFamily={mono}
-          >
-            B {label} y:{px}
-          </text>,
-        );
-        nodes.push(
-          <text
-            key={`ty-b-r-${i}`}
-            x={w - 118}
-            y={Math.min(h - 4, y - 4)}
-            fill="white"
-            opacity={0.75}
-            fontSize={10}
-            fontFamily={mono}
-          >
-            B {label} y:{px}
-          </text>,
-        );
-      }
-    }
-
-    // Midline highlight
-    nodes.push(
-      <line
-        key="midline"
-        x1={0}
-        y1={halfH}
-        x2={w}
-        y2={halfH}
-        stroke="rgba(255,255,255,0.9)"
-        strokeWidth={3}
-        strokeOpacity={0.35}
-      />,
-    );
-
-    return (
-<svg
-        className="dbg-grid"
-        width={w}
-        height={h}
-        viewBox={`0 0 ${w} ${h}`}
-        preserveAspectRatio="none"
-      >
-        {nodes}
-      </svg>
-    );
-  }
-
   useEffect(() => {
     const onResize = () => setLayoutTick((x) => x + 1);
     window.addEventListener("resize", onResize);
@@ -785,7 +637,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       const r = el.getBoundingClientRect();
       const w = Math.max(1, Math.floor(r.width));
       const h = Math.max(1, Math.floor(r.height));
-      setArenaBox({ w, h });
+      setArenaBox({ w, h, left: r.left, top: r.top });
     });
     return () => window.cancelAnimationFrame(id);
   }, [layoutTick]);
@@ -1942,7 +1794,179 @@ const hpPct = useMemo(() => {
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
+      </div>
+
       <BattleFxLayer events={fxEvents} />
+
+      {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
+      {/* Debug UI overlay (no portal) */}
+      <div
+        style={{
+          position: "fixed",
+          right: 12,
+          bottom: 12,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.7)",
+            color: "white",
+            fontSize: 13,
+            fontWeight: 800,
+            letterSpacing: 0.3,
+            pointerEvents: "auto",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+      </div>
+
+      {isArenaDebug ? (
+        <div
+          style={{
+            position: "fixed",
+            left: 12,
+            bottom: 12,
+            zIndex: 2147483647,
+            minWidth: 220,
+            maxWidth: 320,
+            padding: 10,
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.18)",
+            background: "rgba(0,0,0,0.68)",
+            color: "white",
+            fontSize: 12,
+            lineHeight: "14px",
+            pointerEvents: "auto",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>Layout Debug</div>
+          {debugCover ? (
+            <>
+              <div>arenaW/arenaH: {debugCover.arenaW}×{debugCover.arenaH}</div>
+              <div>
+                drawnW/drawnH: {Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
+              </div>
+              <div>
+                offsetX/Y: {Math.round(debugCover.offsetX)},{Math.round(debugCover.offsetY)}
+              </div>
+              <div>scale: {debugCover.scale.toFixed(4)}</div>
+              <div style={{ marginTop: 6, opacity: 0.9 }}>
+                Tap arena → nx/ny: {dbgClick ? `${dbgClick.nx.toFixed(4)} / ${dbgClick.ny.toFixed(4)}` : "—"}
+              </div>
+            </>
+          ) : (
+            <div style={{ opacity: 0.85 }}>debugCover: —</div>
+          )}
+        </div>
+      ) : null}
+
+{uiDebug && (
+        <div
+          className="bb-debug-hud"
+          style={{
+            position: "fixed",
+            left: 12,
+            bottom: 12,
+            zIndex: 999998,
+            maxWidth: 360,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.16)",
+            background: "rgba(0,0,0,0.55)",
+            color: "white",
+            fontSize: 12,
+            lineHeight: "16px",
+            pointerEvents: "none",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Layout Debug</div>
+          {debugCover ? (
+            <>
+              <div>
+                arenaW/arenaH: {debugCover.arenaW}×{debugCover.arenaH}
+              </div>
+              <div>
+                drawnW/drawnH: {Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
+              </div>
+              <div>scale: {debugCover.scale.toFixed(4)}</div>
+              <div>
+                offsetX/offsetY: {Math.round(debugCover.offsetX)}/{Math.round(debugCover.offsetY)}
+              </div>
+            </>
+          ) : (
+            <div style={{ opacity: 0.8 }}>arena box: not ready</div>
+          )}
+          <div style={{ marginTop: 6, opacity: 0.9 }}>
+            Tap on arena → you&#39;ll get nx/ny.
+          </div>
+          {dbgClick ? (
+            <div style={{ marginTop: 6 }}>
+              <div>
+                click px: {Math.round(dbgClick.x)}, {Math.round(dbgClick.y)}
+              </div>
+              <div>
+                click n: {dbgClick.nx.toFixed(4)}, {dbgClick.ny.toFixed(4)}
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 6, opacity: 0.75 }}>no click yet</div>
+          )}
+        </div>
+      )}
+
 
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
@@ -1955,6 +1979,49 @@ const hpPct = useMemo(() => {
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
+      </div>
+
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загрузка…</div>
           <div className="mt-2 text-sm ui-subtle">Синхронизация сессии.</div>
@@ -1969,6 +2036,49 @@ const hpPct = useMemo(() => {
   if (timedOut || error) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
+      </div>
+
         <div className="w-full max-w-md ui-card p-5">
           <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
           <div className="mt-2 text-sm ui-subtle">Нажми Re-sync и попробуй снова.</div>
@@ -1983,6 +2093,49 @@ const hpPct = useMemo(() => {
   if (errText) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
+      </div>
+
         <div className="w-full max-w-md ui-card p-5">
           <div className="text-lg font-semibold">Ошибка</div>
           <div className="mt-2 text-sm ui-subtle">{errText}</div>
@@ -1997,6 +2150,49 @@ const hpPct = useMemo(() => {
   if (!match) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
+      </div>
+
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загружаю матч…</div>
           <div className="mt-2 text-sm ui-subtle">
@@ -2012,6 +2208,51 @@ const hpPct = useMemo(() => {
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
+      {/* DBG_V11: always-visible toggle (Telegram + browser). Should be visible during battle. */}
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <div
+          style={{
+            padding: "6px 8px",
+            borderRadius: 10,
+            background: "rgba(255,0,180,0.75)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+          }}
+        >
+          DBG_V11
+        </div>
+      </div>
+
       <BattleFxLayer events={fxEvents} />
       <style
         dangerouslySetInnerHTML={{
@@ -2831,20 +3072,65 @@ const hpPct = useMemo(() => {
         }
         .dbg-cross::before { width: 18px; height: 2px; }
         .dbg-cross::after { width: 2px; height: 18px; }
-
-        .dbg-grid {
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 100%;
-          height: 100%;
-          z-index: 44;
-          pointer-events: none;
-        }
-
           `,
         }}
       />
+
+      {/* DEBUG TOGGLE (always visible) */}
+      <button
+        type="button"
+        onClick={() => setUiDebug((v) => !v)}
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 10,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          padding: "6px 10px",
+          borderRadius: 10,
+          border: "1px solid rgba(255,255,255,0.25)",
+          background: "rgba(0,0,0,0.55)",
+          color: "rgba(255,255,255,0.92)",
+          fontSize: 12,
+          fontWeight: 900,
+          letterSpacing: 1,
+        }}
+      >
+        DBG
+      </button>
+
+      {uiDebug && (
+        <div
+          style={{
+            position: "fixed",
+            top: 48,
+            left: 10,
+            zIndex: 2147483647,
+            pointerEvents: "auto",
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.14)",
+            background: "rgba(0,0,0,0.55)",
+            color: "rgba(255,255,255,0.92)",
+            fontSize: 12,
+            lineHeight: 1.25,
+            width: "min(360px, calc(100vw - 20px))",
+          }}
+        >
+          <div style={{ fontWeight: 900, letterSpacing: 0.8, marginBottom: 6 }}>LAYOUT DEBUG</div>
+          <div style={{ opacity: 0.9 }}>Tap on arena to capture nx/ny.</div>
+          <div style={{ marginTop: 6, opacity: 0.9 }}>
+            {dbgClick
+              ? `click nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)} (x=${Math.round(dbgClick.x)} y=${Math.round(dbgClick.y)})`
+              : "click: —"}
+          </div>
+          {debugCover && (
+            <div style={{ marginTop: 8, opacity: 0.9 }}>
+              arena {Math.round(debugCover.arenaW)}×{Math.round(debugCover.arenaH)} scale {debugCover.scale.toFixed(3)}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="w-full max-w-5xl">
         <header className="board-topbar ui-card rounded-[var(--r-xl)] mb-4">
@@ -2925,7 +3211,33 @@ const hpPct = useMemo(() => {
           </div>
         </header>
 
-        <section ref={arenaRef as any} className={["board", "arena", boardFxClass].join(" ")}>
+        <section ref={arenaRef as any} onPointerDownCapture={onArenaPointerDownCapture} className={["board", "arena", boardFxClass].join(" ")}>
+
+          {isArenaDebug && (
+            <div
+              style={{
+                position: "fixed",
+                left: 12,
+                bottom: 12,
+                zIndex: 99999,
+                padding: "10px 12px",
+                borderRadius: 12,
+                background: "rgba(0,0,0,0.55)",
+                color: "rgba(255,255,255,0.92)",
+                fontSize: 12,
+                lineHeight: 1.25,
+                maxWidth: 360,
+                pointerEvents: "none",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {"layoutdebug: tap arena to read nx/ny\n" +
+                (dbgClick
+                  ? `click nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)} (x=${Math.round(dbgClick.x)} y=${Math.round(dbgClick.y)})`
+                  : "click: —")}
+            </div>
+          )}
+
           {/* FX overlay (independent from card DOM) */}
           <div className="bb-fx-layer" aria-hidden="true">
             {fxBursts.map((b) => (
@@ -2952,7 +3264,7 @@ const hpPct = useMemo(() => {
             ))}
           </div>
 
-          {DEBUG_ARENA && debugCover && (
+          {isArenaDebug && debugCover && (
             <>
               <div className="dbg-panel">
                 <div>
@@ -2976,9 +3288,6 @@ const hpPct = useMemo(() => {
               <div className="dbg-cross" style={{ left: debugCover.botX, top: debugCover.botY }} />
             </>
           )}
-
-          {DEBUG_GRID && debugCover && <DebugGrid />}
-
           <svg className="atk-overlay" width="100%" height="100%">
             <defs>
               <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
@@ -3139,6 +3448,25 @@ export default function BattlePage() {
   if (!mounted) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{/* DBG_ALWAYS_V10: if you don't see this magenta label, you're not running this page.tsx */}
+<div
+  style={{
+    position: "fixed",
+    top: 8,
+    right: 8,
+    zIndex: 2147483647,
+    background: "rgba(0,0,0,0.75)",
+    color: "#ff00ff",
+    padding: "6px 10px",
+    borderRadius: 10,
+    fontWeight: 900,
+    fontSize: 14,
+    pointerEvents: "none",
+  }}
+>
+  DBG_ALWAYS_V10
+</div>
+
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загрузка…</div>
           <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
