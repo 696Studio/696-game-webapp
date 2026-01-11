@@ -302,9 +302,9 @@ const DEBUG_ARENA = false; // debug overlay for arena sizing
 const DEBUG_GRID = false; // mirrored A/B measurement grid
 // Tweaks for your specific PNG (ring centers)
 const TOP_RING_NX = 0.5;
-const TOP_RING_NY = 0.165;
+const TOP_RING_NY = 0.1606;
 const BOT_RING_NX = 0.5;
-const BOT_RING_NY = 0.950; // was 0.89
+const BOT_RING_NY = 0.9564; // was 0.89
 
 function coverMapPoint(nx: number, ny: number, containerW: number, containerH: number, imgW: number, imgH: number) {
   const scale = Math.max(containerW / imgW, containerH / imgH); // cover
@@ -1322,11 +1322,9 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       const img  = Math.round(ring * 0.86);     
     
       // ✅ extra offset to avoid Telegram top/bottom overlays (responsive)
-      const yOffset =
-      where === "top"
-        ? Math.round(arenaBox.h * 0.008) // ⬇️ TOP tiny down
-        : -Math.round(arenaBox.h * 0.036); // ⬆️ НИЖНЮЮ ЧУТЬ-ЧУТЬ           
-    
+      // NOTE: keep 0 unless you intentionally tune with DBG anchors.
+      const yOffset = 0;
+
       const top = clamp(p.y + yOffset, ring / 2 + 8, arenaBox.h - ring / 2 - 8);
     
       return { left: p.x, top, ring, img };
