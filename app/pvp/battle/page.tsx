@@ -1183,34 +1183,40 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return map;
   }, [timeline, t]);
 
-  const recentAttacks = useMemo(() => {
-    const windowSec = 0.22;
-    const fromT = Math.max(0, t - windowSec);
-    const arr: AttackFx[] = [];
-    for (const e of timeline) {
-      if (e.t < fromT) continue;
-      if (e.t > t) break;
-      if (e.type === "attack") {
-        const fromId = String((e as any)?.from?.instanceId ?? "");
-        const toId = String((e as any)?.to?.instanceId ?? "");
-        if (!fromId || !toId) continue;
-        arr.push({ t: e.t, fromId, toId });
-      }
-    }
-    return arr.slice(-2);
-  }, [timeline, t]);
-
-  // FX events derived from recent attacks (used by BattleFxLayer).
   const fxEvents = useMemo(() => {
-    return (recentAttacks as any[])
-      .filter((a) => a && (a as any).fromId && (a as any).toId)
-      .map((a: any, i: number) => ({
-        type: "attack" as const,
-        id: `${a.t ?? ""}:${a.fromId}:${a.toId}:${i}`,
-        attackerId: String(a.fromId),
-        targetId: String(a.toId),
-      }));
-  }, [recentAttacks]);
+    // FX events for BattleFxLayer: derive directly from timeline attacks.
+    // Important: IDs must be stable & unique so BattleFxLayer can de-dup via seenIds.
+    const out: { type: "attack"; id: string; attackerId: string; targetId: string }[] = [];
+    const tl = timeline || [];
+    for (let i = 0; i < tl.length; i++) {
+      const e: any = tl[i];
+      if (!e || e.type !== "attack") continue;
+
+      // Prefer structured refs if available.
+      const fromRef =
+        readUnitRefFromEvent(e, "from") ||
+        readUnitRefFromEvent(e, "unit") ||
+        readUnitRefFromEvent(e, "attacker" as any);
+      const toRef =
+        readUnitRefFromEvent(e, "to") ||
+        readUnitRefFromEvent(e, "target") ||
+        readUnitRefFromEvent(e, "defender" as any);
+
+      const attackerId = String(fromRef?.instanceId ?? e?.fromId ?? e?.attackerId ?? "");
+      const targetId = String(toRef?.instanceId ?? e?.toId ?? e?.targetId ?? "");
+
+      if (!attackerId || !targetId) continue;
+
+      const baseId = String(e.id ?? e.uid ?? `${e.t ?? ""}:${attackerId}:${targetId}:${i}`);
+      out.push({
+        type: "attack",
+        id: `atk:${baseId}:${i}`,
+        attackerId,
+        targetId,
+      });
+    }
+    return out;
+  }, [timeline]);
 
 
   const spawnFxByInstance = useMemo(() => {
@@ -1277,6 +1283,31 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       y: r.top + r.height / 2 - aRect.top,
     };
   }
+
+
+  const recentAttacks = useMemo(() => {
+    // Recent attack pairs used for the optional debug overlay (curves).
+    // Kept separate from fxEvents so we can window by time and preserve ordering.
+    const windowSec = 0.65;
+    const fromT = Math.max(0, t - windowSec);
+    const out: AttackFx[] = [];
+
+    for (const e of timeline) {
+      if (e.t < fromT) continue;
+      if (e.t > t) break;
+      if (e.type !== "attack") continue;
+
+      const fromRef = readUnitRefFromEvent(e as any, "from");
+      const toRef = readUnitRefFromEvent(e as any, "to") || readUnitRefFromEvent(e as any, "target");
+      const fromId = String(fromRef?.instanceId ?? (e as any)?.from?.instanceId ?? "");
+      const toId = String(toRef?.instanceId ?? (e as any)?.to?.instanceId ?? "");
+      if (!fromId || !toId) continue;
+
+      out.push({ t: e.t, fromId, toId });
+    }
+
+    return out;
+  }, [timeline, t]);
 
   const attackCurves = useMemo(() => {
     const arenaEl = arenaRef.current;
