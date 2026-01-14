@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 // Build stamp for debugging: proves the client module executed
 if (typeof window !== 'undefined') {
-  (window as any).__bb_fx_build = 'BattleFxLayer.registry.fixed.v4';
+  (window as any).__bb_fx_build = 'BattleFxLayer.registry.fixed.v5';
   // Stub until component mounts
   if (!(window as any).__bb_fx_testFly) {
     (window as any).__bb_fx_testFly = () => {
@@ -67,7 +67,7 @@ export default function BattleFxLayer({
 
   // Ensure globals exist even if module-level code is not reloaded
   useEffect(() => {
-    (window as any).__bb_fx_build = 'BattleFxLayer.registry.fixed.v4';
+    (window as any).__bb_fx_build = 'BattleFxLayer.registry.fixed.v5';
     (window as any).__bb_fx_ping = () => 'pong';
     if (!(window as any).__bb_fx_testFly) {
       (window as any).__bb_fx_testFly = () => {
@@ -85,7 +85,24 @@ export default function BattleFxLayer({
     }
   });
 
-  const atkEvents = useMemo(() => events.filter((e) => (e as any)?.type === 'atk') as FxEvent[], [events]);
+    // Attack-like events can come in different shapes depending on the engine.
+  // We treat an event as 'attack-like' if:
+  // - type is one of: 'atk' | 'attack' | 'attackFx'
+  // - OR it contains attackerId + targetId fields
+  const isAttackLike = (e: any): e is FxEvent => {
+    const t = String(e?.type ?? '').toLowerCase();
+    if (t === 'atk' || t === 'attack' || t === 'attackfx') return true;
+    return typeof e?.attackerId === 'string' && typeof e?.targetId === 'string';
+  };
+
+  const lastEvent = events.length ? (events[events.length - 1] as any) : null;
+  const lastAttackLike = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e: any = events[i];
+      if (isAttackLike(e)) return { e, idx: i };
+    }
+    return null as null | { e: any; idx: number };
+  }, [events, events.length, lastEvent]);
 
   // poll localStorage toggle (Telegram WebView sometimes ignores storage event)
   useEffect(() => {
@@ -153,7 +170,7 @@ export default function BattleFxLayer({
     (window as any).__bb_fx_domSlots = Array.from(document.querySelectorAll('[data-bb-slot]')).map((n) =>
       (n as HTMLElement).getAttribute('data-bb-slot')
     );
-  }, [slotRegistryRef, atkEvents.length]);
+  }, [slotRegistryRef, events.length]);
 
 // Expose manual hooks in debug mode
   useEffect(() => {
@@ -184,91 +201,98 @@ export default function BattleFxLayer({
     };
   }, [debug, slotRegistryRef]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Play on latest atk event
-  useEffect(() => {
-    if (!atkEvents.length) return;
+  // Play on latest attack-like event
+useEffect(() => {
+  if (!lastAttackLike) return;
 
-    const last = atkEvents[atkEvents.length - 1] as any;
-    if (!last || typeof last !== 'object') return;
+  const last = lastAttackLike.e as any;
+  const idx = lastAttackLike.idx;
 
-    const key = `${atkEvents.length - 1}:${String(last.attackerId ?? '')}>${String(last.targetId ?? '')}`;
-    if (key === lastSeenRef.current) return;
-    lastSeenRef.current = key;
+  const key = `${idx}:${String(last.attackerId ?? '')}>${String(last.targetId ?? '')}:${String(last.ts ?? '')}`;
+  if (key === lastSeenRef.current) return;
+  lastSeenRef.current = key;
 
+  if (debug) {
+    (window as any).__bb_fx_lastAtk = last;
+    (window as any).__bb_fx_attackIdx = idx;
+    (window as any).__bb_fx_eventsLen = events.length;
+    (window as any).__bb_fx_lastEvent = events.length ? (events[events.length - 1] as any) : null;
+  }
+
+  const attackerSlot: string | null = last.attackerSlot || extractSlotKey(String(last.attackerId ?? ''));
+  const targetSlot: string | null = last.targetSlot || extractSlotKey(String(last.targetId ?? ''));
+
+  if (debug) {
+    // eslint-disable-next-line no-console
+    console.debug('[BB FX] attack-like event', {
+      idx,
+      type: last.type,
+      attackerId: last.attackerId,
+      targetId: last.targetId,
+      attackerSlot,
+      targetSlot,
+    });
+  }
+
+  if (!attackerSlot || !targetSlot) {
     if (debug) {
-      (window as any).__bb_fx_lastAtk = last;
-      (window as any).__bb_fx_atkCount = atkEvents.length;
-    }
-
-    const attackerSlot: string | null =
-      last.attackerSlot || extractSlotKey(String(last.attackerId ?? ''));
-    const targetSlot: string | null =
-      last.targetSlot || extractSlotKey(String(last.targetId ?? ''));
-
-    if (debug) {
-      // eslint-disable-next-line no-console
-      console.debug('[BB FX] atk event', {
+      (window as any).__bb_fx_lastFail = {
+        reason: 'cannot_extract_slot',
+        idx,
+        type: last.type,
         attackerId: last.attackerId,
         targetId: last.targetId,
         attackerSlot,
         targetSlot,
-      });
-    }
-
-    if (!attackerSlot || !targetSlot) {
-      if (debug) {
-        (window as any).__bb_fx_lastFail = {
-          reason: 'cannot_extract_slot',
-          attackerId: last.attackerId,
-          targetId: last.targetId,
-          attackerSlot,
-          targetSlot,
-        };
-        // eslint-disable-next-line no-console
-        console.warn('[BB FX] cannot extract slot keys', (window as any).__bb_fx_lastFail);
-      }
-      return;
-    }
-
-    const reg = slotRegistryRef?.current || {};
-    const attackerEl = reg[attackerSlot] || findSlotEl(attackerSlot);
-    const targetEl = reg[targetSlot] || findSlotEl(targetSlot);
-
-    if (!attackerEl || !targetEl) {
-      if (debug) {
-        (window as any).__bb_fx_lastFail = {
-          reason: 'cannot_resolve_dom',
-          attackerId: last.attackerId,
-          targetId: last.targetId,
-          attackerSlot,
-          targetSlot,
-          attackerFound: !!attackerEl,
-          targetFound: !!targetEl,
-          domSlotCountRegistry: slotRegistryRef?.current
-            ? Object.values(slotRegistryRef.current).filter((el) => !!el).length
-            : 0,
-          domSlotCountQuery: document.querySelectorAll('[data-bb-slot]').length,
-          domSlotsSample: Array.from(document.querySelectorAll('[data-bb-slot]'))
-            .slice(0, 12)
-            .map((n) => (n as HTMLElement).getAttribute('data-bb-slot')),
-        };
-        // eslint-disable-next-line no-console
-        console.warn('[BB FX] cannot resolve DOM for slots', (window as any).__bb_fx_lastFail);
-      }
-      return;
-    }
-
-    const ok = flyBetween(attackerEl, targetEl);
-    if (!ok && debug) {
-      (window as any).__bb_fx_lastFail = {
-        reason: 'fly_failed',
-        attackerSlot,
-        targetSlot,
       };
       // eslint-disable-next-line no-console
-      console.warn('[BB FX] flyBetween failed', (window as any).__bb_fx_lastFail);
+      console.warn('[BB FX] cannot extract slot keys', (window as any).__bb_fx_lastFail);
     }
-  }, [atkEvents, debug, slotRegistryRef]); // eslint-disable-line react-hooks/exhaustive-deps
+    return;
+  }
+
+  const reg = slotRegistryRef?.current || {};
+  const attackerEl = reg[attackerSlot] || findSlotEl(attackerSlot);
+  const targetEl = reg[targetSlot] || findSlotEl(targetSlot);
+
+  if (!attackerEl || !targetEl) {
+    if (debug) {
+      (window as any).__bb_fx_lastFail = {
+        reason: 'cannot_resolve_dom',
+        idx,
+        type: last.type,
+        attackerId: last.attackerId,
+        targetId: last.targetId,
+        attackerSlot,
+        targetSlot,
+        attackerFound: !!attackerEl,
+        targetFound: !!targetEl,
+        domSlotCountRegistry: slotRegistryRef?.current
+          ? Object.values(slotRegistryRef.current).filter((el) => !!el).length
+          : 0,
+        domSlotCountQuery: document.querySelectorAll('[data-bb-slot]').length,
+        domSlotsSample: Array.from(document.querySelectorAll('[data-bb-slot]'))
+          .slice(0, 12)
+          .map((n) => (n as HTMLElement).getAttribute('data-bb-slot')),
+      };
+      // eslint-disable-next-line no-console
+      console.warn('[BB FX] cannot resolve DOM for slots', (window as any).__bb_fx_lastFail);
+    }
+    return;
+  }
+
+  const ok = flyBetween(attackerEl, targetEl);
+  if (!ok && debug) {
+    (window as any).__bb_fx_lastFail = {
+      reason: 'fly_failed',
+      idx,
+      attackerSlot,
+      targetSlot,
+    };
+    // eslint-disable-next-line no-console
+    console.warn('[BB FX] flyBetween failed', (window as any).__bb_fx_lastFail);
+  }
+}, [lastAttackLike, debug, slotRegistryRef, events.length]);
 
   const registryCount = slotRegistryRef?.current ? Object.values(slotRegistryRef.current).filter((el) => !!el).length : 0;
 
@@ -308,7 +332,9 @@ export default function BattleFxLayer({
           {'FX debug\n'}
           {`toggle: localStorage.bb_fx_debug='1'\n`}
           {`build: ${(window as any).__bb_fx_build ?? 'n/a'}\n`}{`events: ${events.length}\n`}
-          {`atkEvents: ${atkEvents.length}\n`}
+          {`lastType: ${String(((window as any).__bb_fx_lastEvent?.type ?? (events.length ? (events[events.length-1] as any)?.type : 'n/a')))}\n`}
+          {`attackLike: ${lastAttackLike ? 'yes' : 'no'}\n`}
+          {`attackIdx: ${(window as any).__bb_fx_attackIdx ?? 'n/a'}\n`}
           {`domSlots: ${document.querySelectorAll('[data-bb-slot]').length}\n`}
           {`registrySlots: ${registryCount}\n`}
           {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}
