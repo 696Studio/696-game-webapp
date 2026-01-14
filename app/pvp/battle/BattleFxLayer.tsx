@@ -2,250 +2,230 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-type AttackFxEvent = {
+// Attack event contract coming from page.tsx
+export type AttackFxEvent = {
   type: 'attack';
   id: string;
   attackerId: string;
   targetId: string;
 };
 
-type Props = {
-  events: AttackFxEvent[];
-  debug?: boolean;
-  // optional manual trigger from page debug panel (nonce changes => replay)
-  debugAttack?: { attackerId?: string; targetId?: string; nonce?: number };
+type ActiveAttack = {
+  id: string;
+  attackerId: string;
+  targetId: string;
 };
 
-/**
- * BattleFxLayer
- * - Plays "attack fly" animations based on incoming attack events.
- * - Tries to animate the ORIGINAL attacker DOM element (not a clone).
- * - Locates DOM nodes via window.__bb_unitEls (preferred) or querySelector fallback.
- *
- * IMPORTANT: Must return a valid ReactNode (we render an optional tiny HUD).
- */
-export default function BattleFxLayer({ events, debug = false, debugAttack }: Props) {
-  const [mounted, setMounted] = useState(false);
-  const seenIdsRef = useRef<Set<string>>(new Set());
-  const runningRef = useRef<boolean>(false);
-  const queueRef = useRef<AttackFxEvent[]>([]);
-  const lastHudRef = useRef<string>('');
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n));
+}
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+// Prefer moving the dedicated motion wrapper if it exists, otherwise move the card root.
+function pickMovable(el: HTMLElement): HTMLElement {
+  const motionLayer = el.querySelector('.bb-motion-layer') as HTMLElement | null;
+  if (motionLayer) return motionLayer;
+  const card = el.querySelector('.bb-card') as HTMLElement | null;
+  if (card) return card;
+  return el;
+}
 
+function getUnitEl(unitId: string): HTMLElement | null {
+  const w = window as any;
+  const map = w.__bb_unitEls as Record<string, HTMLElement> | undefined;
+  if (map && map[unitId]) return map[unitId];
+  return document.querySelector(`[data-unit-id="${CSS.escape(unitId)}"]`) as HTMLElement | null;
+}
+
+function getMovableForUnit(unitId: string): HTMLElement | null {
+  const unitEl = getUnitEl(unitId);
+  if (!unitEl) return null;
+  return pickMovable(unitEl);
+}
+
+async function animateAttack(attackerEl: HTMLElement, targetEl: HTMLElement, signal: { cancelled: boolean }) {
+  const a = attackerEl.getBoundingClientRect();
+  const t = targetEl.getBoundingClientRect();
+
+  // Vector from attacker center -> target center
+  const ax = a.left + a.width / 2;
+  const ay = a.top + a.height / 2;
+  const tx = t.left + t.width / 2;
+  const ty = t.top + t.height / 2;
+
+  let dx = tx - ax;
+  let dy = ty - ay;
+
+  // Don't overshoot: approach ~55% of the distance, clamped.
+  const dist = Math.hypot(dx, dy);
+  const k = clamp(dist * 0.55, 40, 140) / (dist || 1);
+  dx *= k;
+  dy *= k;
+
+  // WAAPI overrides transform on the element. We store current inline transform to restore.
+  const prevTransform = attackerEl.style.transform;
+  const prevWillChange = attackerEl.style.willChange;
+
+  attackerEl.style.willChange = 'transform';
+
+  // Quick in-out with a tiny "hit" shake.
+  const anim = attackerEl.animate(
+    [
+      { transform: prevTransform || 'translate3d(0,0,0)' },
+      { transform: `translate3d(${dx}px, ${dy}px, 0)` },
+      { transform: `translate3d(${dx * 0.9}px, ${dy * 0.9}px, 0)` },
+      { transform: prevTransform || 'translate3d(0,0,0)' },
+    ],
+    {
+      duration: 380,
+      easing: 'cubic-bezier(0.2, 0.9, 0.2, 1)',
+      fill: 'forwards',
+    }
+  );
+
+  const cleanup = () => {
+    try {
+      anim.cancel();
+    } catch {}
+    attackerEl.style.transform = prevTransform;
+    attackerEl.style.willChange = prevWillChange;
+  };
+
+  // Respect cancellation (race with unmount / new attack)
+  const cancelWatcher = new Promise<void>((resolve) => {
+    const tick = () => {
+      if (signal.cancelled) {
+        cleanup();
+        resolve();
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+
+  await Promise.race([anim.finished.then(() => void 0).catch(() => void 0), cancelWatcher]);
+
+  if (!signal.cancelled) {
+    attackerEl.style.transform = prevTransform;
+    attackerEl.style.willChange = prevWillChange;
+  }
+}
+
+export default function BattleFxLayer({
+  events,
+  debug,
+}: {
+  events: AttackFxEvent[];
+  debug?: boolean;
+}) {
   const debugEnabled = !!debug;
 
-  const mergedEvents: AttackFxEvent[] = useMemo(() => {
-    const base = Array.isArray(events) ? events : [];
-    const nonce = debugAttack?.nonce ?? 0;
-    const canManual =
-      debugEnabled &&
-      nonce &&
-      (debugAttack?.attackerId ?? '') &&
-      (debugAttack?.targetId ?? '');
-    if (!canManual) return base;
-    return [
-      ...base,
-      {
-        type: 'attack',
-        id: `dbg-${nonce}`,
-        attackerId: String(debugAttack?.attackerId),
-        targetId: String(debugAttack?.targetId),
-      },
-    ];
-  }, [events, debugEnabled, debugAttack?.nonce, debugAttack?.attackerId, debugAttack?.targetId]);
+  // Track processed events so we don't re-run the same attack animation on every render.
+  const seenIdsRef = useRef<Set<string>>(new Set());
 
-  function getElByUnitId(unitId: string): HTMLElement | null {
-    if (!unitId) return null;
+  const [active, setActive] = useState<ActiveAttack | null>(null);
+  const activeRef = useRef<ActiveAttack | null>(null);
+  activeRef.current = active;
 
-    // Preferred: page.tsx should populate this map.
-    const w = window as any;
-    const map: Map<string, HTMLElement> | undefined = w.__bb_unitEls;
-    if (map && typeof map.get === 'function') {
-      const el = map.get(unitId);
-      if (el && el instanceof HTMLElement) return el;
-    }
+  const [seenCount, setSeenCount] = useState(0);
 
-    // Fallbacks:
-    const sel1 = document.querySelector<HTMLElement>(`[data-unit-id="${CSS.escape(unitId)}"]`);
-    if (sel1) return sel1;
-
-    // Some builds used other attrs
-    const sel2 = document.querySelector<HTMLElement>(`[data-instance-id="${CSS.escape(unitId)}"]`);
-    if (sel2) return sel2;
-
-    return null;
-  }
-
-  function getCardEl(el: HTMLElement): HTMLElement {
-    // Prefer actual card element if nested.
-    const card =
-      el.closest?.('.bb-card') ||
-      el.querySelector?.('.bb-card') ||
-      el.closest?.('[data-role="card"]') ||
-      el.querySelector?.('[data-role="card"]');
-    return (card as HTMLElement) || el;
-  }
-
-  function getCenterRect(el: HTMLElement) {
-    const r = el.getBoundingClientRect();
-    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, rect: r };
-  }
-
-  function withTemporaryStyles(el: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
-    const prev: Partial<CSSStyleDeclaration> = {};
-    for (const k of Object.keys(styles) as (keyof CSSStyleDeclaration)[]) {
-      // @ts-ignore
-      prev[k] = el.style[k];
-      // @ts-ignore
-      el.style[k] = styles[k] as any;
-    }
-    return () => {
-      for (const k of Object.keys(styles) as (keyof CSSStyleDeclaration)[]) {
-        // @ts-ignore
-        el.style[k] = (prev[k] as any) ?? '';
-      }
-    };
-  }
-
-  async function playOne(e: AttackFxEvent) {
-    const attackerRoot = getElByUnitId(e.attackerId);
-    const targetRoot = getElByUnitId(e.targetId);
-
-    if (!attackerRoot || !targetRoot) {
-      if (debugEnabled) {
-        lastHudRef.current = `attack ${e.id}\nattackerEl: ${!!attackerRoot}\ntargetEl: ${!!targetRoot}\n(attackerId=${e.attackerId}, targetId=${e.targetId})`;
-      }
-      return;
-    }
-
-    const attacker = getCardEl(attackerRoot);
-    const target = getCardEl(targetRoot);
-
-    // Temporarily lift attacker above everything and disable clipping in closest slot.
-    const attackerSlot = attacker.closest?.('.bb-slot') as HTMLElement | null;
-    const undoSlot = attackerSlot
-      ? withTemporaryStyles(attackerSlot, { overflow: 'visible' })
-      : () => {};
-
-    const undoAttacker = withTemporaryStyles(attacker, {
-      willChange: 'transform',
-      zIndex: '9999',
-      position: attacker.style.position || 'relative',
-      pointerEvents: 'none',
-    });
-
-    // Also lift parent chain a bit (common clipping cause)
-    const parentUndos: Array<() => void> = [];
-    let p: HTMLElement | null = attacker.parentElement;
-    let hops = 0;
-    while (p && hops < 6) {
-      const cs = window.getComputedStyle(p);
-      if (cs.overflow !== 'visible') {
-        parentUndos.push(withTemporaryStyles(p, { overflow: 'visible' }));
-      }
-      // ensure stacking context
-      if (cs.position === 'static') {
-        parentUndos.push(withTemporaryStyles(p, { position: 'relative' }));
-      }
-      hops += 1;
-      p = p.parentElement;
-    }
-
-    const a = getCenterRect(attacker);
-    const t = getCenterRect(target);
-
-    const dx = t.cx - a.cx;
-    const dy = t.cy - a.cy;
-
-    if (debugEnabled) {
-      lastHudRef.current =
-        `attack ${e.id}\n` +
-        `attacker: ${e.attackerId}\n` +
-        `target: ${e.targetId}\n` +
-        `dx=${Math.round(dx)} dy=${Math.round(dy)}\n` +
-        `aRect ${Math.round(a.rect.width)}x${Math.round(a.rect.height)} @ ${Math.round(a.rect.left)},${Math.round(a.rect.top)}\n` +
-        `tRect ${Math.round(t.rect.width)}x${Math.round(t.rect.height)} @ ${Math.round(t.rect.left)},${Math.round(t.rect.top)}`;
-    }
-
-    // Use Web Animations API (fast + doesn't fight React)
-    try {
-      const anim = attacker.animate(
-        [
-          { transform: 'translate(0px, 0px)' },
-          { transform: `translate(${dx}px, ${dy}px)` },
-          { transform: 'translate(0px, 0px)' },
-        ],
-        { duration: 360, easing: 'cubic-bezier(0.2, 0.9, 0.2, 1)', fill: 'both' }
-      );
-
-      // Small "hit" on target
-      const targetAnim = target.animate(
-        [{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1)' }],
-        { duration: 220, easing: 'ease-out', delay: 180 }
-      );
-
-      await Promise.allSettled([
-        anim.finished.catch(() => undefined),
-        targetAnim.finished.catch(() => undefined),
-      ]);
-    } finally {
-      undoAttacker();
-      undoSlot();
-      for (const u of parentUndos.reverse()) u();
-    }
-  }
-
-  async function drainQueue() {
-    if (runningRef.current) return;
-    runningRef.current = true;
-    try {
-      while (queueRef.current.length > 0) {
-        const e = queueRef.current.shift()!;
-        await playOne(e);
-      }
-    } finally {
-      runningRef.current = false;
-    }
-  }
+  const lastEvent = useMemo(() => {
+    if (!events || events.length === 0) return null;
+    return events[events.length - 1];
+  }, [events]);
 
   useEffect(() => {
-    if (!mounted) return;
-    // enqueue new attack events only
-    const pending = mergedEvents.filter((e) => e?.type === 'attack' && !seenIdsRef.current.has(e.id));
-    if (pending.length === 0) return;
+    let mounted = true;
+    return () => {
+      mounted = false;
+      void mounted;
+    };
+  }, []);
 
-    for (const e of pending) {
-      seenIdsRef.current.add(e.id);
-      queueRef.current.push(e);
+  useEffect(() => {
+    if (!events || events.length === 0) return;
+
+    // Find the newest unseen event.
+    const seen = seenIdsRef.current;
+    const newest = [...events].reverse().find((e) => !seen.has(e.id));
+    if (!newest) return;
+
+    seen.add(newest.id);
+    setSeenCount(seen.size);
+
+    // If an animation is already running, we queue by replacing active AFTER it ends.
+    // For simplicity: just overwrite; animate effect below will cancel previous.
+    setActive({ id: newest.id, attackerId: newest.attackerId, targetId: newest.targetId });
+  }, [events]);
+
+  useEffect(() => {
+    if (!active) return;
+
+    const attacker = getMovableForUnit(active.attackerId);
+    const target = getMovableForUnit(active.targetId);
+
+    if (!attacker || !target) {
+      // Can't resolve DOM nodes yet (mount timing). Keep active for a bit by retrying next tick.
+      const t = window.setTimeout(() => {
+        // Trigger re-run by setting same active (no-op state update is ignored), so instead clear+set.
+        setActive((cur) => (cur && cur.id === active.id ? { ...cur } : cur));
+      }, 80);
+      return () => window.clearTimeout(t);
     }
-    void drainQueue();
-  }, [mounted, mergedEvents]);
+
+    const signal = { cancelled: false };
+
+    void (async () => {
+      try {
+        await animateAttack(attacker, target, signal);
+      } finally {
+        if (!signal.cancelled) setActive(null);
+      }
+    })();
+
+    return () => {
+      signal.cancelled = true;
+    };
+  }, [active]);
 
   if (!debugEnabled) return null;
 
   return (
     <div
+      className="bb-fx-debug"
       style={{
         position: 'fixed',
-        left: 12,
-        bottom: 12,
-        zIndex: 2147483647,
-        padding: '10px 12px',
-        borderRadius: 10,
-        background: 'rgba(0,0,0,0.6)',
-        color: 'white',
+        left: 8,
+        bottom: 90,
+        width: 340,
+        maxWidth: '80vw',
         fontSize: 12,
         lineHeight: 1.25,
-        whiteSpace: 'pre-wrap',
+        padding: 10,
+        borderRadius: 12,
+        background: 'rgba(0,0,0,0.45)',
+        color: '#fff',
+        zIndex: 999999,
         pointerEvents: 'none',
-        maxWidth: 320,
+        whiteSpace: 'pre-wrap',
       }}
     >
-      {`FX debug\nevents: ${mergedEvents.length}\nseen: ${seenIdsRef.current.size}\n` +
-        (lastHudRef.current ? `\n${lastHudRef.current}` : '')}
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>FX debug</div>
+      <div>events: {events?.length ?? 0}</div>
+      <div>seen: {seenCount}</div>
+      {active ? (
+        <div style={{ marginTop: 8 }}>
+          <div>active: {active.id}</div>
+          <div>attacker: {active.attackerId}</div>
+          <div>target: {active.targetId}</div>
+        </div>
+      ) : lastEvent ? (
+        <div style={{ marginTop: 8 }}>
+          <div>last: {lastEvent.id}</div>
+          <div>attacker: {lastEvent.attackerId}</div>
+          <div>target: {lastEvent.targetId}</div>
+        </div>
+      ) : null}
     </div>
   );
 }
