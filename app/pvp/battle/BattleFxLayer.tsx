@@ -2,6 +2,18 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+// Build stamp for debugging: proves the client module executed
+if (typeof window !== 'undefined') {
+  (window as any).__bb_fx_build = 'BattleFxLayer.registry.fixed.v2';
+  // Stub until component mounts
+  if (!(window as any).__bb_fx_testFly) {
+    (window as any).__bb_fx_testFly = () => {
+      console.warn('[BB FX] __bb_fx_testFly not ready (component not mounted yet)');
+      return false;
+    };
+  }
+}
+
 type FxEvent =
   | {
       type: 'atk';
