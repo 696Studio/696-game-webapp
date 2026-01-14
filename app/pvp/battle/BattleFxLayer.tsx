@@ -33,7 +33,14 @@ function getUnitEl(unitId: string): HTMLElement | null {
   const w = window as any;
   const map = w.__bb_unitEls as Record<string, HTMLElement> | undefined;
   if (map && map[unitId]) return map[unitId];
-  return document.querySelector(`[data-unit-id="${CSS.escape(unitId)}"]`) as HTMLElement | null;
+
+  // Avoid CSS selector escaping pitfalls in WebViews by matching in JS.
+  const els = document.querySelectorAll('[data-unit-id]');
+  for (let i = 0; i < els.length; i++) {
+    const el = els[i] as HTMLElement;
+    if (el.getAttribute('data-unit-id') === unitId) return el;
+  }
+  return null;
 }
 
 function getMovableForUnit(unitId: string): HTMLElement | null {
