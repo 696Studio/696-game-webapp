@@ -56,13 +56,17 @@ function centerOf(el: HTMLElement): { x: number; y: number } {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
 
+export type SlotRegistryRef = React.MutableRefObject<Record<string, HTMLElement | null>>;
+
 export default function BattleFxLayer({
   events,
+  slotRegistryRef,
 }: {
   events: FxEvent[];
+  slotRegistryRef?: SlotRegistryRef;
 }) {
   const overlayRef = useRef<HTMLDivElement | null>(null);
-  const lastSeenRef = useRef<number>(0);
+  const lastSeenRef = useRef<string>('');
   const [debug, setDebug] = useState(() => {
     try {
       return localStorage.getItem('bb_fx_debug') === '1';
@@ -92,19 +96,19 @@ export default function BattleFxLayer({
     if (!last || typeof last !== 'object') return;
 
     // ensure we only play once per new event
-    const key = (last.ts ?? 0) + ':' + last.attackerId + '>' + last.targetId;
-    const keyHash = key.length;
-    if (keyHash === lastSeenRef.current) return;
-    lastSeenRef.current = keyHash;
+    const key = String(last.ts ?? 0) + ':' + last.attackerId + '>' + last.targetId;
+    if (key === lastSeenRef.current) return;
+    lastSeenRef.current = key;
 
     const attackerSlot = extractSlotKey(last.attackerId);
     const targetSlot = extractSlotKey(last.targetId);
 
     if (!attackerSlot || !targetSlot) return;
 
-    // Resolve dom
-    const attackerEl = findSlotEl(attackerSlot);
-    const targetEl = findSlotEl(targetSlot);
+    // Resolve dom (prefer slot registry; fallback to DOM query)
+    const reg = slotRegistryRef?.current;
+    const attackerEl = (reg && reg[attackerSlot]) ? reg[attackerSlot] : findSlotEl(attackerSlot);
+    const targetEl = (reg && reg[targetSlot]) ? reg[targetSlot] : findSlotEl(targetSlot);
 
     if (!attackerEl || !targetEl) {
       if (debug) {
@@ -116,13 +120,18 @@ export default function BattleFxLayer({
           attackerFound: !!attackerEl,
           targetFound: !!targetEl,
           domUnitCount: document.querySelectorAll('[id]').length,
-          domSlotCount: document.querySelectorAll('[data-bb-slot]').length,
+          domSlotCount: (slotRegistryRef?.current ? Object.values(slotRegistryRef.current).filter(Boolean).length : document.querySelectorAll('[data-bb-slot]').length),
           domIdsSample: Array.from(document.querySelectorAll('[id]'))
             .slice(0, 12)
             .map((n) => (n as HTMLElement).id),
-          domSlotsSample: Array.from(document.querySelectorAll('[data-bb-slot]'))
-            .slice(0, 12)
-            .map((n) => (n as HTMLElement).getAttribute('data-bb-slot')),
+          domSlotsSample: (slotRegistryRef?.current
+            ? Object.entries(slotRegistryRef.current)
+                .filter(([, el]) => !!el)
+                .slice(0, 12)
+                .map(([k]) => k)
+            : Array.from(document.querySelectorAll('[data-bb-slot]'))
+                .slice(0, 12)
+                .map((n) => (n as HTMLElement).getAttribute('data-bb-slot'))),
         };
         // eslint-disable-next-line no-console
         console.warn('[BB FX] cannot resolve DOM', (window as any).__bb_fx_lastFail);
@@ -209,7 +218,7 @@ export default function BattleFxLayer({
           {'FX debug\n'}
           {`toggle: localStorage.bb_fx_debug='1'\n`}
           {`events: ${events.length}\n`}
-          {`dom: ${document.querySelectorAll('[id]').length} ids / ${document.querySelectorAll('[data-bb-slot]').length} slots\n`}
+          {`dom: ${document.querySelectorAll('[id]').length} ids / ${slotRegistryRef?.current ? Object.values(slotRegistryRef.current).filter(Boolean).length : document.querySelectorAll('[data-bb-slot]').length} slots\n`}
         </div>
       ) : null}
     </>

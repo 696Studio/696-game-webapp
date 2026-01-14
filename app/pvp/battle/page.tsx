@@ -471,6 +471,7 @@ const isArenaDebug = DEBUG_ARENA || uiDebug;
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
+  const slotRegistryRef = useRef<Record<string, HTMLElement | null>>({});
 
   const onArenaPointerDownCapture = (ev: React.PointerEvent) => {
     if (!isArenaDebug) return;
@@ -1420,6 +1421,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   fallbackId,
   unitInstanceId,
   slotKey,
+  slotRegistryRef,
   attackFx,
   spawnFx,
   damageFx,
@@ -1436,7 +1438,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   damageFx?: DamageFx[];
   isDying?: boolean;
   revealed: boolean;
-  slotKey?: string;
+  slotKey: string;
+  slotRegistryRef?: React.MutableRefObject<Record<string, HTMLElement | null>>;
   delayMs: number;
 }) {
     const id = card?.id || fallbackId || "";
@@ -1570,7 +1573,7 @@ const hpPct = useMemo(() => {
     if (isHidden) return null;
     if (!renderUnit) return null;
     return (
-      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId} data-bb-slot={slotKey} ref={(el) => { if (!slotRegistryRef) return; slotRegistryRef.current[slotKey] = el; }}>
         <div className="bb-motion-layer" data-fx-motion="1" style={{ willChange: "transform" }}>
       <div className="bb-fx-anchor">
         
@@ -1826,7 +1829,7 @@ const hpPct = useMemo(() => {
         </div>
       </div>
 
-      <BattleFxLayer events={fxEvents} />
+      <BattleFxLayer events={fxEvents} slotRegistryRef={slotRegistryRef} />
 
       {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
       {/* Debug UI overlay (no portal) */}
@@ -2242,7 +2245,7 @@ const hpPct = useMemo(() => {
         </div>
       </div>
 
-      <BattleFxLayer events={fxEvents} />
+      <BattleFxLayer events={fxEvents} slotRegistryRef={slotRegistryRef} />
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -3444,7 +3447,8 @@ const hpPct = useMemo(() => {
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
-                    slotKey={s.fallbackId}
+                    slotKey={`${enemySide}:${i}`}
+                    slotRegistryRef={slotRegistryRef}
                     unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}
                     attackFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? attackFxByInstance[inst] : undefined; })()}
                     spawnFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? spawnFxByInstance[inst] : undefined; })()}
@@ -3477,7 +3481,8 @@ const hpPct = useMemo(() => {
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
-                    slotKey={s.fallbackId}
+                    slotKey={`${youSide}:${i}`}
+                    slotRegistryRef={slotRegistryRef}
                     unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}
                     attackFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? attackFxByInstance[inst] : undefined; })()}
                     spawnFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? spawnFxByInstance[inst] : undefined; })()}
