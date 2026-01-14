@@ -1569,17 +1569,25 @@ const hpPct = useMemo(() => {
     if (!renderUnit) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId ?? instId ?? undefined}>
-        <div className="bb-motion-layer battle-unit-card" data-unit-id={renderUnit?.instanceId ?? instId ?? undefined} data-slot={instId ? instId.split(':').slice(2,4).join(':') : undefined} data-fx-motion="1" style={{ willChange: "transform" }}
+        <div className="bb-motion-layer battle-unit-card" data-unit-id={renderUnit?.instanceId ?? instId ?? undefined} data-slot={(renderUnit?.instanceId ?? instId) ? (renderUnit?.instanceId ?? instId)!.split(':').slice(2,4).join(':') : undefined} data-fx-motion="1" style={{ willChange: "transform" }}
           ref={(el) => {
             if (!el) return;
             const w = window as any;
             w.__bb_unitEls = w.__bb_unitEls || {};
             const map = w.__bb_unitEls as Record<string, HTMLElement>;
-            const a = renderUnit?.instanceId;
-            const b = instId ?? undefined;
-            const slot = b ? b.split(':').slice(2,4).join(':') : undefined;
-            if (a) map[a] = el;
-            if (b) map[b] = el;
+
+            const idKey = renderUnit?.instanceId ?? instId ?? undefined;
+            if (!idKey) return;
+
+            // slot key is stable across matches: p1:0 .. p2:4
+            const parts = idKey.split(':');
+            const slot = parts.length >= 4 && (parts[2] === 'p1' || parts[2] === 'p2') ? `${parts[2]}:${parts[3]}` : undefined;
+
+            // normalized id drops leading match prefix UUID to survive mismatched prefixes
+            const norm = (parts.length > 1 && (parts[0].match(/-/g) || []).length >= 4) ? parts.slice(1).join(':') : idKey;
+
+            map[idKey] = el;
+            map[norm] = el;
             if (slot) map[slot] = el;
           }}>
       <div className="bb-fx-anchor">
