@@ -10,290 +10,184 @@ export type FxEvent =
       targetId: string;
     };
 
-const ATTACK_DURATION = 520;
-const TARGET_HIT_DURATION = 220;
-const RETRY_FRAMES = 28;
+type DebugAttack = { attackerId?: string; targetId?: string; nonce?: number };
 
-function clamp(n: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, n));
-}
-
-function rectCenter(r: DOMRect) {
-  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-}
-
-function computeTouchDelta(attacker: DOMRect, target: DOMRect) {
-  const ac = rectCenter(attacker);
-  const tc = rectCenter(target);
-  const dx = tc.x - ac.x;
-  const dy = tc.y - ac.y;
-
-  // We don't want full travel to the target center — just touch-ish.
-  const maxMove = Math.max(attacker.width, attacker.height) * 1.12;
-  const len = Math.hypot(dx, dy) || 1;
-  const k = clamp(maxMove / len, 0.55, 0.92);
-
-  return { dx: dx * k, dy: dy * k };
-}
-
-function safeEscape(v: string) {
-  try {
-    const cssAny = CSS as unknown as { escape?: (s: string) => string };
-    return typeof cssAny !== 'undefined' && typeof cssAny.escape === 'function'
-      ? cssAny.escape(v)
-      : v.replace(/"/g, '\\"');
-  } catch {
-    return v.replace(/"/g, '\\"');
-  }
-}
-
-/** Always prefer the real .bb-slot, never the inner .bb-card. */
-function getSlotByUnitId(unitId: string): HTMLElement | null {
-  const sel = `[data-unit-id="${safeEscape(String(unitId))}"]`;
-  const list = Array.from(document.querySelectorAll<HTMLElement>(sel));
-  if (!list.length) return null;
-
-  const slot = list.find((el) => el.classList.contains('bb-slot'));
-  if (slot) return slot;
-
-  // fallback: maybe the attribute is on a child in some older builds
-  for (const el of list) {
-    const up = el.closest('.bb-slot') as HTMLElement | null;
-    if (up) return up;
-  }
-  return null;
-}
-
-function getMotionLayer(slot: HTMLElement): HTMLElement | null {
-  // Prefer an explicit motion layer if present; otherwise animate the card itself.
-  return (
-    slot.querySelector<HTMLElement>('.bb-motion-layer') ||
-    slot.querySelector<HTMLElement>('.bb-card') ||
-    slot
-  );
-}
-
-function getCard(slot: HTMLElement): HTMLElement | null {
-  return slot.querySelector<HTMLElement>('.bb-card');
-}
-
-type ActiveAnim = {
-  el: HTMLElement;
-  anim: Animation;
-  prevTransform: string;
-  prevTransition: string;
-  prevWillChange: string;
-  prevZ: string;
+type Props = {
+  events: FxEvent[];
+  debug?: boolean;
+  debugAttack?: DebugAttack;
 };
 
-export default function BattleFxLayer({ events, debug, debugAttack }: { events: FxEvent[]; debug?: boolean; debugAttack?: { attackerId?: string; targetId?: string; nonce?: number } }) {
-  const seenIdsRef = useRef<Set<string>>(new Set());
-  const activeRef = useRef<Map<HTMLElement, ActiveAnim>>(new Map());
-  const [mounted, setMounted] = useState(false);
-  const dbgTextRef = useRef<string>('');
-
-  const debugEnabled = !!debug;
-
-  const injectedCss = useMemo(
-    () => `
-/* =========================
-   FX injected by BattleFxLayer (WAAPI + tiny helpers)
-   ========================= */
-.bb-fx-debug-hud {
-  position: fixed;
-  right: 10px;
-  bottom: 10px;
-  z-index: 10000;
-  pointer-events: none;
-  font: 12px/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-  color: rgba(255,255,255,0.92);
-  background: rgba(0,0,0,0.55);
-  padding: 8px 10px;
-  border-radius: 10px;
-  backdrop-filter: blur(6px);
-  max-width: 70vw;
-  white-space: pre-wrap;
+function cssEscapeLite(v: string): string {
+  // Minimal escape for attribute selectors (good enough for UUID-ish ids)
+  return v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
-.bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,0.85) !important; }
-.bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,0.85) !important; }
-`,
-    []
+
+function sleep(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+function getCardElementByUnitId(unitId: string): HTMLElement | null {
+  if (!unitId) return null;
+  const sel = `[data-unit-id="${cssEscapeLite(unitId)}"]`;
+  const root = document.querySelector(sel) as HTMLElement | null;
+  if (!root) return null;
+
+  // Prefer an inner card element if present
+  const card =
+    (root.querySelector?.('.bb-card') as HTMLElement | null) ||
+    (root.querySelector?.('.bb-card-root') as HTMLElement | null) ||
+    (root.querySelector?.('[data-role="card"]') as HTMLElement | null);
+
+  return card || root;
+}
+
+async function animateAttackGhost(attackerEl: HTMLElement, targetEl: HTMLElement) {
+  const aRect = attackerEl.getBoundingClientRect();
+  const tRect = targetEl.getBoundingClientRect();
+
+  // Centers
+  const ax = aRect.left + aRect.width / 2;
+  const ay = aRect.top + aRect.height / 2;
+  const tx = tRect.left + tRect.width / 2;
+  const ty = tRect.top + tRect.height / 2;
+
+  const dx = tx - ax;
+  const dy = ty - ay;
+
+  // Create a "ghost" clone above everything (prevents overflow clipping)
+  const ghost = attackerEl.cloneNode(true) as HTMLElement;
+  ghost.style.position = 'fixed';
+  ghost.style.left = `${aRect.left}px`;
+  ghost.style.top = `${aRect.top}px`;
+  ghost.style.width = `${aRect.width}px`;
+  ghost.style.height = `${aRect.height}px`;
+  ghost.style.margin = '0';
+  ghost.style.transform = 'translate3d(0,0,0)';
+  ghost.style.pointerEvents = 'none';
+  ghost.style.zIndex = '2147483647';
+  ghost.style.willChange = 'transform, filter, opacity';
+  // Slightly lift it visually
+  ghost.style.filter = 'drop-shadow(0 10px 18px rgba(0,0,0,0.35))';
+
+  document.body.appendChild(ghost);
+
+  // Dim attacker briefly so it reads as movement
+  const attackerAnim = attackerEl.animate(
+    [{ filter: 'brightness(1)', opacity: 1 }, { filter: 'brightness(0.85)', opacity: 0.55 }, { filter: 'brightness(1)', opacity: 1 }],
+    { duration: 380, easing: 'ease-out' }
   );
 
-  useEffect(() => setMounted(true), []);
+  // Target "hit" pulse
+  const targetAnim = targetEl.animate(
+    [{ filter: 'brightness(1)', transform: 'scale(1)' }, { filter: 'brightness(1.35)', transform: 'scale(1.03)' }, { filter: 'brightness(1)', transform: 'scale(1)' }],
+    { duration: 260, easing: 'ease-out', delay: 170 }
+  );
 
+  // Fly there and back
+  const flyOut = ghost.animate(
+    [{ transform: 'translate3d(0,0,0)' }, { transform: `translate3d(${dx}px, ${dy}px, 0)` }],
+    { duration: 180, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill: 'forwards' }
+  );
+
+  await flyOut.finished.catch(() => {});
+  await sleep(40);
+
+  const flyBack = ghost.animate(
+    [{ transform: `translate3d(${dx}px, ${dy}px, 0)` }, { transform: 'translate3d(0,0,0)' }],
+    { duration: 180, easing: 'cubic-bezier(0.4, 0.0, 0.2, 1)', fill: 'forwards' }
+  );
+
+  await flyBack.finished.catch(() => {});
+  ghost.remove();
+
+  // Ensure they finish (best effort)
+  await Promise.allSettled([attackerAnim.finished, targetAnim.finished]);
+}
+
+export default function BattleFxLayer({ events, debug, debugAttack }: Props) {
+  const debugEnabled = !!debug;
+
+  const [mounted, setMounted] = useState(false);
+
+  // queue + seen
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const queueRef = useRef<FxEvent[]>([]);
+  const runningRef = useRef(false);
+
+  // Mount guard for Next
   useEffect(() => {
-    if (!mounted) return;
+    setMounted(true);
+  }, []);
+
+  // Merge in manual debug attack (Fire button)
+  const mergedEvents = useMemo(() => {
     const manualNonce = debugAttack?.nonce ?? 0;
     const manualOk = debugEnabled && manualNonce && debugAttack?.attackerId && debugAttack?.targetId;
-    if ((!events || events.length === 0) && !manualOk) return;
-
-    const timers: Array<number> = [];
-    const rafs: Array<number> = [];
-
-    const stop = (el: HTMLElement) => {
-      const st = activeRef.current.get(el);
-      if (!st) return;
-
-      try {
-        st.anim.cancel();
-      } catch {}
-
-      try {
-        el.style.transform = st.prevTransform;
-        el.style.transition = st.prevTransition;
-        el.style.willChange = st.prevWillChange;
-        el.style.zIndex = st.prevZ;
-      } catch {}
-
-      activeRef.current.delete(el);
+    if (!manualOk) return events || [];
+    const manual: FxEvent = {
+      type: 'attack',
+      id: `dbg-${manualNonce}`,
+      attackerId: String(debugAttack!.attackerId),
+      targetId: String(debugAttack!.targetId),
     };
+    return [...(events || []), manual];
+  }, [events, debugEnabled, debugAttack?.nonce, debugAttack?.attackerId, debugAttack?.targetId]);
 
-    const animateOnce = (attack: FxEvent) => {
-      const attackerSlot = getSlotByUnitId(attack.attackerId);
-      const targetSlot = getSlotByUnitId(attack.targetId);
-      if (!attackerSlot || !targetSlot) return false;
+  // Pump queue
+  useEffect(() => {
+    if (!mounted) return;
 
-      const motion = getMotionLayer(attackerSlot);
-      const targetCard = getCard(targetSlot);
-      if (!motion || !targetCard) return false;
-
-      // stop previous animation on same element
-      stop(motion);
-      stop(targetCard);
-
-      const aRect = motion.getBoundingClientRect();
-      const tRect = targetCard.getBoundingClientRect();
-      if (debugEnabled) {
-        const mCls = motion.className ? String(motion.className) : motion.tagName;
-        const tCls = targetCard.className ? String(targetCard.className) : targetCard.tagName;
-        dbgTextRef.current = `motionEl: ${mCls}\naRect: ${Math.round(aRect.width)}x${Math.round(aRect.height)} @ ${Math.round(aRect.left)},${Math.round(aRect.top)}\ntargetEl: ${tCls}\ntRect: ${Math.round(tRect.width)}x${Math.round(tRect.height)} @ ${Math.round(tRect.left)},${Math.round(tRect.top)}\n`;
-      }
-
-      const { dx, dy } = computeTouchDelta(aRect, tRect);
-
-      // WAAPI: this bypasses "className overwritten by React" and any CSS import issues.
-      const prevTransform = motion.style.transform;
-      const prevTransition = motion.style.transition;
-      const prevWillChange = motion.style.willChange;
-      const prevZ = motion.style.zIndex;
-
-      motion.style.willChange = 'transform';
-      motion.style.transition = 'none';
-      motion.style.zIndex = '60';
-
-      const anim = motion.animate(
-        [
-          { transform: 'translate3d(0px,0px,0) scale(1)' },
-          { transform: `translate3d(${dx}px,${dy}px,0) scale(1.04)`, offset: 0.55 },
-          { transform: `translate3d(${dx * 0.92}px,${dy * 0.92}px,0) scale(1.0)`, offset: 0.72 },
-          { transform: 'translate3d(0px,0px,0) scale(1)' },
-        ],
-        { duration: ATTACK_DURATION, easing: 'cubic-bezier(.18,.9,.22,1)', fill: 'both' }
-      );
-
-      activeRef.current.set(motion, { el: motion, anim, prevTransform, prevTransition, prevWillChange, prevZ });
-
-      // Small target hit feedback (doesn't move layout)
-      const prevT = targetCard.style.transform;
-      const prevTT = targetCard.style.transition;
-      const prevTW = targetCard.style.willChange;
-      const prevTZ = targetCard.style.zIndex;
-
-      targetCard.style.willChange = 'transform, filter';
-      targetCard.style.transition = 'none';
-      targetCard.style.zIndex = '55';
-
-      const hit = targetCard.animate(
-        [
-          { transform: 'translate3d(0,0,0) scale(1)', filter: 'brightness(1)' as any },
-          { transform: 'translate3d(0,0,0) scale(0.985)', filter: 'brightness(1.15)' as any, offset: 0.55 },
-          { transform: 'translate3d(0,0,0) scale(1)', filter: 'brightness(1)' as any },
-        ],
-        { duration: TARGET_HIT_DURATION, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }
-      );
-
-      activeRef.current.set(targetCard, {
-        el: targetCard,
-        anim: hit,
-        prevTransform: prevT,
-        prevTransition: prevTT,
-        prevWillChange: prevTW,
-        prevZ: prevTZ,
-      });
-
-      if (debugEnabled) {
-        motion.classList.add('bb-fx-debug-outline-attacker');
-        targetCard.classList.add('bb-fx-debug-outline-target');
-        timers.push(
-          window.setTimeout(() => {
-            motion.classList.remove('bb-fx-debug-outline-attacker');
-            targetCard.classList.remove('bb-fx-debug-outline-target');
-          }, 900)
-        );
-      }
-
-      // cleanup after anim end
-      const cleanup = () => {
-        stop(motion);
-        stop(targetCard);
-      };
-      timers.push(window.setTimeout(cleanup, ATTACK_DURATION + 60));
-
-      return true;
-    };
-
-    // Process only new attack events, in order
-    const manualNonce2 = debugAttack?.nonce ?? 0;
-    const manualEvent: FxEvent | null =
-      debugEnabled && manualNonce2 && debugAttack?.attackerId && debugAttack?.targetId
-        ? { type: 'attack', id: `dbg-${manualNonce2}`, attackerId: String(debugAttack.attackerId), targetId: String(debugAttack.targetId) }
-        : null;
-    const merged = manualEvent ? [...(events || []), manualEvent] : (events || []);
-    const pending = merged.filter((e) => e && e.type === 'attack' && !seenIdsRef.current.has(e.id));
-
-    for (const e of pending) {
+    const list = mergedEvents || [];
+    for (const e of list) {
+      if (!e || e.type !== 'attack') continue;
+      if (seenIdsRef.current.has(e.id)) continue;
       seenIdsRef.current.add(e.id);
-
-      // DOM might not be ready at exact tick (re-render), so retry a few frames
-      let tries = 0;
-      const tryRun = () => {
-        tries++;
-        const ok = animateOnce(e);
-        if (ok) return;
-        if (tries < RETRY_FRAMES) {
-          rafs.push(window.requestAnimationFrame(tryRun));
-        }
-      };
-      rafs.push(window.requestAnimationFrame(tryRun));
+      queueRef.current.push(e);
     }
 
-    return () => {
-      for (const id of timers) {
-        try {
-          window.clearTimeout(id);
-        } catch {}
+    const run = async () => {
+      if (runningRef.current) return;
+      runningRef.current = true;
+      try {
+        while (queueRef.current.length > 0) {
+          const ev = queueRef.current.shift()!;
+          const attackerEl = getCardElementByUnitId(ev.attackerId);
+          const targetEl = getCardElementByUnitId(ev.targetId);
+
+          if (!attackerEl || !targetEl) {
+            // If DOM isn't ready yet, retry a little later once
+            await sleep(60);
+            const a2 = getCardElementByUnitId(ev.attackerId);
+            const t2 = getCardElementByUnitId(ev.targetId);
+            if (!a2 || !t2) continue;
+            await animateAttackGhost(a2, t2);
+          } else {
+            await animateAttackGhost(attackerEl, targetEl);
+          }
+
+          // small gap between attacks
+          await sleep(60);
+        }
+      } finally {
+        runningRef.current = false;
       }
-      for (const id of rafs) {
-        try {
-          window.cancelAnimationFrame(id);
-        } catch {}
-      }
-      // stop everything
-      for (const el of Array.from(activeRef.current.keys())) stop(el);
     };
-  }, [mounted, events, debugEnabled, debugAttack?.nonce, debugAttack?.attackerId, debugAttack?.targetId]);
 
-  if (!mounted) return null;
+    run();
+  }, [mounted, mergedEvents]);
 
+  // Pure overlay layer (we don't render anything heavy here)
+  // Keep it as a positioned container in case you later add particles/svg.
   return (
-    <>
-      <style>{injectedCss}</style>
-      {debugEnabled ? (
-        <div className="bb-fx-debug-hud">
-          {`fxEvents: ${events?.length ?? 0}\nseen: ${seenIdsRef.current.size}\n` + (dbgTextRef.current ? dbgTextRef.current : '')}
-        </div>
-      ) : null}
-    </>
+    <div
+      className="bb-fx-layer"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        zIndex: 40,
+      }}
+    />
   );
 }
