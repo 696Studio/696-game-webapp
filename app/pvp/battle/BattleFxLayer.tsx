@@ -1,7 +1,5 @@
 'use client';
 
-// PATCH: STEP3_RELATIVE_TRANSFORM (compose base transform + offset)
-
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 // Attack event contract coming from page.tsx
@@ -24,8 +22,6 @@ function clamp(n: number, a: number, b: number) {
 
 // Prefer moving the dedicated motion wrapper if it exists, otherwise move the card root.
 function pickMovable(el: HTMLElement): HTMLElement {
-  // If the resolved element is already the dedicated motion wrapper, move it directly.
-  if (el.classList.contains('battle-unit-card') || el.classList.contains('bb-motion-layer')) return el;
   const motionLayer = el.querySelector('.bb-motion-layer') as HTMLElement | null;
   if (motionLayer) return motionLayer;
   const card = el.querySelector('.bb-card') as HTMLElement | null;
@@ -41,12 +37,6 @@ function getUnitEl(unitId: string): HTMLElement | null {
 }
 
 function getMovableForUnit(unitId: string): HTMLElement | null {
-  // Prefer the dedicated motion wrapper introduced in page.tsx
-  const direct = document.querySelector(
-    `.battle-unit-card[data-unit-id="${CSS.escape(unitId)}"]`
-  ) as HTMLElement | null;
-  if (direct) return direct;
-
   const unitEl = getUnitEl(unitId);
   if (!unitEl) return null;
   return pickMovable(unitEl);
@@ -71,54 +61,92 @@ async function animateAttack(attackerEl: HTMLElement, targetEl: HTMLElement, sig
   dx *= k;
   dy *= k;
 
-  // WAAPI overrides transform on the element. We store current inline transform to restore.
+  // Store current inline transform to restore.
   const prevTransform = attackerEl.style.transform;
   const prevWillChange = attackerEl.style.willChange;
+  const prevTransition = attackerEl.style.transition;
 
   attackerEl.style.willChange = 'transform';
 
-  // Quick in-out with a tiny "hit" shake.
-  const anim = attackerEl.animate(
-    [
-      { transform: prevTransform || 'translate3d(0,0,0)' },
-      { transform: `translate3d(${dx}px, ${dy}px, 0)` },
-      { transform: `translate3d(${dx * 0.9}px, ${dy * 0.9}px, 0)` },
-      { transform: prevTransform || 'translate3d(0,0,0)' },
-    ],
-    {
-      duration: 380,
-      easing: 'cubic-bezier(0.2, 0.9, 0.2, 1)',
-      fill: 'forwards',
-    }
-  );
+  const base = prevTransform || 'translate3d(0,0,0)';
+  const to1 = `${base} translate3d(${dx}px, ${dy}px, 0)`;
+  const to2 = `${base} translate3d(${dx * 0.9}px, ${dy * 0.9}px, 0)`;
 
-  const cleanup = () => {
-    try {
-      anim.cancel();
-    } catch {}
+  const restore = () => {
     attackerEl.style.transform = prevTransform;
     attackerEl.style.willChange = prevWillChange;
+    attackerEl.style.transition = prevTransition;
   };
 
-  // Respect cancellation (race with unmount / new attack)
-  const cancelWatcher = new Promise<void>((resolve) => {
-    const tick = () => {
-      if (signal.cancelled) {
-        cleanup();
-        resolve();
-        return;
+  // If WAAPI is available, use it (best). Otherwise fallback to CSS transition (Telegram iOS often lacks WAAPI).
+  const hasWAAPI = typeof (attackerEl as any).animate === 'function';
+
+  if (hasWAAPI) {
+    const anim = attackerEl.animate(
+      [
+        { transform: base },
+        { transform: to1 },
+        { transform: to2 },
+        { transform: base },
+      ],
+      {
+        duration: 380,
+        easing: 'cubic-bezier(0.2, 0.9, 0.2, 1)',
+        fill: 'forwards',
       }
-      requestAnimationFrame(tick);
+    );
+
+    const cleanup = () => {
+      try {
+        anim.cancel();
+      } catch {}
+      restore();
     };
-    requestAnimationFrame(tick);
-  });
 
-  await Promise.race([anim.finished.then(() => void 0).catch(() => void 0), cancelWatcher]);
+    const cancelWatcher = new Promise<void>((resolve) => {
+      const tick = () => {
+        if (signal.cancelled) {
+          cleanup();
+          resolve();
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
 
-  if (!signal.cancelled) {
-    attackerEl.style.transform = prevTransform;
-    attackerEl.style.willChange = prevWillChange;
+    await Promise.race([anim.finished.then(() => void 0).catch(() => void 0), cancelWatcher]);
+
+    if (!signal.cancelled) restore();
+    return;
   }
+
+  // Fallback: CSS transition-based animation
+  const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
+
+  // Compose relative motion on top of base position
+  attackerEl.style.transition = 'transform 170ms cubic-bezier(0.2, 0.9, 0.2, 1)';
+  attackerEl.style.transform = base;
+
+  // Ensure style is applied before transitioning
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  if (signal.cancelled) {
+    restore();
+    return;
+  }
+
+  attackerEl.style.transform = to1;
+  await sleep(190);
+  if (signal.cancelled) {
+    restore();
+    return;
+  }
+
+  attackerEl.style.transition = 'transform 140ms cubic-bezier(0.2, 0.9, 0.2, 1)';
+  attackerEl.style.transform = base;
+  await sleep(160);
+
+  if (!signal.cancelled) restore();
 }
 
 export default function BattleFxLayer({
