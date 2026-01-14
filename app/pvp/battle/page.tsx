@@ -1569,7 +1569,7 @@ const hpPct = useMemo(() => {
     if (!renderUnit) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
-        <div className="bb-motion-layer" data-fx-motion="1" style={{ willChange: "transform" }}>
+        <div className="bb-motion-layer battle-unit-card" data-unit-id={renderUnit?.instanceId} data-fx-motion="1" style={{ willChange: "transform" }}>
       <div className="bb-fx-anchor">
         
         {isDyingUi ? <div className="bb-death" /> : null}
