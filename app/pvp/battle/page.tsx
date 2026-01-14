@@ -1256,9 +1256,23 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       const attackerCard = resolveUnitElFromRefMap(ev.attackerId);
       const targetCard = resolveUnitElFromRefMap(ev.targetId);
 
-      if (!attackerCard || !targetCard) continue;
+      if (!attackerCard || !targetCard) {
+        if ((globalThis as any)?.localStorage?.getItem("bb_fx_ref_debug") === "1") {
+          console.warn("[BB FX REF] missing refs", {
+            attackerId: ev.attackerId,
+            targetId: ev.targetId,
+            hasAttacker: !!attackerCard,
+            hasTarget: !!targetCard,
+            refKeys: Object.keys(unitElByIdRef.current || {}).slice(0, 20),
+          });
+        }
+        continue;
+      }
 
-      const attackerMotion = (attackerCard.closest(".bb-motion-layer") as HTMLDivElement | null) || attackerCard;
+      const attackerMotion =
+        (attackerCard.querySelector('[data-fx-motion="1"]') as HTMLDivElement | null) ||
+        (attackerCard.querySelector(".bb-motion-layer") as HTMLDivElement | null) ||
+        attackerCard;
       const arenaRect = arenaEl.getBoundingClientRect();
       const a = attackerCard.getBoundingClientRect();
       const b = targetCard.getBoundingClientRect();
@@ -1270,6 +1284,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
       const dx = bx - ax;
       const dy = by - ay;
+
+      attackerMotion.style.willChange = "transform";
 
       // quick lunge forward then back
       try {
