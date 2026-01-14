@@ -2,431 +2,216 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-// Attack event contract coming from page.tsx
-export type AttackFxEvent = {
-  type: 'attack';
-  id: string;
-  attackerId: string;
-  targetId: string;
-};
+type FxEvent =
+  | {
+      type: 'atk';
+      attackerId: string;
+      targetId: string;
+      ts?: number;
+    }
+  | { type: string; [k: string]: any };
 
-/** CSS selector escaping for attribute selectors */
-function cssEscape(value: string): string {
-  const anyCss = (globalThis as any).CSS;
-  if (anyCss && typeof anyCss.escape === "function") return anyCss.escape(value);
-  // Minimal escape fallback
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\"');
+function extractSlotKey(id: string): string | null {
+  // composite format example:
+  // matchId:round:p1:3:unitId:unitInstanceId
+  const m = id.match(/:(p[12]):([0-4]):/);
+  if (!m) return null;
+  return `${m[1]}:${m[2]}`;
 }
 
-/** Extract slot key like "p1:0" from composite ids. */
-function extractSlotKey(compositeId: string): string | null {
-  const parts = String(compositeId || "").split(":");
-  const pIdx = parts.findIndex((p) => p === "p1" || p === "p2");
-  if (pIdx >= 0 && pIdx + 1 < parts.length) {
-    const side = parts[pIdx];
-    const slot = parts[pIdx + 1];
-    if (/^\d+$/.test(slot)) return `${side}:${slot}`;
+function getCandidateDocs(): Document[] {
+  const docs: Document[] = [document];
+  const iframes = Array.from(document.querySelectorAll('iframe'));
+  for (const fr of iframes) {
+    try {
+      const d = fr.contentDocument;
+      if (d) docs.push(d);
+    } catch {
+      // cross-origin iframe - ignore
+    }
   }
-  return null;
+  return docs;
 }
 
-/** Drop the round segment (":<round>:") from ids so DOM and events can match. */
-function normalizeDropRound(compositeId: string): string {
-  const parts = String(compositeId || "").split(":");
-  // expected: matchId : round : pX : slot : cardId : unitId
-  if (parts.length >= 3 && /^\d+$/.test(parts[1])) {
-    parts.splice(1, 1);
+function findSlotEl(slotKey: string): HTMLElement | null {
+  for (const d of getCandidateDocs()) {
+    const el = d.querySelector(`[data-bb-slot="${slotKey}"]`);
+    if (el && el instanceof HTMLElement) return el;
   }
-  return parts.join(":");
-}
-
-type ActiveAttack = {
-  id: string;
-  attackerId: string;
-  targetId: string;
-};
-
-function clamp(n: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, n));
-}
-
-// Prefer moving the dedicated motion wrapper if it exists, otherwise move the card root.
-function pickMovable(el: HTMLElement): HTMLElement {
-  const motionLayer = el.querySelector('.bb-motion-layer') as HTMLElement | null;
-  if (motionLayer) return motionLayer;
-  const card = el.querySelector('.bb-card') as HTMLElement | null;
-  if (card) return card;
-  return el;
-}
-
-function slotKeyFromId(id: string): string | null {
-  const parts = id.split(':');
-  // expected: <match>:<round>:<p1|p2>:<idx>:...
-  if (parts.length >= 4 && (parts[2] === 'p1' || parts[2] === 'p2')) return `${parts[2]}:${parts[3]}`;
-  return null;
-}
-
-function normalizeUnitId(id: string): string {
-  // Unit ids often look like: <matchUuid>:<round>:p1:3:<teamUuid>:<cardUuid>
-  // The <round> segment can differ between DOM and events. Normalize by dropping
-  // the first UUID prefix and also the round segment when present.
-  const parts = id.split(':');
-  if (parts.length <= 1) return id;
-
-  const firstLooksUuid = ((parts[0].match(/-/g) || []).length >= 4);
-  const secondLooksRound = parts.length >= 2 && /^\d+$/.test(parts[1]);
-
-  if (firstLooksUuid && secondLooksRound && parts.length >= 4) {
-    return parts.slice(2).join(':'); // drop matchUuid + round
-  }
-  if (firstLooksUuid) {
-    return parts.slice(1).join(':'); // drop matchUuid only
-  }
-  return id;
-}
-
-function getUnitEl(unitId: string, refMap?: Record<string, HTMLElement | null>): HTMLElement | null {
-  if (!unitId) return null;
-
-  // Events send a long id like:
-  // matchId:round:p1:2:teamId:instanceId
-  // But DOM usually stores only instanceId (uuid) in data-unit-id.
-  const tail = unitId.includes(":") ? unitId.split(":").pop() || unitId : unitId;
-  const slot = extractSlotKey(unitId); // p1:2
-
-  const rmap = refMap;
-  const gmap = (window as any).__bb_unitEls as Record<string, HTMLElement | undefined> | undefined;
-
-  // 1) Ref map / global map by instanceId
-  if (rmap && rmap[tail]) return rmap[tail] as HTMLElement;
-  if (gmap && gmap[tail]) return gmap[tail];
-
-  // 2) Ref map / global map by slot key
-  if (slot) {
-    if (rmap && rmap[slot]) return rmap[slot] as HTMLElement;
-    if (gmap && gmap[slot]) return gmap[slot];
-  }
-
-  // 3) Direct DOM lookup by instanceId
-  const el = document.querySelector(`[data-unit-id="${cssEscape(tail)}"]`) as HTMLElement | null;
-  if (el) return el;
-
-  // 4) DOM lookup by slot key (if page provides it)
-  if (slot) {
-    const sel = `[data-slot="${cssEscape(slot)}"]`;
-    const bySlot = document.querySelector(sel) as HTMLElement | null;
-    if (bySlot) return bySlot;
-  }
-
-  return null;
-}
-
-
-function collectDomSamples() {
-  const ids = Array.from(document.querySelectorAll('[data-unit-id]'))
-    .slice(0, 12)
-    .map((el) => (el as HTMLElement).getAttribute('data-unit-id') || '');
-  const slots = Array.from(document.querySelectorAll('[data-slot]'))
-    .slice(0, 12)
-    .map((el) => (el as HTMLElement).getAttribute('data-slot') || '');
-  return { ids, slots, unitCount: document.querySelectorAll('[data-unit-id]').length, slotCount: document.querySelectorAll('[data-slot]').length };
-}
-
-function getMovableForUnit(
-  unitId: string,
-  unitElByIdRef?: React.MutableRefObject<Record<string, HTMLElement | null>>
-): HTMLElement | null {
-  const refMap = unitElByIdRef?.current;
-
-  // Try exact id and normalized (round-agnostic) id
-  const id0 = String(unitId || "");
-  const id1 = normalizeDropRound(id0);
-
-  const unitEl =
-    getUnitEl(id0, refMap) ||
-    (id1 !== id0 ? getUnitEl(id1, refMap) : null);
-
-  if (!unitEl) return null;
-  return pickMovable(unitEl);
-}
-
-async function animateAttack(attackerEl: HTMLElement, targetEl: HTMLElement, signal: { cancelled: boolean }) {
-  const a = attackerEl.getBoundingClientRect();
-  const t = targetEl.getBoundingClientRect();
-
-  // Vector from attacker center -> target center
-  const ax = a.left + a.width / 2;
-  const ay = a.top + a.height / 2;
-  const tx = t.left + t.width / 2;
-  const ty = t.top + t.height / 2;
-
-  let dx = tx - ax;
-  let dy = ty - ay;
-
-  // Don't overshoot: approach ~55% of the distance, clamped.
-  const dist = Math.hypot(dx, dy);
-  const k = clamp(dist * 0.55, 40, 140) / (dist || 1);
-  dx *= k;
-  dy *= k;
-
-  // Store current inline transform to restore.
-  const prevTransform = attackerEl.style.transform;
-  const prevWillChange = attackerEl.style.willChange;
-  const prevTransition = attackerEl.style.transition;
-
-  attackerEl.style.willChange = 'transform';
-
-  const base = prevTransform || 'translate3d(0,0,0)';
-  const to1 = `${base} translate3d(${dx}px, ${dy}px, 0)`;
-  const to2 = `${base} translate3d(${dx * 0.9}px, ${dy * 0.9}px, 0)`;
-
-  const restore = () => {
-    attackerEl.style.transform = prevTransform;
-    attackerEl.style.willChange = prevWillChange;
-    attackerEl.style.transition = prevTransition;
-  };
-
-  // If WAAPI is available, use it (best). Otherwise fallback to CSS transition (Telegram iOS often lacks WAAPI).
-  const hasWAAPI = typeof (attackerEl as any).animate === 'function';
-
-  if (hasWAAPI) {
-    const anim = attackerEl.animate(
-      [
-        { transform: base },
-        { transform: to1 },
-        { transform: to2 },
-        { transform: base },
-      ],
-      {
-        duration: 380,
-        easing: 'cubic-bezier(0.2, 0.9, 0.2, 1)',
-        fill: 'forwards',
-      }
-    );
-
-    const cleanup = () => {
-      try {
-        anim.cancel();
-      } catch {}
-      restore();
-    };
-
-    const cancelWatcher = new Promise<void>((resolve) => {
-      const tick = () => {
-        if (signal.cancelled) {
-          cleanup();
-          resolve();
-          return;
-        }
-        requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
+  // fallback: try to match by id tail (some builds used id=composite)
+  const [side, idx] = slotKey.split(':');
+  const tail = `:${side}:${idx}:`;
+  for (const d of getCandidateDocs()) {
+    const any = Array.from(d.querySelectorAll('[id]')).find((n) => {
+      const id = (n as HTMLElement).id || '';
+      return id.includes(tail);
     });
-
-    await Promise.race([anim.finished.then(() => void 0).catch(() => void 0), cancelWatcher]);
-
-    if (!signal.cancelled) restore();
-    return;
+    if (any && any instanceof HTMLElement) return any;
   }
+  return null;
+}
 
-  // Fallback: CSS transition-based animation
-  const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
-
-  // Compose relative motion on top of base position
-  attackerEl.style.transition = 'transform 170ms cubic-bezier(0.2, 0.9, 0.2, 1)';
-  attackerEl.style.transform = base;
-
-  // Ensure style is applied before transitioning
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  if (signal.cancelled) {
-    restore();
-    return;
-  }
-
-  attackerEl.style.transform = to1;
-  await sleep(190);
-  if (signal.cancelled) {
-    restore();
-    return;
-  }
-
-  attackerEl.style.transition = 'transform 140ms cubic-bezier(0.2, 0.9, 0.2, 1)';
-  attackerEl.style.transform = base;
-  await sleep(160);
-
-  if (!signal.cancelled) restore();
+function centerOf(el: HTMLElement): { x: number; y: number } {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
 
 export default function BattleFxLayer({
   events,
-  debug,
-  unitElByIdRef,
 }: {
-  events: AttackFxEvent[];
-  debug?: boolean;
-  unitElByIdRef?: React.MutableRefObject<Record<string, HTMLElement | null>>;
+  events: FxEvent[];
 }) {
-  const debugEnabled = !!debug || (typeof window !== 'undefined' && window.localStorage?.getItem('bb_fx_debug') === '1');
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const lastSeenRef = useRef<number>(0);
+  const [debug, setDebug] = useState(() => {
+    try {
+      return localStorage.getItem('bb_fx_debug') === '1';
+    } catch {
+      return false;
+    }
+  });
 
-  // Track processed events so we don't re-run the same attack animation on every render.
-  const seenIdsRef = useRef<Set<string>>(new Set());
-
-  const [active, setActive] = useState<ActiveAttack | null>(null);
-  const activeRef = useRef<ActiveAttack | null>(null);
-  activeRef.current = active;
-
-  const [seenCount, setSeenCount] = useState(0);
-
-
-
-  const lastEvent = useMemo(() => {
-    if (!events || events.length === 0) return null;
-    return events[events.length - 1];
-  }, [events]);
-
-  // Expose lightweight state for debugging in DevTools
-  useEffect(() => {
-    (window as any).__bb_fx_state = {
-      eventsLen: events?.length ?? 0,
-      seenCount,
-      active,
-      lastEvent,
-    };
-  }, [events, seenCount, active, lastEvent]);
-
+  const atkEvents = useMemo(() => events.filter((e) => e?.type === 'atk') as FxEvent[], [events]);
 
   useEffect(() => {
-    let mounted = true;
-    return () => {
-      mounted = false;
-      void mounted;
-    };
+    // allow toggle via localStorage + reload
+    const t = window.setInterval(() => {
+      try {
+        const v = localStorage.getItem('bb_fx_debug') === '1';
+        setDebug(v);
+      } catch {}
+    }, 500);
+    return () => window.clearInterval(t);
   }, []);
 
   useEffect(() => {
-    if (!events || events.length === 0) return;
+    const overlay = overlayRef.current;
+    if (!overlay) return;
 
-    // Find the newest unseen event.
-    const seen = seenIdsRef.current;
-    const newest = [...events].reverse().find((e) => !seen.has(e.id));
-    if (!newest) return;
+    const last = atkEvents[atkEvents.length - 1] as any;
+    if (!last || typeof last !== 'object') return;
 
-    seen.add(newest.id);
-    setSeenCount(seen.size);
+    // ensure we only play once per new event
+    const key = (last.ts ?? 0) + ':' + last.attackerId + '>' + last.targetId;
+    const keyHash = key.length;
+    if (keyHash === lastSeenRef.current) return;
+    lastSeenRef.current = keyHash;
 
-    // If an animation is already running, we queue by replacing active AFTER it ends.
-    // For simplicity: just overwrite; animate effect below will cancel previous.
-    setActive({ id: newest.id, attackerId: newest.attackerId, targetId: newest.targetId });
-  }, [events]);
+    const attackerSlot = extractSlotKey(last.attackerId);
+    const targetSlot = extractSlotKey(last.targetId);
 
-  useEffect(() => {
-    if (!active) return;
+    if (!attackerSlot || !targetSlot) return;
 
-    const attacker = getMovableForUnit(active.attackerId);
-    const target = getMovableForUnit(active.targetId);
+    // Resolve dom
+    const attackerEl = findSlotEl(attackerSlot);
+    const targetEl = findSlotEl(targetSlot);
 
-    if (!attacker || !target) {
-      if (debugEnabled) {
-        // eslint-disable-next-line no-console
-        const aSlot = slotKeyFromId(active.attackerId);
-        const tSlot = slotKeyFromId(active.targetId);
-        const samples = collectDomSamples();
-        const payload = {
-          attackerId: active.attackerId,
-          targetId: active.targetId,
-          attackerFound: !!attacker,
-          targetFound: !!target,
-          attackerSlot: aSlot,
-          targetSlot: tSlot,
-          domUnitCount: samples.unitCount,
-          domSlotCount: samples.slotCount,
-          domIdsSample: samples.ids,
-          domSlotsSample: samples.slots,
+    if (!attackerEl || !targetEl) {
+      if (debug) {
+        (window as any).__bb_fx_lastFail = {
+          attackerId: last.attackerId,
+          targetId: last.targetId,
+          attackerSlot,
+          targetSlot,
+          attackerFound: !!attackerEl,
+          targetFound: !!targetEl,
+          domUnitCount: document.querySelectorAll('[id]').length,
+          domSlotCount: document.querySelectorAll('[data-bb-slot]').length,
+          domIdsSample: Array.from(document.querySelectorAll('[id]'))
+            .slice(0, 12)
+            .map((n) => (n as HTMLElement).id),
+          domSlotsSample: Array.from(document.querySelectorAll('[data-bb-slot]'))
+            .slice(0, 12)
+            .map((n) => (n as HTMLElement).getAttribute('data-bb-slot')),
         };
-        (window as any).__bb_fx_lastFail = payload;
-        console.warn('[BB FX] cannot resolve DOM', payload);
-}
-      (window as any).__bb_fx_resolve = {
-        attackerId: active.attackerId,
-        targetId: active.targetId,
-        attackerFound: !!attacker,
-        targetFound: !!target,
-        ts: Date.now(),
-      };
-
-      // Can't resolve DOM nodes yet (mount timing or ID mismatch). Retry shortly.
-      const t = window.setTimeout(() => {
-        setActive((cur) => (cur && cur.id === active.id ? { ...cur } : cur));
-      }, 120);
-      return () => window.clearTimeout(t);
-    }
-
-    const signal = { cancelled: false };
-
-    if (debugEnabled) {
-      attacker.style.outline = '2px solid rgba(0,255,255,0.9)';
-      attacker.style.outlineOffset = '2px';
-      (window as any).__bb_fx_anim = { attackerId: active.attackerId, targetId: active.targetId, ts: Date.now() };
-    }
-
-    void (async () => {
-      try {
-        await animateAttack(attacker, target, signal);
-      } finally {
-        if (debugEnabled) {
-          attacker.style.outline = '';
-          attacker.style.outlineOffset = '';
-        }
-        if (!signal.cancelled) setActive(null);
+        // eslint-disable-next-line no-console
+        console.warn('[BB FX] cannot resolve DOM', (window as any).__bb_fx_lastFail);
       }
-    })();
+      return;
+    }
+
+    // Build flying clone
+    const aRect = attackerEl.getBoundingClientRect();
+    const clone = attackerEl.cloneNode(true) as HTMLElement;
+    clone.style.position = 'fixed';
+    clone.style.left = `${aRect.left}px`;
+    clone.style.top = `${aRect.top}px`;
+    clone.style.width = `${aRect.width}px`;
+    clone.style.height = `${aRect.height}px`;
+    clone.style.margin = '0';
+    clone.style.pointerEvents = 'none';
+    clone.style.zIndex = '999999';
+    clone.style.willChange = 'transform';
+    clone.style.transform = 'translate3d(0,0,0)';
+    overlay.appendChild(clone);
+
+    const from = centerOf(attackerEl);
+    const to = centerOf(targetEl);
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+
+    const anim = clone.animate(
+      [
+        { transform: `translate3d(0px, 0px, 0px)` },
+        { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
+        { transform: `translate3d(0px, 0px, 0px)` },
+      ],
+      {
+        duration: 520,
+        easing: 'cubic-bezier(.2,.9,.2,1)',
+      }
+    );
+
+    anim.onfinish = () => {
+      try {
+        overlay.removeChild(clone);
+      } catch {}
+    };
 
     return () => {
-      signal.cancelled = true;
+      try {
+        anim.cancel();
+      } catch {}
+      try {
+        overlay.removeChild(clone);
+      } catch {}
     };
-  }, [active]);
-
-  if (!debugEnabled) return null;
+  }, [atkEvents, debug]);
 
   return (
-    <div
-      className="bb-fx-debug"
-      style={{
-        position: 'fixed',
-        left: 8,
-        bottom: 90,
-        width: 340,
-        maxWidth: '80vw',
-        fontSize: 12,
-        lineHeight: 1.25,
-        padding: 10,
-        borderRadius: 12,
-        background: 'rgba(0,0,0,0.45)',
-        color: '#fff',
-        zIndex: 999999,
-        pointerEvents: 'none',
-        whiteSpace: 'pre-wrap',
-      }}
-    >
-      <div style={{ fontWeight: 700, marginBottom: 6 }}>FX debug</div>
-      <div style={{ opacity: 0.85 }}>toggle: localStorage.bb_fx_debug='1'</div>
-      <div>events: {events?.length ?? 0}</div>
-      <div>seen: {seenCount}</div>
-      <div style={{ opacity: 0.85 }}>dom: {(typeof document !== 'undefined') ? document.querySelectorAll('[data-unit-id]').length : 0} ids / {(typeof document !== 'undefined') ? document.querySelectorAll('[data-slot]').length : 0} slots</div>
-      <div style={{ opacity: 0.85 }}>resolve: {(window as any).__bb_fx_resolve ? `${(window as any).__bb_fx_resolve.attackerFound ? 'A' : 'a'}${(window as any).__bb_fx_resolve.targetFound ? 'T' : 't'}` : '-'}</div>
-      {active ? (
-        <div style={{ marginTop: 8 }}>
-          <div>active: {active.id}</div>
-          <div>attacker: {active.attackerId}</div>
-          <div>target: {active.targetId}</div>
-        </div>
-      ) : lastEvent ? (
-        <div style={{ marginTop: 8 }}>
-          <div>last: {lastEvent.id}</div>
-          <div>attacker: {lastEvent.attackerId}</div>
-          <div>target: {lastEvent.targetId}</div>
+    <>
+      <div
+        ref={overlayRef}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          pointerEvents: 'none',
+          zIndex: 999999,
+        }}
+      />
+      {debug ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: 12,
+            top: 12,
+            maxWidth: 520,
+            padding: 10,
+            borderRadius: 12,
+            background: 'rgba(0,0,0,.45)',
+            color: 'white',
+            fontSize: 12,
+            zIndex: 1000000,
+            pointerEvents: 'none',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {'FX debug\n'}
+          {`toggle: localStorage.bb_fx_debug='1'\n`}
+          {`events: ${events.length}\n`}
+          {`dom: ${document.querySelectorAll('[id]').length} ids / ${document.querySelectorAll('[data-bb-slot]').length} slots\n`}
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
