@@ -366,8 +366,11 @@ function BattleInner() {
   const fxdebug = sp.get("fxdebug") === "1";
   const layoutdebug = sp.get("layoutdebug") === "1" || fxdebug;
 
-  // Local toggle (does not affect layout): lets you enable debug overlay without URL params.
+  // Local toggles.
+  // uiDebug = old layout grid / coords debug
+  // fxDebug = new FX debug panel + enables BattleFxLayer overlay
   const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
+  const [fxDebugEnabled, setFxDebugEnabled] = useState<boolean>(fxdebug);
 
   // Debug UI is rendered directly in JSX (no portals/DOM mutations).
 const isArenaDebug = DEBUG_ARENA || uiDebug;
@@ -496,6 +499,17 @@ const isArenaDebug = DEBUG_ARENA || uiDebug;
   };
 
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const slotElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Expose DOM refs for BattleFxLayer (Telegram DevTools sometimes misses querySelector results).
+  useEffect(() => {
+    try {
+      (window as any).__bb_unitEls = unitElByIdRef.current;
+      (window as any).__bb_slotEls = slotElByIdRef.current;
+    } catch {
+      // ignore
+    }
+  });
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
@@ -1174,25 +1188,15 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   // FX events derived from recent attacks (used by BattleFxLayer).
   const fxEvents = useMemo(() => {
-    // Auto-FX: build attack events from the full timeline so BattleFxLayer can animate each attack once.
-    const out: { type: "attack"; id: string; attackerId: string; targetId: string }[] = [];
-    const tl: any[] = (timeline as any[]) || [];
-    for (let i = 0; i < tl.length; i++) {
-      const e: any = tl[i];
-      if (!e || e.type !== "attack") continue;
-
-      const fromRef = readUnitRefFromEvent(e, "from") || readUnitRefFromEvent(e, "unit");
-      const toRef = readUnitRefFromEvent(e, "to") || readUnitRefFromEvent(e, "target");
-
-      const attackerId = String(fromRef?.instanceId ?? (e?.from && e.from.instanceId) ?? e?.fromId ?? e?.attackerId ?? "");
-      const targetId = String(toRef?.instanceId ?? (e?.to && e.to.instanceId) ?? e?.toId ?? e?.targetId ?? "");
-      if (!attackerId || !targetId) continue;
-
-      const baseId = String(e.id ?? e.uid ?? `${e.t ?? ""}:${attackerId}:${targetId}`);
-      out.push({ type: "attack", id: `atk:${baseId}:${i}`, attackerId, targetId });
-    }
-    return out;
-  }, [timeline]);
+    return (recentAttacks as any[])
+      .filter((a) => a && (a as any).fromId && (a as any).toId)
+      .map((a: any, i: number) => ({
+        type: "attack" as const,
+        id: `${a.t ?? ""}:${a.fromId}:${a.toId}:${i}`,
+        attackerId: String(a.fromId),
+        targetId: String(a.toId),
+      }));
+  }, [recentAttacks]);
 
 
   const spawnFxByInstance = useMemo(() => {
@@ -1568,7 +1572,13 @@ const hpPct = useMemo(() => {
     if (isHidden) return null;
     if (!renderUnit) return null;
     return (
-      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+      <div
+        className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}
+        data-unit-id={renderUnit?.instanceId}
+        ref={(el) => {
+          if (el && renderUnit?.instanceId) slotElByIdRef.current[renderUnit.instanceId] = el;
+        }}
+      >
         <div className="bb-motion-layer" data-fx-motion="1" style={{ willChange: "transform" }}>
       <div className="bb-fx-anchor">
         
@@ -1809,6 +1819,24 @@ const hpPct = useMemo(() => {
         >
           DBG {uiDebug ? "ON" : "OFF"}
         </button>
+
+        <button
+          type="button"
+          onClick={() => setFxDebugEnabled((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: fxDebugEnabled ? "rgba(0,120,255,0.78)" : "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          FX {fxDebugEnabled ? "ON" : "OFF"}
+        </button>
         <div
           style={{
             padding: "6px 8px",
@@ -1824,7 +1852,36 @@ const hpPct = useMemo(() => {
         </div>
       </div>
 
-      <BattleFxLayer events={fxEvents} />
+      {/* FX toggle (kept separate from layout debug so we can always enable attack-flight diagnostics) */}
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 120,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setFxDebugEnabled((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: fxDebugEnabled ? "rgba(0,120,255,0.78)" : "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          FX {fxDebugEnabled ? "ON" : "OFF"}
+        </button>
+      </div>
+
+      <BattleFxLayer events={fxEvents} debug={fxDebugEnabled} />
 
       {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
       {/* Debug UI overlay (no portal) */}
@@ -1994,6 +2051,24 @@ const hpPct = useMemo(() => {
         >
           DBG {uiDebug ? "ON" : "OFF"}
         </button>
+
+        <button
+          type="button"
+          onClick={() => setFxDebugEnabled((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: fxDebugEnabled ? "rgba(0,120,255,0.78)" : "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          FX {fxDebugEnabled ? "ON" : "OFF"}
+        </button>
         <div
           style={{
             padding: "6px 8px",
@@ -2050,6 +2125,23 @@ const hpPct = useMemo(() => {
           }}
         >
           DBG {uiDebug ? "ON" : "OFF"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setFxDebugEnabled((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: fxDebugEnabled ? "rgba(0,120,255,0.78)" : "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          FX {fxDebugEnabled ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -2240,7 +2332,36 @@ const hpPct = useMemo(() => {
         </div>
       </div>
 
-      <BattleFxLayer events={fxEvents} />
+      {/* FX toggle (separate from layout debug) */}
+      <div
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 120,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setFxDebugEnabled((v) => !v)}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: fxDebugEnabled ? "rgba(0,120,255,0.78)" : "rgba(0,0,0,0.70)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.3,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          FX {fxDebugEnabled ? "ON" : "OFF"}
+        </button>
+      </div>
+
+      <BattleFxLayer events={fxEvents} debug={fxDebugEnabled} />
       <style
         dangerouslySetInnerHTML={{
           __html: `

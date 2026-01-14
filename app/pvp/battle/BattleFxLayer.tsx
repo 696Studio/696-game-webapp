@@ -14,21 +14,40 @@ type DebugAttack = { attackerId?: string; targetId?: string; nonce?: number };
 
 type Props = {
   events: FxEvent[];
+  /** Controlled from page.tsx (FX button). */
   debug?: boolean;
+  /** Optional manual fire (for debug panel). */
   debugAttack?: DebugAttack;
 };
 
+const RETRY_FRAMES = 30;
+
 function cssEscapeLite(v: string): string {
-  // Minimal escape for attribute selectors (good enough for UUID-ish ids)
-  return v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
+function getGlobalRecord(key: string): Record<string, HTMLElement | null> | null {
+  try {
+    const w = window as any;
+    const v = w?.[key];
+    if (v && typeof v === 'object') return v as Record<string, HTMLElement | null>;
+  } catch {}
+  return null;
+}
+
 function getCardElementByUnitId(unitId: string): HTMLElement | null {
   if (!unitId) return null;
+
+  // 1) Fast path: global ref map from page.tsx
+  const map = getGlobalRecord('__bb_unitEls');
+  const fromMap = map?.[unitId];
+  if (fromMap) return fromMap;
+
+  // 2) DOM query fallback
   const sel = `[data-unit-id="${cssEscapeLite(unitId)}"]`;
   const root = document.querySelector(sel) as HTMLElement | null;
   if (!root) return null;
@@ -42,7 +61,7 @@ function getCardElementByUnitId(unitId: string): HTMLElement | null {
   return card || root;
 }
 
-async function animateAttackGhost(attackerEl: HTMLElement, targetEl: HTMLElement) {
+async function animateAttackGhost(attackerEl: HTMLElement, targetEl: HTMLElement, debugEnabled: boolean) {
   const aRect = attackerEl.getBoundingClientRect();
   const tRect = targetEl.getBoundingClientRect();
 
@@ -67,20 +86,37 @@ async function animateAttackGhost(attackerEl: HTMLElement, targetEl: HTMLElement
   ghost.style.pointerEvents = 'none';
   ghost.style.zIndex = '2147483647';
   ghost.style.willChange = 'transform, filter, opacity';
-  // Slightly lift it visually
   ghost.style.filter = 'drop-shadow(0 10px 18px rgba(0,0,0,0.35))';
+
+  if (debugEnabled) {
+    ghost.style.outline = '2px solid rgba(0,255,255,0.85)';
+    (targetEl.style as any).outline = '2px solid rgba(255,0,255,0.85)';
+    window.setTimeout(() => {
+      try {
+        (targetEl.style as any).outline = '';
+      } catch {}
+    }, 900);
+  }
 
   document.body.appendChild(ghost);
 
   // Dim attacker briefly so it reads as movement
   const attackerAnim = attackerEl.animate(
-    [{ filter: 'brightness(1)', opacity: 1 }, { filter: 'brightness(0.85)', opacity: 0.55 }, { filter: 'brightness(1)', opacity: 1 }],
+    [
+      { filter: 'brightness(1)', opacity: 1 },
+      { filter: 'brightness(0.85)', opacity: 0.55 },
+      { filter: 'brightness(1)', opacity: 1 },
+    ],
     { duration: 380, easing: 'ease-out' }
   );
 
   // Target "hit" pulse
   const targetAnim = targetEl.animate(
-    [{ filter: 'brightness(1)', transform: 'scale(1)' }, { filter: 'brightness(1.35)', transform: 'scale(1.03)' }, { filter: 'brightness(1)', transform: 'scale(1)' }],
+    [
+      { filter: 'brightness(1)', transform: 'scale(1)' },
+      { filter: 'brightness(1.35)', transform: 'scale(1.03)' },
+      { filter: 'brightness(1)', transform: 'scale(1)' },
+    ],
     { duration: 260, easing: 'ease-out', delay: 170 }
   );
 
@@ -101,13 +137,11 @@ async function animateAttackGhost(attackerEl: HTMLElement, targetEl: HTMLElement
   await flyBack.finished.catch(() => {});
   ghost.remove();
 
-  // Ensure they finish (best effort)
   await Promise.allSettled([attackerAnim.finished, targetAnim.finished]);
 }
 
 export default function BattleFxLayer({ events, debug, debugAttack }: Props) {
   const debugEnabled = !!debug;
-
   const [mounted, setMounted] = useState(false);
 
   // queue + seen
@@ -115,12 +149,11 @@ export default function BattleFxLayer({ events, debug, debugAttack }: Props) {
   const queueRef = useRef<FxEvent[]>([]);
   const runningRef = useRef(false);
 
-  // Mount guard for Next
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Merge in manual debug attack (Fire button)
+  // Merge in manual debug attack (optional)
   const mergedEvents = useMemo(() => {
     const manualNonce = debugAttack?.nonce ?? 0;
     const manualOk = debugEnabled && manualNonce && debugAttack?.attackerId && debugAttack?.targetId;
@@ -134,7 +167,6 @@ export default function BattleFxLayer({ events, debug, debugAttack }: Props) {
     return [...(events || []), manual];
   }, [events, debugEnabled, debugAttack?.nonce, debugAttack?.attackerId, debugAttack?.targetId]);
 
-  // Pump queue
   useEffect(() => {
     if (!mounted) return;
 
@@ -152,21 +184,23 @@ export default function BattleFxLayer({ events, debug, debugAttack }: Props) {
       try {
         while (queueRef.current.length > 0) {
           const ev = queueRef.current.shift()!;
-          const attackerEl = getCardElementByUnitId(ev.attackerId);
-          const targetEl = getCardElementByUnitId(ev.targetId);
 
-          if (!attackerEl || !targetEl) {
-            // If DOM isn't ready yet, retry a little later once
-            await sleep(60);
-            const a2 = getCardElementByUnitId(ev.attackerId);
-            const t2 = getCardElementByUnitId(ev.targetId);
-            if (!a2 || !t2) continue;
-            await animateAttackGhost(a2, t2);
-          } else {
-            await animateAttackGhost(attackerEl, targetEl);
+          let attackerEl: HTMLElement | null = null;
+          let targetEl: HTMLElement | null = null;
+
+          // DOM might not be ready on the exact tick — retry for a few frames.
+          for (let i = 0; i < RETRY_FRAMES; i++) {
+            attackerEl = getCardElementByUnitId(ev.attackerId);
+            targetEl = getCardElementByUnitId(ev.targetId);
+            if (attackerEl && targetEl) break;
+            await sleep(16);
           }
 
-          // small gap between attacks
+          if (!attackerEl || !targetEl) {
+            continue;
+          }
+
+          await animateAttackGhost(attackerEl, targetEl, debugEnabled);
           await sleep(60);
         }
       } finally {
@@ -174,11 +208,10 @@ export default function BattleFxLayer({ events, debug, debugAttack }: Props) {
       }
     };
 
-    run();
-  }, [mounted, mergedEvents]);
+    void run();
+  }, [mounted, mergedEvents, debugEnabled]);
 
-  // Pure overlay layer (we don't render anything heavy here)
-  // Keep it as a positioned container in case you later add particles/svg.
+  // Pure overlay layer (keep positioned container for future particles/svg)
   return (
     <div
       className="bb-fx-layer"
@@ -188,6 +221,28 @@ export default function BattleFxLayer({ events, debug, debugAttack }: Props) {
         pointerEvents: 'none',
         zIndex: 40,
       }}
-    />
+    >
+      {debugEnabled ? (
+        <div
+          style={{
+            position: 'fixed',
+            right: 10,
+            bottom: 10,
+            zIndex: 2147483647,
+            pointerEvents: 'none',
+            font: '12px/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial',
+            color: 'rgba(255,255,255,0.92)',
+            background: 'rgba(0,0,0,0.55)',
+            padding: '8px 10px',
+            borderRadius: 10,
+            backdropFilter: 'blur(6px)',
+            maxWidth: '70vw',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {`FX DEBUG\nfxEvents: ${events?.length ?? 0}\nseen: ${seenIdsRef.current.size}\n`}
+        </div>
+      ) : null}
+    </div>
   );
 }
