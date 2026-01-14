@@ -22,6 +22,8 @@ function clamp(n: number, a: number, b: number) {
 
 // Prefer moving the dedicated motion wrapper if it exists, otherwise move the card root.
 function pickMovable(el: HTMLElement): HTMLElement {
+  // If the resolved element is already the dedicated motion wrapper, move it directly.
+  if (el.classList.contains('battle-unit-card') || el.classList.contains('bb-motion-layer')) return el;
   const motionLayer = el.querySelector('.bb-motion-layer') as HTMLElement | null;
   if (motionLayer) return motionLayer;
   const card = el.querySelector('.bb-card') as HTMLElement | null;
@@ -37,6 +39,12 @@ function getUnitEl(unitId: string): HTMLElement | null {
 }
 
 function getMovableForUnit(unitId: string): HTMLElement | null {
+  // Prefer the dedicated motion wrapper introduced in page.tsx
+  const direct = document.querySelector(
+    `.battle-unit-card[data-unit-id="${CSS.escape(unitId)}"]`
+  ) as HTMLElement | null;
+  if (direct) return direct;
+
   const unitEl = getUnitEl(unitId);
   if (!unitEl) return null;
   return pickMovable(unitEl);
