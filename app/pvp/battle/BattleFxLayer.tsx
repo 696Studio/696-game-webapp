@@ -1,5 +1,7 @@
 'use client';
 
+// PATCH: STEP3_RELATIVE_TRANSFORM (compose base transform + offset)
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 // Attack event contract coming from page.tsx
