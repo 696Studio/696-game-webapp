@@ -496,6 +496,7 @@ const isArenaDebug = DEBUG_ARENA || uiDebug;
   };
 
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const seenAtkIdsRef = useRef<Set<string>>(new Set());
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
@@ -1195,6 +1196,90 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   }, [timeline]);
 
 
+  // =========================================================
+  // ATTACK FLIGHT (NO DOM QUERY): animate attacker card by refs
+  // =========================================================
+  useEffect(() => {
+    if (!fxEvents || fxEvents.length === 0) return;
+
+    const run = async () => {
+      for (const ev of fxEvents) {
+        if (!ev || ev.type !== "attack") continue;
+        if (seenAtkIdsRef.current.has(ev.id)) continue;
+
+        // Mark seen immediately so we don't spam on failures
+        seenAtkIdsRef.current.add(ev.id);
+
+        const attackerEl = unitElByIdRef.current[String(ev.attackerId)] || null;
+        const targetEl = unitElByIdRef.current[String(ev.targetId)] || null;
+
+        if (!attackerEl || !targetEl) {
+          // If refs are not ready yet, allow a single retry by deleting the id after a short delay
+          window.setTimeout(() => {
+            // Only retry once
+            if (seenAtkIdsRef.current.has(ev.id)) seenAtkIdsRef.current.delete(ev.id);
+          }, 180);
+          continue;
+        }
+
+        try {
+          const a = attackerEl.getBoundingClientRect();
+          const t = targetEl.getBoundingClientRect();
+          const ax = a.left + a.width / 2;
+          const ay = a.top + a.height / 2;
+          const tx = t.left + t.width / 2;
+          const ty = t.top + t.height / 2;
+
+          let dx = tx - ax;
+          let dy = ty - ay;
+
+          // Don't overshoot across the board; keep it punchy
+          dx = clamp(dx, -220, 220);
+          dy = clamp(dy, -140, 140);
+
+          const base = window.getComputedStyle(attackerEl).transform;
+          const baseT = base && base !== "none" ? base : "";
+          const pushT = `${baseT ? baseT + " " : ""}translate3d(${dx * 0.55}px, ${dy * 0.55}px, 0)`;
+          const backT = baseT || "none";
+
+          const prevZ = attackerEl.style.zIndex;
+          const prevPE = attackerEl.style.pointerEvents;
+          attackerEl.style.zIndex = "2147483640";
+          attackerEl.style.pointerEvents = "none";
+
+          // WAAPI if available, fallback to CSS transition
+          const canWAAPI = typeof (attackerEl as any).animate === "function";
+          if (canWAAPI) {
+            const anim = (attackerEl as any).animate(
+              [
+                { transform: backT },
+                { transform: pushT, offset: 0.55 },
+                { transform: backT },
+              ],
+              { duration: 260, easing: "cubic-bezier(.2,.9,.2,1)" }
+            );
+            await anim.finished.catch(() => {});
+          } else {
+            const prevTransition = attackerEl.style.transition;
+            attackerEl.style.transition = "transform 160ms cubic-bezier(.2,.9,.2,1)";
+            attackerEl.style.transform = pushT;
+            await new Promise((r) => window.setTimeout(r, 170));
+            attackerEl.style.transform = backT;
+            await new Promise((r) => window.setTimeout(r, 120));
+            attackerEl.style.transition = prevTransition;
+          }
+
+          attackerEl.style.zIndex = prevZ;
+          attackerEl.style.pointerEvents = prevPE;
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    void run();
+  }, [fxEvents]);
+
   const spawnFxByInstance = useMemo(() => {
     const windowSec = 0.35;
     const fromT = Math.max(0, t - windowSec);
@@ -1568,57 +1653,17 @@ const hpPct = useMemo(() => {
     if (isHidden) return null;
     if (!renderUnit) return null;
     return (
-      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId ?? instId ?? undefined}>
-        <div className="bb-motion-layer battle-unit-card" data-unit-id={renderUnit?.instanceId ?? instId ?? undefined} data-slot={(renderUnit?.instanceId ?? instId) ? (renderUnit?.instanceId ?? instId)!.split(':').slice(2,4).join(':') : undefined} data-fx-motion="1" style={{ willChange: "transform" }}
-          ref={(el) => {
-            if (!el) return;
-            const w = window as any;
-            w.__bb_unitEls = w.__bb_unitEls || {};
-            const map = w.__bb_unitEls as Record<string, HTMLElement>;
-
-            const idKey = renderUnit?.instanceId ?? instId ?? undefined;
-            if (!idKey) return;
-
-            // slot key is stable across matches: p1:0 .. p2:4
-            const parts = idKey.split(':');
-            const slot = parts.length >= 4 && (parts[2] === 'p1' || parts[2] === 'p2') ? `${parts[2]}:${parts[3]}` : undefined;
-
-            // normalized id drops leading match prefix UUID to survive mismatched prefixes
-            const norm = (parts.length > 1 && (parts[0].match(/-/g) || []).length >= 4) ? parts.slice(1).join(':') : idKey;
-
-            map[idKey] = el;
-            map[norm] = el;
-            if (slot) map[slot] = el;
-          }}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+        <div className="bb-motion-layer" data-fx-motion="1" style={{ willChange: "transform" }}>
       <div className="bb-fx-anchor">
         
         {isDyingUi ? <div className="bb-death" /> : null}
       </div>
       <div
         ref={(el) => {
-          if (!el) return;
-
-          // local ref map (used by some FX/logic)
-          if (renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
-
-          // global ref map for BattleFxLayer (works even when querySelector fails)
-          const w = window as any;
-          w.__bb_unitEls = w.__bb_unitEls || {};
-          const map = w.__bb_unitEls as Record<string, HTMLElement>;
-
-          const idKey = renderUnit?.instanceId ?? instId ?? undefined;
-          if (!idKey) return;
-
-          const parts = idKey.split(':');
-          const slot = parts.length >= 4 && (parts[2] === 'p1' || parts[2] === 'p2') ? `${parts[2]}:${parts[3]}` : undefined;
-          const norm = (parts.length > 1 && (parts[0].match(/-/g) || []).length >= 4) ? parts.slice(1).join(':') : idKey;
-
-          map[idKey] = el;
-          map[norm] = el;
-          if (slot) map[slot] = el;
+          if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
         }}
-        data-unit-id={renderUnit?.instanceId ?? instId ?? undefined}
-        data-slot={(renderUnit?.instanceId ?? instId) ? (renderUnit?.instanceId ?? instId)!.split(':').slice(2,4).join(':') : undefined}
+        data-unit-id={renderUnit?.instanceId}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
