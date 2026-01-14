@@ -62,39 +62,51 @@ function getUnitEl(unitId: string): HTMLElement | null {
   // 1) Fast path via explicit map (best)
   if (map && map[unitId]) return map[unitId];
 
-  // 2) Try normalized id (handles prefix mismatches)
+  // 2) Try normalized id (drops match+round so it can survive differing step counters)
   const n = normalizeUnitId(unitId);
   if (map && map[n]) return map[n];
 
-  // 3) Try slot key (p1:3 / p2:1). We populate this in page.tsx
+  // 3) Try slot key (p1:0 .. p2:4)
   const sk = slotKeyFromId(unitId);
   if (sk && map && map[sk]) return map[sk];
 
   // 4) DOM fallback: exact match by attribute (no CSS selector pitfalls)
-  const els = document.querySelectorAll('[data-unit-id]');
-  for (let i = 0; i < els.length; i++) {
-    const el = els[i] as HTMLElement;
+  const els = Array.from(document.querySelectorAll('[data-unit-id]')) as HTMLElement[];
+  for (const el of els) {
     if (el.getAttribute('data-unit-id') === unitId) return el;
   }
 
   // 5) DOM fallback: normalized match
-  for (let i = 0; i < els.length; i++) {
-    const el = els[i] as HTMLElement;
+  for (const el of els) {
     const got = el.getAttribute('data-unit-id');
     if (got && normalizeUnitId(got) === n) return el;
   }
 
-  // 6) DOM fallback: data-slot match
+  // 6) DOM fallback: slot substring match.
+  // Events sometimes have a different trailing portion (e.g., card id / instance id), while the DOM keeps another.
+  // We match by the stable ":pX:idx:" segment and prefer the motion wrapper if available.
   if (sk) {
-    const slotEls = document.querySelectorAll('[data-slot]');
-    for (let i = 0; i < slotEls.length; i++) {
-      const el = slotEls[i] as HTMLElement;
-      if (el.getAttribute('data-slot') === sk) return el;
+    const [side, idx] = sk.split(':');
+    const needle = `:${side}:${idx}:`;
+
+    let best: HTMLElement | null = null;
+    for (const el of els) {
+      const got = el.getAttribute('data-unit-id') || '';
+      if (!got.includes(needle)) continue;
+
+      // Prefer dedicated motion wrapper, if present
+      const isMotion = el.getAttribute('data-fx-motion') === '1' || el.classList.contains('bb-motion-layer');
+      if (isMotion) return el;
+
+      // Otherwise keep first match as fallback
+      if (!best) best = el;
     }
+    if (best) return best;
   }
 
   return null;
 }
+
 
 function collectDomSamples() {
   const ids = Array.from(document.querySelectorAll('[data-unit-id]'))
