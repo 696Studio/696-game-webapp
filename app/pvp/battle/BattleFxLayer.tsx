@@ -280,7 +280,7 @@ export default function BattleFxLayer({
         const aSlot = slotKeyFromId(active.attackerId);
         const tSlot = slotKeyFromId(active.targetId);
         const samples = collectDomSamples();
-        console.warn('[BB FX] cannot resolve DOM', {
+        const payload = {
           attackerId: active.attackerId,
           targetId: active.targetId,
           attackerFound: !!attacker,
@@ -291,8 +291,10 @@ export default function BattleFxLayer({
           domSlotCount: samples.slotCount,
           domIdsSample: samples.ids,
           domSlotsSample: samples.slots,
-        });
-      }
+        };
+        (window as any).__bb_fx_lastFail = payload;
+        console.warn('[BB FX] cannot resolve DOM', payload);
+}
       (window as any).__bb_fx_resolve = {
         attackerId: active.attackerId,
         targetId: active.targetId,
