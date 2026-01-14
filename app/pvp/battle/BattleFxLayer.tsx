@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 // Build stamp for debugging: proves the client module executed
 if (typeof window !== 'undefined') {
-  (window as any).__bb_fx_build = 'BattleFxLayer.registry.fixed.v3';
+  (window as any).__bb_fx_build = 'BattleFxLayer.registry.fixed.v4';
   // Stub until component mounts
   if (!(window as any).__bb_fx_testFly) {
     (window as any).__bb_fx_testFly = () => {
@@ -64,6 +64,18 @@ export default function BattleFxLayer({
 }) {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const lastSeenRef = useRef<string>('');
+
+  // Ensure globals exist even if module-level code is not reloaded
+  useEffect(() => {
+    (window as any).__bb_fx_build = 'BattleFxLayer.registry.fixed.v4';
+    (window as any).__bb_fx_ping = () => 'pong';
+    if (!(window as any).__bb_fx_testFly) {
+      (window as any).__bb_fx_testFly = () => {
+        console.warn('[BB FX] __bb_fx_testFly not ready (component not mounted yet)');
+        return false;
+      };
+    }
+  }, []);
 
   const [debug, setDebug] = useState(() => {
     try {
@@ -145,7 +157,6 @@ export default function BattleFxLayer({
 
 // Expose manual hooks in debug mode
   useEffect(() => {
-    if (!debug) return;
 
     (window as any).__bb_fx_registryCount = slotRegistryRef?.current
       ? Object.values(slotRegistryRef.current).filter((el) => !!el).length
@@ -296,7 +307,7 @@ export default function BattleFxLayer({
         >
           {'FX debug\n'}
           {`toggle: localStorage.bb_fx_debug='1'\n`}
-          {`events: ${events.length}\n`}
+          {`build: ${(window as any).__bb_fx_build ?? 'n/a'}\n`}{`events: ${events.length}\n`}
           {`atkEvents: ${atkEvents.length}\n`}
           {`domSlots: ${document.querySelectorAll('[data-bb-slot]').length}\n`}
           {`registrySlots: ${registryCount}\n`}
