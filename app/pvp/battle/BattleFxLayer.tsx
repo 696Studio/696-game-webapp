@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 if (typeof window !== 'undefined') {
-  (window as any).__bb_fx_build = 'BattleFxLayer.registry.attackLike.v7';
+  (window as any).__bb_fx_build = 'BattleFxLayer.registry.attackLike.v8';
   if (!(window as any).__bb_fx_testFly) {
     (window as any).__bb_fx_testFly = () => {
       // eslint-disable-next-line no-console
@@ -82,6 +82,10 @@ export default function BattleFxLayer({
     }
   });
 
+  // Slot availability snapshots (IMPORTANT): DOM/refs can change without React state changes.
+  const [slotSnap, setSlotSnap] = useState<{ dom: number; reg: number }>({ dom: 0, reg: 0 });
+
+  // Poll localStorage toggle (Telegram WebView sometimes ignores storage event)
   useEffect(() => {
     const t = window.setInterval(() => {
       try {
@@ -90,6 +94,25 @@ export default function BattleFxLayer({
     }, 500);
     return () => window.clearInterval(t);
   }, []);
+
+  // Poll DOM + registry counts so we can flush queued attacks WHEN slots appear.
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      const dom = document.querySelectorAll('[data-bb-slot]').length;
+      const reg = slotRegistryRef?.current
+        ? Object.values(slotRegistryRef.current).filter((el) => isUsableEl(el)).length
+        : 0;
+
+      setSlotSnap((prev) => (prev.dom === dom && prev.reg === reg ? prev : { dom, reg }));
+
+      (window as any).__bb_fx_domCount = dom;
+      (window as any).__bb_fx_regCount = reg;
+      (window as any).__bb_fx_pendingCount = pendingRef.current.length;
+    }, 100);
+    return () => window.clearInterval(t);
+  }, [slotRegistryRef]);
+
+  const slotsReady = slotSnap.dom > 0 || slotSnap.reg > 0;
 
   // Anything with attackerId+targetId is "attack-like"
   const attackLike = useMemo(() => {
@@ -100,13 +123,6 @@ export default function BattleFxLayer({
     }
     return out;
   }, [events]);
-
-  const registryCount = slotRegistryRef?.current
-    ? Object.values(slotRegistryRef.current).filter((el) => isUsableEl(el)).length
-    : 0;
-
-  const domSlotsCount = typeof document !== 'undefined' ? document.querySelectorAll('[data-bb-slot]').length : 0;
-  const slotsReady = registryCount > 0 || domSlotsCount > 0;
 
   const resolveSlotEl = (slotKey: string): HTMLElement | null => {
     const reg = slotRegistryRef?.current || {};
@@ -167,10 +183,6 @@ export default function BattleFxLayer({
 
   // Manual hook always available
   useEffect(() => {
-    (window as any).__bb_fx_registryCount = slotRegistryRef?.current
-      ? Object.values(slotRegistryRef.current).filter((el) => isUsableEl(el)).length
-      : 0;
-
     (window as any).__bb_fx_testFly = (fromSlot: string, toSlot: string) => {
       const ok = tryFly(fromSlot, toSlot);
       if (!ok) {
@@ -181,50 +193,47 @@ export default function BattleFxLayer({
           fromFound: !!resolveSlotEl(fromSlot),
           toFound: !!resolveSlotEl(toSlot),
           domSlotCountQuery: document.querySelectorAll('[data-bb-slot]').length,
-          domSlotCountRegistry: (window as any).__bb_fx_registryCount,
+          domSlotCountRegistry: slotRegistryRef?.current
+            ? Object.values(slotRegistryRef.current).filter((el) => isUsableEl(el)).length
+            : 0,
         });
       }
       return ok;
     };
-  }, [slotRegistryRef, debug]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [slotRegistryRef]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Flush pending attacks when slots become available
+  // Flush pending attacks when slots become available (state-driven)
   useEffect(() => {
     if (!slotsReady) return;
 
-    // drop very old items (avoid flying on stale screen)
     const now = Date.now();
     pendingRef.current = pendingRef.current.filter((p) => now - p.createdAt < 5000);
-
     if (!pendingRef.current.length) return;
 
-    // Process in order; cap to avoid huge loops
     let processed = 0;
-    while (pendingRef.current.length && processed < 6) {
+    while (pendingRef.current.length && processed < 8) {
       const p = pendingRef.current.shift()!;
       const ok = tryFly(p.attackerSlot, p.targetSlot);
 
-      if (debug) {
-        if (!ok) {
-          (window as any).__bb_fx_lastFail = {
-            reason: 'pending_fly_failed',
-            idx: p.idx,
-            type: p.type,
-            attackerSlot: p.attackerSlot,
-            targetSlot: p.targetSlot,
-            domSlotCountRegistry: registryCount,
-            domSlotCountQuery: document.querySelectorAll('[data-bb-slot]').length,
-          };
-          // eslint-disable-next-line no-console
-          console.warn('[BB FX] pending fly failed', (window as any).__bb_fx_lastFail);
-          // If still failing, stop flushing this tick.
-          break;
-        }
+      if (debug && !ok) {
+        (window as any).__bb_fx_lastFail = {
+          reason: 'pending_fly_failed',
+          idx: p.idx,
+          type: p.type,
+          attackerSlot: p.attackerSlot,
+          targetSlot: p.targetSlot,
+          domSlotCountRegistry: slotSnap.reg,
+          domSlotCountQuery: slotSnap.dom,
+          pendingCount: pendingRef.current.length,
+        };
+        // eslint-disable-next-line no-console
+        console.warn('[BB FX] pending fly failed', (window as any).__bb_fx_lastFail);
+        break;
       }
 
       processed += 1;
     }
-  }, [slotsReady, registryCount, debug]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [slotsReady, slotSnap.dom, slotSnap.reg, debug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Play on latest attack-like event
   useEffect(() => {
@@ -253,8 +262,7 @@ export default function BattleFxLayer({
         attackerSlot,
         targetSlot,
         slotsReady,
-        registryCount,
-        domSlots: document.querySelectorAll('[data-bb-slot]').length,
+        snap: slotSnap,
       });
     }
 
@@ -275,15 +283,9 @@ export default function BattleFxLayer({
       return;
     }
 
-    // If slots are not ready (or temporarily zero), queue this attack and let the flush effect run when ready.
+    // If slots not ready now, queue. Poller will flip slotSnap and flush.
     if (!slotsReady) {
-      pendingRef.current.push({
-        idx,
-        type: String(last.type ?? ''),
-        attackerSlot,
-        targetSlot,
-        createdAt: Date.now(),
-      });
+      pendingRef.current.push({ idx, type: String(last.type ?? ''), attackerSlot, targetSlot, createdAt: Date.now() });
 
       if (debug) {
         (window as any).__bb_fx_lastFail = {
@@ -292,8 +294,8 @@ export default function BattleFxLayer({
           type: String(last.type ?? ''),
           attackerSlot,
           targetSlot,
-          domSlotCountRegistry: registryCount,
-          domSlotCountQuery: document.querySelectorAll('[data-bb-slot]').length,
+          domSlotCountRegistry: slotSnap.reg,
+          domSlotCountQuery: slotSnap.dom,
           pendingCount: pendingRef.current.length,
         };
         // eslint-disable-next-line no-console
@@ -302,16 +304,10 @@ export default function BattleFxLayer({
       return;
     }
 
-    // Slots exist now – try immediately; if still fails, queue once more.
+    // Slots ready – try immediately; if fails, queue for flush.
     const ok = tryFly(attackerSlot, targetSlot);
     if (!ok) {
-      pendingRef.current.push({
-        idx,
-        type: String(last.type ?? ''),
-        attackerSlot,
-        targetSlot,
-        createdAt: Date.now(),
-      });
+      pendingRef.current.push({ idx, type: String(last.type ?? ''), attackerSlot, targetSlot, createdAt: Date.now() });
 
       if (debug) {
         (window as any).__bb_fx_lastFail = {
@@ -320,15 +316,15 @@ export default function BattleFxLayer({
           type: String(last.type ?? ''),
           attackerSlot,
           targetSlot,
-          domSlotCountRegistry: registryCount,
-          domSlotCountQuery: document.querySelectorAll('[data-bb-slot]').length,
+          domSlotCountRegistry: slotSnap.reg,
+          domSlotCountQuery: slotSnap.dom,
           pendingCount: pendingRef.current.length,
         };
         // eslint-disable-next-line no-console
         console.warn('[BB FX] immediate resolve failed; queued', (window as any).__bb_fx_lastFail);
       }
     }
-  }, [attackLike, debug]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [attackLike, debug, slotsReady, slotSnap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -352,7 +348,7 @@ export default function BattleFxLayer({
             position: 'fixed',
             left: 12,
             top: 12,
-            maxWidth: 620,
+            maxWidth: 660,
             padding: 10,
             borderRadius: 12,
             background: 'rgba(0,0,0,.45)',
@@ -368,8 +364,9 @@ export default function BattleFxLayer({
           {`build: ${(typeof window !== 'undefined' && (window as any).__bb_fx_build) || 'n/a'}\n`}
           {`events: ${events.length}\n`}
           {`attackLike: ${attackLike.length}\n`}
-          {`domSlots: ${document.querySelectorAll('[data-bb-slot]').length}\n`}
-          {`registrySlots: ${registryCount}\n`}
+          {`domSlots: ${slotSnap.dom}\n`}
+          {`registrySlots: ${slotSnap.reg}\n`}
+          {`slotsReady: ${slotsReady}\n`}
           {`pending: ${pendingRef.current.length}\n`}
           {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}
           {`lastFail: window.__bb_fx_lastFail\n`}
