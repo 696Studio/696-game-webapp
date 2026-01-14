@@ -156,7 +156,7 @@ export default function BattleFxLayer({
   events: AttackFxEvent[];
   debug?: boolean;
 }) {
-  const debugEnabled = !!debug;
+  const debugEnabled = !!debug || (typeof window !== 'undefined' && window.localStorage?.getItem('bb_fx_debug') === '1');
 
   // Track processed events so we don't re-run the same attack animation on every render.
   const seenIdsRef = useRef<Set<string>>(new Set());
@@ -167,10 +167,23 @@ export default function BattleFxLayer({
 
   const [seenCount, setSeenCount] = useState(0);
 
+
+
   const lastEvent = useMemo(() => {
     if (!events || events.length === 0) return null;
     return events[events.length - 1];
   }, [events]);
+
+  // Expose lightweight state for debugging in DevTools
+  useEffect(() => {
+    (window as any).__bb_fx_state = {
+      eventsLen: events?.length ?? 0,
+      seenCount,
+      active,
+      lastEvent,
+    };
+  }, [events, seenCount, active, lastEvent]);
+
 
   useEffect(() => {
     let mounted = true;
@@ -203,20 +216,46 @@ export default function BattleFxLayer({
     const target = getMovableForUnit(active.targetId);
 
     if (!attacker || !target) {
-      // Can't resolve DOM nodes yet (mount timing). Keep active for a bit by retrying next tick.
+      if (debugEnabled) {
+        // eslint-disable-next-line no-console
+        console.warn('[BB FX] cannot resolve DOM', {
+          attackerId: active.attackerId,
+          targetId: active.targetId,
+          attackerFound: !!attacker,
+          targetFound: !!target,
+        });
+      }
+      (window as any).__bb_fx_resolve = {
+        attackerId: active.attackerId,
+        targetId: active.targetId,
+        attackerFound: !!attacker,
+        targetFound: !!target,
+        ts: Date.now(),
+      };
+
+      // Can't resolve DOM nodes yet (mount timing or ID mismatch). Retry shortly.
       const t = window.setTimeout(() => {
-        // Trigger re-run by setting same active (no-op state update is ignored), so instead clear+set.
         setActive((cur) => (cur && cur.id === active.id ? { ...cur } : cur));
-      }, 80);
+      }, 120);
       return () => window.clearTimeout(t);
     }
 
     const signal = { cancelled: false };
 
+    if (debugEnabled) {
+      attacker.style.outline = '2px solid rgba(0,255,255,0.9)';
+      attacker.style.outlineOffset = '2px';
+      (window as any).__bb_fx_anim = { attackerId: active.attackerId, targetId: active.targetId, ts: Date.now() };
+    }
+
     void (async () => {
       try {
         await animateAttack(attacker, target, signal);
       } finally {
+        if (debugEnabled) {
+          attacker.style.outline = '';
+          attacker.style.outlineOffset = '';
+        }
         if (!signal.cancelled) setActive(null);
       }
     })();
@@ -249,8 +288,10 @@ export default function BattleFxLayer({
       }}
     >
       <div style={{ fontWeight: 700, marginBottom: 6 }}>FX debug</div>
+      <div style={{ opacity: 0.85 }}>toggle: localStorage.bb_fx_debug='1'</div>
       <div>events: {events?.length ?? 0}</div>
       <div>seen: {seenCount}</div>
+      <div style={{ opacity: 0.85 }}>resolve: {(window as any).__bb_fx_resolve ? `${(window as any).__bb_fx_resolve.attackerFound ? 'A' : 'a'}${(window as any).__bb_fx_resolve.targetFound ? 'T' : 't'}` : '-'}</div>
       {active ? (
         <div style={{ marginTop: 8 }}>
           <div>active: {active.id}</div>
