@@ -1568,8 +1568,8 @@ const hpPct = useMemo(() => {
     if (isHidden) return null;
     if (!renderUnit) return null;
     return (
-      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
-        <div className="bb-motion-layer battle-unit-card" data-unit-id={renderUnit?.instanceId} data-fx-motion="1" style={{ willChange: "transform" }}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={instId ?? undefined}>
+        <div className="bb-motion-layer battle-unit-card" data-unit-id={instId ?? undefined} data-fx-motion="1" style={{ willChange: "transform" }}>
       <div className="bb-fx-anchor">
         
         {isDyingUi ? <div className="bb-death" /> : null}
@@ -1578,7 +1578,7 @@ const hpPct = useMemo(() => {
         ref={(el) => {
           if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
         }}
-        data-unit-id={renderUnit?.instanceId}
+        data-unit-id={instId ?? undefined}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
