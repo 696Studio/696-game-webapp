@@ -10,6 +10,36 @@ export type AttackFxEvent = {
   targetId: string;
 };
 
+/** CSS selector escaping for attribute selectors */
+function cssEscape(value: string): string {
+  const anyCss = (globalThis as any).CSS;
+  if (anyCss && typeof anyCss.escape === "function") return anyCss.escape(value);
+  // Minimal escape fallback
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\"');
+}
+
+/** Extract slot key like "p1:0" from composite ids. */
+function extractSlotKey(compositeId: string): string | null {
+  const parts = String(compositeId || "").split(":");
+  const pIdx = parts.findIndex((p) => p === "p1" || p === "p2");
+  if (pIdx >= 0 && pIdx + 1 < parts.length) {
+    const side = parts[pIdx];
+    const slot = parts[pIdx + 1];
+    if (/^\d+$/.test(slot)) return `${side}:${slot}`;
+  }
+  return null;
+}
+
+/** Drop the round segment (":<round>:") from ids so DOM and events can match. */
+function normalizeDropRound(compositeId: string): string {
+  const parts = String(compositeId || "").split(":");
+  // expected: matchId : round : pX : slot : cardId : unitId
+  if (parts.length >= 3 && /^\d+$/.test(parts[1])) {
+    parts.splice(1, 1);
+  }
+  return parts.join(":");
+}
+
 type ActiveAttack = {
   id: string;
   attackerId: string;
@@ -55,53 +85,37 @@ function normalizeUnitId(id: string): string {
   return id;
 }
 
-function getUnitEl(unitId: string): HTMLElement | null {
-  const w = window as any;
-  const map = w.__bb_unitEls as Record<string, HTMLElement> | undefined;
+function getUnitEl(unitId: string, refMap?: Record<string, HTMLElement | null>): HTMLElement | null {
+  if (!unitId) return null;
 
-  // 1) Fast path via explicit map (best)
-  if (map && map[unitId]) return map[unitId];
+  // Events send a long id like:
+  // matchId:round:p1:2:teamId:instanceId
+  // But DOM usually stores only instanceId (uuid) in data-unit-id.
+  const tail = unitId.includes(":") ? unitId.split(":").pop() || unitId : unitId;
+  const slot = extractSlotKey(unitId); // p1:2
 
-  // 2) Try normalized id (drops match+round so it can survive differing step counters)
-  const n = normalizeUnitId(unitId);
-  if (map && map[n]) return map[n];
+  const rmap = refMap;
+  const gmap = (window as any).__bb_unitEls as Record<string, HTMLElement | undefined> | undefined;
 
-  // 3) Try slot key (p1:0 .. p2:4)
-  const sk = slotKeyFromId(unitId);
-  if (sk && map && map[sk]) return map[sk];
+  // 1) Ref map / global map by instanceId
+  if (rmap && rmap[tail]) return rmap[tail] as HTMLElement;
+  if (gmap && gmap[tail]) return gmap[tail];
 
-  // 4) DOM fallback: exact match by attribute (no CSS selector pitfalls)
-  const els = Array.from(document.querySelectorAll('[data-unit-id]')) as HTMLElement[];
-  for (const el of els) {
-    if (el.getAttribute('data-unit-id') === unitId) return el;
+  // 2) Ref map / global map by slot key
+  if (slot) {
+    if (rmap && rmap[slot]) return rmap[slot] as HTMLElement;
+    if (gmap && gmap[slot]) return gmap[slot];
   }
 
-  // 5) DOM fallback: normalized match
-  for (const el of els) {
-    const got = el.getAttribute('data-unit-id');
-    if (got && normalizeUnitId(got) === n) return el;
-  }
+  // 3) Direct DOM lookup by instanceId
+  const el = document.querySelector(`[data-unit-id="${cssEscape(tail)}"]`) as HTMLElement | null;
+  if (el) return el;
 
-  // 6) DOM fallback: slot substring match.
-  // Events sometimes have a different trailing portion (e.g., card id / instance id), while the DOM keeps another.
-  // We match by the stable ":pX:idx:" segment and prefer the motion wrapper if available.
-  if (sk) {
-    const [side, idx] = sk.split(':');
-    const needle = `:${side}:${idx}:`;
-
-    let best: HTMLElement | null = null;
-    for (const el of els) {
-      const got = el.getAttribute('data-unit-id') || '';
-      if (!got.includes(needle)) continue;
-
-      // Prefer dedicated motion wrapper, if present
-      const isMotion = el.getAttribute('data-fx-motion') === '1' || el.classList.contains('bb-motion-layer');
-      if (isMotion) return el;
-
-      // Otherwise keep first match as fallback
-      if (!best) best = el;
-    }
-    if (best) return best;
+  // 4) DOM lookup by slot key (if page provides it)
+  if (slot) {
+    const sel = `[data-slot="${cssEscape(slot)}"]`;
+    const bySlot = document.querySelector(sel) as HTMLElement | null;
+    if (bySlot) return bySlot;
   }
 
   return null;
@@ -118,8 +132,20 @@ function collectDomSamples() {
   return { ids, slots, unitCount: document.querySelectorAll('[data-unit-id]').length, slotCount: document.querySelectorAll('[data-slot]').length };
 }
 
-function getMovableForUnit(unitId: string): HTMLElement | null {
-  const unitEl = getUnitEl(unitId);
+function getMovableForUnit(
+  unitId: string,
+  unitElByIdRef?: React.MutableRefObject<Record<string, HTMLElement | null>>
+): HTMLElement | null {
+  const refMap = unitElByIdRef?.current;
+
+  // Try exact id and normalized (round-agnostic) id
+  const id0 = String(unitId || "");
+  const id1 = normalizeDropRound(id0);
+
+  const unitEl =
+    getUnitEl(id0, refMap) ||
+    (id1 !== id0 ? getUnitEl(id1, refMap) : null);
+
   if (!unitEl) return null;
   return pickMovable(unitEl);
 }
@@ -234,9 +260,11 @@ async function animateAttack(attackerEl: HTMLElement, targetEl: HTMLElement, sig
 export default function BattleFxLayer({
   events,
   debug,
+  unitElByIdRef,
 }: {
   events: AttackFxEvent[];
   debug?: boolean;
+  unitElByIdRef?: React.MutableRefObject<Record<string, HTMLElement | null>>;
 }) {
   const debugEnabled = !!debug || (typeof window !== 'undefined' && window.localStorage?.getItem('bb_fx_debug') === '1');
 
