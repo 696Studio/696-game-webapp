@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 // Build stamp for debugging: proves the client module executed
 if (typeof window !== 'undefined') {
-  (window as any).__bb_fx_build = 'BattleFxLayer.registry.fixed.v2';
+  (window as any).__bb_fx_build = 'BattleFxLayer.registry.fixed.v3';
   // Stub until component mounts
   if (!(window as any).__bb_fx_testFly) {
     (window as any).__bb_fx_testFly = () => {
@@ -132,13 +132,28 @@ export default function BattleFxLayer({
     return true;
   };
 
-  // Expose manual hooks in debug mode
+  // Expose manual hooks (always available), plus extra debug in bb_fx_debug mode
+  useEffect(() => {
+    (window as any).__bb_fx_registryCount = slotRegistryRef?.current
+      ? Object.values(slotRegistryRef.current).filter((el) => !!el).length
+      : 0;
+
+    (window as any).__bb_fx_domSlots = Array.from(document.querySelectorAll('[data-bb-slot]')).map((n) =>
+      (n as HTMLElement).getAttribute('data-bb-slot')
+    );
+  }, [slotRegistryRef, atkEvents.length]);
+
+// Expose manual hooks in debug mode
   useEffect(() => {
     if (!debug) return;
 
     (window as any).__bb_fx_registryCount = slotRegistryRef?.current
       ? Object.values(slotRegistryRef.current).filter((el) => !!el).length
       : 0;
+
+    (window as any).__bb_fx_domSlots = Array.from(document.querySelectorAll('[data-bb-slot]')).map((n) =>
+      (n as HTMLElement).getAttribute('data-bb-slot')
+    );
 
     (window as any).__bb_fx_testFly = (fromSlot: string, toSlot: string) => {
       const reg = slotRegistryRef?.current || {};
@@ -165,14 +180,29 @@ export default function BattleFxLayer({
     const last = atkEvents[atkEvents.length - 1] as any;
     if (!last || typeof last !== 'object') return;
 
-    const key = `${String(last.ts ?? '')}:${String(last.attackerId ?? '')}>${String(last.targetId ?? '')}`;
+    const key = `${atkEvents.length - 1}:${String(last.attackerId ?? '')}>${String(last.targetId ?? '')}`;
     if (key === lastSeenRef.current) return;
     lastSeenRef.current = key;
+
+    if (debug) {
+      (window as any).__bb_fx_lastAtk = last;
+      (window as any).__bb_fx_atkCount = atkEvents.length;
+    }
 
     const attackerSlot: string | null =
       last.attackerSlot || extractSlotKey(String(last.attackerId ?? ''));
     const targetSlot: string | null =
       last.targetSlot || extractSlotKey(String(last.targetId ?? ''));
+
+    if (debug) {
+      // eslint-disable-next-line no-console
+      console.debug('[BB FX] atk event', {
+        attackerId: last.attackerId,
+        targetId: last.targetId,
+        attackerSlot,
+        targetSlot,
+      });
+    }
 
     if (!attackerSlot || !targetSlot) {
       if (debug) {
@@ -217,7 +247,16 @@ export default function BattleFxLayer({
       return;
     }
 
-    flyBetween(attackerEl, targetEl);
+    const ok = flyBetween(attackerEl, targetEl);
+    if (!ok && debug) {
+      (window as any).__bb_fx_lastFail = {
+        reason: 'fly_failed',
+        attackerSlot,
+        targetSlot,
+      };
+      // eslint-disable-next-line no-console
+      console.warn('[BB FX] flyBetween failed', (window as any).__bb_fx_lastFail);
+    }
   }, [atkEvents, debug, slotRegistryRef]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const registryCount = slotRegistryRef?.current ? Object.values(slotRegistryRef.current).filter((el) => !!el).length : 0;
