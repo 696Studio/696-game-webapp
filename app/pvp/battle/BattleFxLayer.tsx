@@ -6,7 +6,6 @@ declare global {
   interface Window {
     __bb_fx_build?: string;
     __bb_fx_testFly?: (from: string, to: string) => boolean;
-    __bb_fx_ping?: () => void;
 
     __bb_fx_domCount?: number;
     __bb_fx_regCount?: number;
@@ -18,12 +17,20 @@ declare global {
     __bb_fx_pending?: any[];
     __bb_fx_pendingCount?: number;
 
+    // Cached slot centers in viewport coords (persist across unmounts)
     __bb_fx_slotCenters?: Record<string, { x: number; y: number; w: number; h: number; t: number }>;
   }
 }
 
 if (typeof window !== 'undefined') {
-  window.__bb_fx_build = 'BattleFxLayer.registry.portal.v11';
+  window.__bb_fx_build = 'BattleFxLayer.registry.attackLike.v10';
+  if (!window.__bb_fx_testFly) {
+    window.__bb_fx_testFly = () => {
+      // eslint-disable-next-line no-console
+      console.warn('[BB FX] __bb_fx_testFly not ready (component not mounted yet)');
+      return false;
+    };
+  }
   if (!Array.isArray(window.__bb_fx_pending)) window.__bb_fx_pending = [];
   if (!window.__bb_fx_slotCenters) window.__bb_fx_slotCenters = {};
 }
@@ -65,11 +72,7 @@ function centerOfRect(r: DOMRect) {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
 }
 
-function isUsableEl(el: HTMLElement | null | undefined): el is HTMLElement {
-  return !!el && !!(el as any).isConnected;
-}
-
-function safeQuerySlot(slotKey: string): HTMLElement | null {
+function findSlotEl(slotKey: string): HTMLElement | null {
   try {
     return document.querySelector(`[data-bb-slot="${CSS.escape(slotKey)}"]`) as HTMLElement | null;
   } catch {
@@ -77,25 +80,8 @@ function safeQuerySlot(slotKey: string): HTMLElement | null {
   }
 }
 
-// Create a portal root on <body> so it's NEVER clipped by app containers / transforms
-function ensurePortalRoot(): HTMLDivElement | null {
-  if (typeof document === 'undefined') return null;
-  const id = 'bb-fx-portal-root';
-  let el = document.getElementById(id) as HTMLDivElement | null;
-  if (!el) {
-    el = document.createElement('div');
-    el.id = id;
-    document.body.appendChild(el);
-  }
-  // Always enforce styles (in case of hot reload)
-  el.style.position = 'fixed';
-  el.style.left = '0';
-  el.style.top = '0';
-  el.style.width = '100vw';
-  el.style.height = '100vh';
-  el.style.pointerEvents = 'none';
-  el.style.zIndex = '2147483646'; // near max
-  return el;
+function isUsableEl(el: HTMLElement | null | undefined): el is HTMLElement {
+  return !!el && !!(el as any).isConnected;
 }
 
 export default function BattleFxLayer({
@@ -105,18 +91,18 @@ export default function BattleFxLayer({
   events: FxEvent[];
   slotRegistryRef?: React.MutableRefObject<Record<string, HTMLElement | null>>;
 }) {
-  const portalRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const lastSeenRef = useRef<string>('');
 
   const pendingRef = useRef<PendingAtk[]>([]);
-  const centersRef = useRef<Record<string, { x: number; y: number; w: number; h: number; t: number }>>(
-    window.__bb_fx_slotCenters || {}
-  );
-
   const syncPendingToWindow = () => {
     window.__bb_fx_pending = pendingRef.current.slice();
     window.__bb_fx_pendingCount = pendingRef.current.length;
   };
+
+  const centersRef = useRef<Record<string, { x: number; y: number; w: number; h: number; t: number }>>(
+    window.__bb_fx_slotCenters || {}
+  );
   const syncCentersToWindow = () => {
     window.__bb_fx_slotCenters = centersRef.current;
   };
@@ -131,46 +117,27 @@ export default function BattleFxLayer({
 
   const [slotSnap, setSlotSnap] = useState<{ dom: number; reg: number }>({ dom: 0, reg: 0 });
 
+  // Prime slot-center cache immediately on mount (in case attacks fire before interval tick)
+  useEffect(() => {
+    try {
+      const w: any = window as any;
+      if (!w.__bb_fx_slotCenters) w.__bb_fx_slotCenters = {};
+      const nodes = Array.from(document.querySelectorAll('[data-bb-slot]')) as HTMLElement[];
+      const now = Date.now();
+      for (const el of nodes) {
+        const k = el.getAttribute('data-bb-slot');
+        if (!k) continue;
+        const r = el.getBoundingClientRect();
+        w.__bb_fx_slotCenters[k] = { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height, t: now };
+      }
+    } catch {}
+  }, []);
+
   // Adopt pending from window on mount (survive remounts)
   useEffect(() => {
     const fromWin = Array.isArray(window.__bb_fx_pending) ? (window.__bb_fx_pending as PendingAtk[]) : [];
     pendingRef.current = fromWin.filter(Boolean);
     syncPendingToWindow();
-  }, []);
-
-  // Create portal on mount
-  useEffect(() => {
-    portalRef.current = ensurePortalRoot();
-    // Always expose a visible ping (to confirm portal is on top)
-    window.__bb_fx_ping = () => {
-      const root = portalRef.current || ensurePortalRoot();
-      if (!root) return;
-
-      const box = document.createElement('div');
-      box.style.position = 'fixed';
-      box.style.left = '24px';
-      box.style.top = '70px';
-      box.style.width = '28px';
-      box.style.height = '28px';
-      box.style.borderRadius = '10px';
-      box.style.background = 'rgba(255, 0, 160, 0.95)';
-      box.style.boxShadow = '0 0 24px rgba(255, 0, 160, 0.9)';
-      box.style.zIndex = '2147483647';
-      box.style.pointerEvents = 'none';
-      root.appendChild(box);
-
-      const anim = box.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 700, easing: 'linear', fill: 'forwards' });
-      anim.onfinish = () => {
-        try {
-          box.remove();
-        } catch {}
-      };
-    };
-
-    // If debug is on, ping once so you immediately SEE the overlay exists
-    try {
-      if (localStorage.getItem('bb_fx_debug') === '1') window.__bb_fx_ping?.();
-    } catch {}
   }, []);
 
   // Poll debug flag
@@ -179,19 +146,14 @@ export default function BattleFxLayer({
       try {
         setDebug(localStorage.getItem('bb_fx_debug') === '1');
       } catch {}
-    }, 400);
+    }, 500);
     return () => window.clearInterval(t);
   }, []);
 
-  // Fast scan loop: count slots + refresh centers cache
+  // Poll DOM + registry counts and refresh slot center cache
   useEffect(() => {
-    let stop = false;
-
-    const scan = () => {
-      if (stop) return;
-
+    const t = window.setInterval(() => {
       const dom = document.querySelectorAll('[data-bb-slot]').length;
-
       const reg = slotRegistryRef?.current
         ? Object.values(slotRegistryRef.current).filter((el) => isUsableEl(el)).length
         : 0;
@@ -200,7 +162,7 @@ export default function BattleFxLayer({
       window.__bb_fx_domCount = dom;
       window.__bb_fx_regCount = reg;
 
-      // Refresh cached centers if DOM slots exist
+      // Refresh centers cache whenever slots exist
       if (dom > 0) {
         const now = Date.now();
         const nodes = Array.from(document.querySelectorAll('[data-bb-slot]')) as HTMLElement[];
@@ -213,50 +175,13 @@ export default function BattleFxLayer({
         }
         syncCentersToWindow();
       }
-
-      // Keep scanning very fast (rAF) for first 3 seconds, then slow interval
-      requestAnimationFrame(scan);
-    };
-
-    // start immediate
-    requestAnimationFrame(scan);
-
-    // After 3 seconds, switch to interval to reduce cost (but keep accurate)
-    const slow = window.setInterval(() => {
-      const dom = document.querySelectorAll('[data-bb-slot]').length;
-      const reg = slotRegistryRef?.current
-        ? Object.values(slotRegistryRef.current).filter((el) => isUsableEl(el)).length
-        : 0;
-
-      setSlotSnap((prev) => (prev.dom === dom && prev.reg === reg ? prev : { dom, reg }));
-      window.__bb_fx_domCount = dom;
-      window.__bb_fx_regCount = reg;
-
-      if (dom > 0) {
-        const now = Date.now();
-        const nodes = Array.from(document.querySelectorAll('[data-bb-slot]')) as HTMLElement[];
-        for (const el of nodes) {
-          const k = el.getAttribute('data-bb-slot');
-          if (!k) continue;
-          const r = el.getBoundingClientRect();
-          const c = centerOfRect(r);
-          centersRef.current[k] = { x: c.x, y: c.y, w: c.w, h: c.h, t: now };
-        }
-        syncCentersToWindow();
-      }
-    }, 120);
-
-    const stopFast = window.setTimeout(() => {
-      stop = true;
-    }, 3000);
-
-    return () => {
-      stop = true;
-      window.clearInterval(slow);
-      window.clearTimeout(stopFast);
-    };
+    }, 100);
+    return () => window.clearInterval(t);
   }, [slotRegistryRef]);
 
+  const slotsReady = slotSnap.dom > 0 || slotSnap.reg > 0;
+
+  // attack-like: anything that has attackerId+targetId
   const attackLike = useMemo(() => {
     const out: FxEvent[] = [];
     for (const e of events) {
@@ -270,37 +195,36 @@ export default function BattleFxLayer({
     const reg = slotRegistryRef?.current || {};
     const el = reg[slotKey];
     if (isUsableEl(el)) return el;
-
-    const qs = safeQuerySlot(slotKey);
+    const qs = findSlotEl(slotKey);
     return isUsableEl(qs) ? qs : null;
   };
 
   const flyDotBetweenPoints = (from: { x: number; y: number }, to: { x: number; y: number }) => {
-    const root = portalRef.current || ensurePortalRoot();
-    if (!root) return false;
+    const overlay = overlayRef.current;
+    if (!overlay) return false;
 
     const dot = document.createElement('div');
     dot.style.position = 'fixed';
-    dot.style.left = `${from.x - 12}px`;
-    dot.style.top = `${from.y - 12}px`;
-    dot.style.width = '24px';
-    dot.style.height = '24px';
+    dot.style.left = `${from.x - 10}px`;
+    dot.style.top = `${from.y - 10}px`;
+    dot.style.width = '20px';
+    dot.style.height = '20px';
     dot.style.borderRadius = '999px';
-    dot.style.background = 'rgba(255, 0, 160, 0.95)';
-    dot.style.boxShadow = '0 0 26px rgba(255, 0, 160, 0.9)';
+    dot.style.background = 'rgba(255,255,255,0.95)';
+    dot.style.boxShadow = '0 0 18px rgba(255,255,255,0.75)';
     dot.style.pointerEvents = 'none';
-    dot.style.zIndex = '2147483647';
+    dot.style.zIndex = '999999';
     dot.style.willChange = 'transform, opacity';
-    root.appendChild(dot);
+    overlay.appendChild(dot);
 
     const dx = to.x - from.x;
     const dy = to.y - from.y;
 
     const anim = dot.animate(
       [
-        { transform: `translate3d(0px, 0px, 0px) scale(1)`, opacity: 1 },
-        { transform: `translate3d(${dx}px, ${dy}px, 0px) scale(1)`, opacity: 1 },
-        { transform: `translate3d(${dx}px, ${dy}px, 0px) scale(0.65)`, opacity: 0.0 },
+        { transform: `translate3d(0px, 0px, 0px)`, opacity: 1 },
+        { transform: `translate3d(${dx}px, ${dy}px, 0px)`, opacity: 1 },
+        { transform: `translate3d(${dx}px, ${dy}px, 0px)`, opacity: 0.0 },
       ],
       { duration: 360, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
     );
@@ -314,20 +238,58 @@ export default function BattleFxLayer({
     return true;
   };
 
+  const flyBetweenEls = (fromEl: HTMLElement, toEl: HTMLElement) => {
+    const overlay = overlayRef.current;
+    if (!overlay) return false;
+
+    const rf = fromEl.getBoundingClientRect();
+    const rt = toEl.getBoundingClientRect();
+    const from = centerOfRect(rf);
+    const to = centerOfRect(rt);
+
+    const clone = fromEl.cloneNode(true) as HTMLElement;
+    clone.style.position = 'fixed';
+    clone.style.left = `${rf.left}px`;
+    clone.style.top = `${rf.top}px`;
+    clone.style.width = `${rf.width}px`;
+    clone.style.height = `${rf.height}px`;
+    clone.style.margin = '0';
+    clone.style.pointerEvents = 'none';
+    clone.style.zIndex = '999999';
+    clone.style.willChange = 'transform, opacity';
+    clone.style.transform = 'translate3d(0,0,0)';
+
+    overlay.appendChild(clone);
+
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+
+    const anim = clone.animate(
+      [
+        { transform: `translate3d(0px, 0px, 0px)`, opacity: 1 },
+        { transform: `translate3d(${dx}px, ${dy}px, 0px)`, opacity: 1 },
+        { transform: `translate3d(${dx * 0.2}px, ${dy * 0.2}px, 0px)`, opacity: 1 },
+        { transform: `translate3d(0px, 0px, 0px)`, opacity: 0.0 },
+      ],
+      { duration: 420, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
+    );
+
+    anim.onfinish = () => {
+      try {
+        clone.remove();
+      } catch {}
+    };
+
+    return true;
+  };
+
   const tryFly = (attackerSlot: string, targetSlot: string) => {
-    // 1) Live elements (registry or DOM)
+    // First try live DOM/registry
     const attackerEl = resolveSlotEl(attackerSlot);
     const targetEl = resolveSlotEl(targetSlot);
+    if (attackerEl && targetEl) return flyBetweenEls(attackerEl, targetEl);
 
-    if (attackerEl && targetEl) {
-      const ra = attackerEl.getBoundingClientRect();
-      const rt = targetEl.getBoundingClientRect();
-      const from = centerOfRect(ra);
-      const to = centerOfRect(rt);
-      return flyDotBetweenPoints({ x: from.x, y: from.y }, { x: to.x, y: to.y });
-    }
-
-    // 2) Cached centers (survive unmounts / rerenders)
+    // Fallback to cached centers (survive unmounts)
     const a = centersRef.current[attackerSlot] || window.__bb_fx_slotCenters?.[attackerSlot];
     const b = centersRef.current[targetSlot] || window.__bb_fx_slotCenters?.[targetSlot];
     if (a && b) return flyDotBetweenPoints({ x: a.x, y: a.y }, { x: b.x, y: b.y });
@@ -335,15 +297,15 @@ export default function BattleFxLayer({
     return false;
   };
 
-  // Manual hook
+  // Manual hook always available
   useEffect(() => {
     window.__bb_fx_testFly = (fromSlot: string, toSlot: string) => tryFly(fromSlot, toSlot);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Flush pending on any slot-snap change
+  // Flush pending whenever we can (even if slotsReady is false, cache might exist)
   useEffect(() => {
     const now = Date.now();
-    pendingRef.current = pendingRef.current.filter((p) => now - p.createdAt < 9000);
+    pendingRef.current = pendingRef.current.filter((p) => now - p.createdAt < 8000);
     syncPendingToWindow();
 
     if (!pendingRef.current.length) return;
@@ -364,6 +326,7 @@ export default function BattleFxLayer({
         continue;
       }
 
+      // Still cannot fly – stop and keep it queued
       if (debug) {
         window.__bb_fx_lastFail = {
           reason: 'pending_still_cannot_fly',
@@ -373,7 +336,8 @@ export default function BattleFxLayer({
           targetSlot: p.targetSlot,
           dom: slotSnap.dom,
           reg: slotSnap.reg,
-          cacheKeys: Object.keys(window.__bb_fx_slotCenters || {}).slice(0, 12),
+          hasCacheA: !!(centersRef.current[p.attackerSlot] || window.__bb_fx_slotCenters?.[p.attackerSlot]),
+          hasCacheB: !!(centersRef.current[p.targetSlot] || window.__bb_fx_slotCenters?.[p.targetSlot]),
           pendingCount: pendingRef.current.length,
         };
         // eslint-disable-next-line no-console
@@ -381,9 +345,9 @@ export default function BattleFxLayer({
       }
       break;
     }
-  }, [slotSnap.dom, slotSnap.reg, debug]);
+  }, [slotSnap.dom, slotSnap.reg, debug]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Enqueue latest attack-like event
+  // Enqueue on latest attack-like event
   useEffect(() => {
     if (!attackLike.length) return;
 
@@ -398,79 +362,110 @@ export default function BattleFxLayer({
     const attackerSlot = (last.attackerSlot || extractSlotKey(String(last.attackerId ?? ''))) ?? '';
     const targetSlot = (last.targetSlot || extractSlotKey(String(last.targetId ?? ''))) ?? '';
 
-    window.__bb_fx_lastAtk = last;
-    window.__bb_fx_atkCount = attackLike.length;
+    if (debug) {
+      window.__bb_fx_lastAtk = last;
+      window.__bb_fx_atkCount = attackLike.length;
+      // eslint-disable-next-line no-console
+      console.debug('[BB FX] attack-like event', { idx, type: last.type, attackerSlot, targetSlot, slotsReady, snap: slotSnap });
+    }
 
     if (!attackerSlot || !targetSlot) {
-      window.__bb_fx_lastFail = {
-        reason: 'cannot_extract_slot',
-        idx,
-        type: last.type,
-        attackerId: last.attackerId,
-        targetId: last.targetId,
-      };
       if (debug) {
+        window.__bb_fx_lastFail = { reason: 'cannot_extract_slot', idx, type: last.type, attackerId: last.attackerId, targetId: last.targetId };
         // eslint-disable-next-line no-console
         console.warn('[BB FX] cannot extract slot', window.__bb_fx_lastFail);
       }
       return;
     }
 
-    // Try immediate; if fails — queue.
-    const ok = tryFly(attackerSlot, targetSlot);
-    if (ok) return;
+    // Try immediate (live or cache). If fails, enqueue.
+    const immediate = tryFly(attackerSlot, targetSlot);
+    if (immediate) return;
 
     pendingRef.current.push({ idx, type: String(last.type ?? ''), attackerSlot, targetSlot, createdAt: Date.now() });
     syncPendingToWindow();
 
-    window.__bb_fx_lastFail = {
-      reason: 'enqueued_no_live_or_cache',
-      idx,
-      type: String(last.type ?? ''),
-      attackerSlot,
-      targetSlot,
-      dom: slotSnap.dom,
-      reg: slotSnap.reg,
-      cacheKeys: Object.keys(window.__bb_fx_slotCenters || {}).slice(0, 12),
-      pendingCount: pendingRef.current.length,
-    };
     if (debug) {
+      window.__bb_fx_lastFail = {
+        reason: 'enqueued_no_live_or_cache',
+        idx,
+        type: String(last.type ?? ''),
+        attackerSlot,
+        targetSlot,
+        dom: slotSnap.dom,
+        reg: slotSnap.reg,
+        cacheKeys: Object.keys(window.__bb_fx_slotCenters || {}).slice(0, 12),
+        pendingCount: pendingRef.current.length,
+      };
       // eslint-disable-next-line no-console
       console.warn('[BB FX] enqueued (no live or cache yet)', window.__bb_fx_lastFail);
+    // If we had no live DOM and cache wasn't ready yet, schedule a couple quick retries.
+    // This handles the common case where slots appear a moment later, but the attack event already fired.
+    try {
+      window.setTimeout(() => {
+        try {
+          // flush effect depends on slotSnap, but we can attempt directly here too
+          (window as any).__bb_fx_testFly?.(attackerSlot, targetSlot);
+        } catch {}
+      }, 250);
+      window.setTimeout(() => {
+        try {
+          (window as any).__bb_fx_testFly?.(attackerSlot, targetSlot);
+        } catch {}
+      }, 650);
+    } catch {}
+
     }
   }, [attackLike, debug]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return debug ? (
-    <div
-      className="bb-fx-debug"
-      style={{
-        position: 'fixed',
-        left: 12,
-        top: 12,
-        maxWidth: 820,
-        padding: 10,
-        borderRadius: 12,
-        background: 'rgba(0,0,0,.45)',
-        color: 'white',
-        fontSize: 12,
-        zIndex: 2147483647,
-        pointerEvents: 'none',
-        whiteSpace: 'pre-wrap',
-      }}
-    >
-      {'FX debug\n'}
-      {`toggle: localStorage.bb_fx_debug='1'\n`}
-      {`build: ${window.__bb_fx_build || 'n/a'}\n`}
-      {`events: ${events.length}\n`}
-      {`attackLike: ${attackLike.length}\n`}
-      {`domSlots: ${slotSnap.dom}\n`}
-      {`registrySlots: ${slotSnap.reg}\n`}
-      {`pending: ${pendingRef.current.length} (win=${window.__bb_fx_pending?.length || 0})\n`}
-      {`cacheKeys: ${Object.keys(window.__bb_fx_slotCenters || {}).slice(0, 10).join(',')}\n`}
-      {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}
-      {`ping: window.__bb_fx_ping()\n`}
-      {`lastFail: window.__bb_fx_lastFail\n`}
-      {`lastAtk: window.__bb_fx_lastAtk\n`}
-    </div>
-  ) : null;
+  return (
+    <>
+      <div
+        ref={overlayRef}
+        data-bb-fx-root="1"
+        style={{
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          width: '100vw',
+          height: '100vh',
+          pointerEvents: 'none',
+          zIndex: 999998,
+        }}
+      />
+      {debug ? (
+        <div
+          className="bb-fx-debug"
+          style={{
+            position: 'fixed',
+            left: 12,
+            top: 12,
+            maxWidth: 760,
+            padding: 10,
+            borderRadius: 12,
+            background: 'rgba(0,0,0,.45)',
+            color: 'white',
+            fontSize: 12,
+            zIndex: 1000000,
+            pointerEvents: 'none',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {'FX debug\n'}
+          {`toggle: localStorage.bb_fx_debug='1'\n`}
+          {`build: ${window.__bb_fx_build || 'n/a'}\n`}
+          {`events: ${events.length}\n`}
+          {`attackLike: ${attackLike.length}\n`}
+          {`domSlots: ${slotSnap.dom}\n`}
+          {`registrySlots: ${slotSnap.reg}\n`}
+          {`slotsReady: ${slotsReady}\n`}
+          {`pending: ${pendingRef.current.length} (win=${window.__bb_fx_pending?.length || 0})\n`}
+          {`cacheKeys: ${Object.keys(window.__bb_fx_slotCenters || {}).slice(0, 10).join(',')}\n`}
+          {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}
+          {`lastFail: window.__bb_fx_lastFail\n`}
+          {`lastAtk: window.__bb_fx_lastAtk\n`}
+        </div>
+      ) : null}
+    </>
+  );
 }

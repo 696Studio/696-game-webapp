@@ -1573,7 +1573,22 @@ const hpPct = useMemo(() => {
     if (isHidden) return null;
     if (!renderUnit) return null;
     return (
-      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId} data-bb-slot={slotKey} ref={(el) => { if (!slotRegistryRef) return; if (el) slotRegistryRef.current[slotKey] = el; else delete slotRegistryRef.current[slotKey]; }}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId} data-bb-slot={slotKey} ref={(el) => { if (!slotRegistryRef) return; slotRegistryRef.current[slotKey] = el;
+      // Prime FX slot-center cache immediately (survives DOM unmount during attacks)
+      if (!el) return;
+      try {
+        const w: any = window as any;
+        if (!w.__bb_fx_slotCenters) w.__bb_fx_slotCenters = {};
+        const r = el.getBoundingClientRect();
+        w.__bb_fx_slotCenters[slotKey] = {
+          x: r.left + r.width / 2,
+          y: r.top + r.height / 2,
+          w: r.width,
+          h: r.height,
+          t: Date.now(),
+        };
+      } catch {}
+ }}>
         <div className="bb-motion-layer" data-fx-motion="1" style={{ willChange: "transform" }}>
       <div className="bb-fx-anchor">
         
