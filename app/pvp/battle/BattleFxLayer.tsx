@@ -65,7 +65,12 @@ function getSlotByUnitId(unitId: string): HTMLElement | null {
 }
 
 function getMotionLayer(slot: HTMLElement): HTMLElement | null {
-  return slot.querySelector<HTMLElement>('.bb-motion-layer');
+  // Prefer an explicit motion layer if present; otherwise animate the card itself.
+  return (
+    slot.querySelector<HTMLElement>('.bb-motion-layer') ||
+    slot.querySelector<HTMLElement>('.bb-card') ||
+    slot
+  );
 }
 
 function getCard(slot: HTMLElement): HTMLElement | null {
@@ -85,15 +90,8 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
   const seenIdsRef = useRef<Set<string>>(new Set());
   const activeRef = useRef<Map<HTMLElement, ActiveAnim>>(new Map());
   const [mounted, setMounted] = useState(false);
-  const [dbgGeom, setDbgGeom] = useState<null | {
-    a: { x: number; y: number };
-    t: { x: number; y: number };
-    touch: { x: number; y: number };
-    dx: number;
-    dy: number;
-    attackerId: string;
-    targetId: string;
-  }>(null);
+  const dbgTextRef = useRef<string>('');
+
   const debugEnabled = !!debug;
 
   const injectedCss = useMemo(
@@ -118,7 +116,6 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
 }
 .bb-fx-debug-outline-attacker { outline: 2px solid rgba(0,255,255,0.85) !important; }
 .bb-fx-debug-outline-target   { outline: 2px solid rgba(255,0,255,0.85) !important; }
-.bb-fx-debug-svg { position: fixed; inset: 0; z-index: 9999; pointer-events: none; }
 `,
     []
   );
@@ -167,20 +164,13 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
 
       const aRect = motion.getBoundingClientRect();
       const tRect = targetCard.getBoundingClientRect();
-      const { dx, dy } = computeTouchDelta(aRect, tRect);
       if (debugEnabled) {
-        const ac = rectCenter(aRect);
-        const tc = rectCenter(tRect);
-        setDbgGeom({
-          a: ac,
-          t: tc,
-          touch: { x: ac.x + dx, y: ac.y + dy },
-          dx,
-          dy,
-          attackerId: String(attack.attackerId),
-          targetId: String(attack.targetId),
-        });
+        const mCls = motion.className ? String(motion.className) : motion.tagName;
+        const tCls = targetCard.className ? String(targetCard.className) : targetCard.tagName;
+        dbgTextRef.current = `motionEl: ${mCls}\naRect: ${Math.round(aRect.width)}x${Math.round(aRect.height)} @ ${Math.round(aRect.left)},${Math.round(aRect.top)}\ntargetEl: ${tCls}\ntRect: ${Math.round(tRect.width)}x${Math.round(tRect.height)} @ ${Math.round(tRect.left)},${Math.round(tRect.top)}\n`;
       }
+
+      const { dx, dy } = computeTouchDelta(aRect, tRect);
 
       // WAAPI: this bypasses "className overwritten by React" and any CSS import issues.
       const prevTransform = motion.style.transform;
@@ -301,9 +291,10 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
       <style>{injectedCss}</style>
       {debugEnabled ? (
         <div className="bb-fx-debug-hud">
-          {`fxEvents: ${events?.length ?? 0}\nseen: ${seenIdsRef.current.size}\n` + (dbgGeom ? `attacker: ${dbgGeom.attackerId}\ntarget: ${dbgGeom.targetId}\ndx: ${Math.round(dbgGeom.dx)} dy: ${Math.round(dbgGeom.dy)}\n` : '')}
+          {`fxEvents: ${events?.length ?? 0}\nseen: ${seenIdsRef.current.size}\n` + (dbgTextRef.current ? dbgTextRef.current : '')}
         </div>
       ) : null}
     </>
   );
 }
+ 
