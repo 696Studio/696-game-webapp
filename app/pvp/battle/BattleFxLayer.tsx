@@ -297,4 +297,3 @@ export default function BattleFxLayer({ events, debug, debugAttack }: { events: 
     </>
   );
 }
- 
