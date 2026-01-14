@@ -8,65 +8,51 @@ type FxEvent =
       attackerId: string;
       targetId: string;
       ts?: number;
+      attackerSlot?: string;
+      targetSlot?: string;
     }
   | { type: string; [k: string]: any };
 
 function extractSlotKey(id: string): string | null {
-  // composite format example:
-  // matchId:round:p1:3:unitId:unitInstanceId
-  const m = id.match(/:(p[12]):([0-4]):/);
-  if (!m) return null;
-  return `${m[1]}:${m[2]}`;
-}
+  // Expected formats (examples):
+  // matchId:round:p1:3:cardId:unitInstanceId
+  // p2:1:unitInstanceId
+  // ...:p1:0:...
+  if (!id) return null;
 
-function getCandidateDocs(): Document[] {
-  const docs: Document[] = [document];
-  const iframes = Array.from(document.querySelectorAll('iframe'));
-  for (const fr of iframes) {
-    try {
-      const d = fr.contentDocument;
-      if (d) docs.push(d);
-    } catch {
-      // cross-origin iframe - ignore
-    }
-  }
-  return docs;
-}
+  // fast path: already "p1:3"
+  const direct = id.match(/\b(p1|p2):([0-4])\b/);
+  if (direct) return `${direct[1]}:${direct[2]}`;
 
-function findSlotEl(slotKey: string): HTMLElement | null {
-  for (const d of getCandidateDocs()) {
-    const el = d.querySelector(`[data-bb-slot="${slotKey}"]`);
-    if (el && el instanceof HTMLElement) return el;
-  }
-  // fallback: try to match by id tail (some builds used id=composite)
-  const [side, idx] = slotKey.split(':');
-  const tail = `:${side}:${idx}:`;
-  for (const d of getCandidateDocs()) {
-    const any = Array.from(d.querySelectorAll('[id]')).find((n) => {
-      const id = (n as HTMLElement).id || '';
-      return id.includes(tail);
-    });
-    if (any && any instanceof HTMLElement) return any;
+  // generic path: find "...:p1:3:..."
+  const parts = id.split(':');
+  for (let i = 0; i < parts.length - 1; i++) {
+    const side = parts[i];
+    const slot = parts[i + 1];
+    if ((side === 'p1' || side === 'p2') && /^[0-4]$/.test(slot)) return `${side}:${slot}`;
   }
   return null;
 }
 
-function centerOf(el: HTMLElement): { x: number; y: number } {
+function centerOf(el: HTMLElement) {
   const r = el.getBoundingClientRect();
-  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2, rect: r };
 }
 
-export type SlotRegistryRef = React.MutableRefObject<Record<string, HTMLElement | null>>;
+function findSlotEl(slotKey: string): HTMLElement | null {
+  return document.querySelector(`[data-bb-slot="${CSS.escape(slotKey)}"]`) as HTMLElement | null;
+}
 
 export default function BattleFxLayer({
   events,
   slotRegistryRef,
 }: {
   events: FxEvent[];
-  slotRegistryRef?: SlotRegistryRef;
+  slotRegistryRef?: React.MutableRefObject<Record<string, HTMLElement | null>>;
 }) {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const lastSeenRef = useRef<string>('');
+
   const [debug, setDebug] = useState(() => {
     try {
       return localStorage.getItem('bb_fx_debug') === '1';
@@ -75,131 +61,173 @@ export default function BattleFxLayer({
     }
   });
 
-  const atkEvents = useMemo(() => events.filter((e) => e?.type === 'atk') as FxEvent[], [events]);
+  const atkEvents = useMemo(() => events.filter((e) => (e as any)?.type === 'atk') as FxEvent[], [events]);
 
+  // poll localStorage toggle (Telegram WebView sometimes ignores storage event)
   useEffect(() => {
-    // allow toggle via localStorage + reload
     const t = window.setInterval(() => {
       try {
-        const v = localStorage.getItem('bb_fx_debug') === '1';
-        setDebug(v);
+        setDebug(localStorage.getItem('bb_fx_debug') === '1');
       } catch {}
     }, 500);
     return () => window.clearInterval(t);
   }, []);
 
-  useEffect(() => {
+  const flyBetween = (fromEl: HTMLElement, toEl: HTMLElement) => {
     const overlay = overlayRef.current;
-    if (!overlay) return;
+    if (!overlay) return false;
+
+    const from = centerOf(fromEl);
+    const to = centerOf(toEl);
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+
+    // Clone attacker visual (best-effort). If slot is empty, clone might be tiny; that's fine.
+    const clone = fromEl.cloneNode(true) as HTMLElement;
+    clone.style.position = 'fixed';
+    clone.style.left = `${from.rect.left}px`;
+    clone.style.top = `${from.rect.top}px`;
+    clone.style.width = `${from.rect.width}px`;
+    clone.style.height = `${from.rect.height}px`;
+    clone.style.margin = '0';
+    clone.style.pointerEvents = 'none';
+    clone.style.zIndex = '999999';
+    clone.style.willChange = 'transform, opacity';
+    clone.style.transform = 'translate3d(0,0,0)';
+
+    overlay.appendChild(clone);
+
+    const anim = clone.animate(
+      [
+        { transform: `translate3d(0px, 0px, 0px)`, opacity: 1 },
+        { transform: `translate3d(${dx}px, ${dy}px, 0px)`, opacity: 1 },
+        { transform: `translate3d(${dx * 0.2}px, ${dy * 0.2}px, 0px)`, opacity: 1 },
+        { transform: `translate3d(0px, 0px, 0px)`, opacity: 0.0 },
+      ],
+      {
+        duration: 420,
+        easing: 'cubic-bezier(.2,.8,.2,1)',
+        fill: 'forwards',
+      }
+    );
+
+    anim.onfinish = () => {
+      try {
+        clone.remove();
+      } catch {}
+    };
+
+    return true;
+  };
+
+  // Expose manual hooks in debug mode
+  useEffect(() => {
+    if (!debug) return;
+
+    (window as any).__bb_fx_registryCount = slotRegistryRef?.current
+      ? Object.values(slotRegistryRef.current).filter((el) => !!el).length
+      : 0;
+
+    (window as any).__bb_fx_testFly = (fromSlot: string, toSlot: string) => {
+      const reg = slotRegistryRef?.current || {};
+      const fromEl = reg[fromSlot] || findSlotEl(fromSlot);
+      const toEl = reg[toSlot] || findSlotEl(toSlot);
+      if (!fromEl || !toEl) {
+        // eslint-disable-next-line no-console
+        console.warn('[BB FX] testFly cannot resolve', {
+          fromSlot,
+          toSlot,
+          fromFound: !!fromEl,
+          toFound: !!toEl,
+        });
+        return false;
+      }
+      return flyBetween(fromEl, toEl);
+    };
+  }, [debug, slotRegistryRef]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Play on latest atk event
+  useEffect(() => {
+    if (!atkEvents.length) return;
 
     const last = atkEvents[atkEvents.length - 1] as any;
     if (!last || typeof last !== 'object') return;
 
-    // ensure we only play once per new event
-    const key = String(last.ts ?? 0) + ':' + last.attackerId + '>' + last.targetId;
+    const key = `${String(last.ts ?? '')}:${String(last.attackerId ?? '')}>${String(last.targetId ?? '')}`;
     if (key === lastSeenRef.current) return;
     lastSeenRef.current = key;
 
-    const attackerSlot = extractSlotKey(last.attackerId);
-    const targetSlot = extractSlotKey(last.targetId);
+    const attackerSlot: string | null =
+      last.attackerSlot || extractSlotKey(String(last.attackerId ?? ''));
+    const targetSlot: string | null =
+      last.targetSlot || extractSlotKey(String(last.targetId ?? ''));
 
-    if (!attackerSlot || !targetSlot) return;
+    if (!attackerSlot || !targetSlot) {
+      if (debug) {
+        (window as any).__bb_fx_lastFail = {
+          reason: 'cannot_extract_slot',
+          attackerId: last.attackerId,
+          targetId: last.targetId,
+          attackerSlot,
+          targetSlot,
+        };
+        // eslint-disable-next-line no-console
+        console.warn('[BB FX] cannot extract slot keys', (window as any).__bb_fx_lastFail);
+      }
+      return;
+    }
 
-    // Resolve dom (prefer slot registry; fallback to DOM query)
-    const reg = slotRegistryRef?.current;
-    const attackerEl = (reg && reg[attackerSlot]) ? reg[attackerSlot] : findSlotEl(attackerSlot);
-    const targetEl = (reg && reg[targetSlot]) ? reg[targetSlot] : findSlotEl(targetSlot);
+    const reg = slotRegistryRef?.current || {};
+    const attackerEl = reg[attackerSlot] || findSlotEl(attackerSlot);
+    const targetEl = reg[targetSlot] || findSlotEl(targetSlot);
 
     if (!attackerEl || !targetEl) {
       if (debug) {
         (window as any).__bb_fx_lastFail = {
+          reason: 'cannot_resolve_dom',
           attackerId: last.attackerId,
           targetId: last.targetId,
           attackerSlot,
           targetSlot,
           attackerFound: !!attackerEl,
           targetFound: !!targetEl,
-          domUnitCount: document.querySelectorAll('[id]').length,
-          domSlotCount: (slotRegistryRef?.current ? Object.values(slotRegistryRef.current).filter(Boolean).length : document.querySelectorAll('[data-bb-slot]').length),
-          domIdsSample: Array.from(document.querySelectorAll('[id]'))
+          domSlotCountRegistry: slotRegistryRef?.current
+            ? Object.values(slotRegistryRef.current).filter((el) => !!el).length
+            : 0,
+          domSlotCountQuery: document.querySelectorAll('[data-bb-slot]').length,
+          domSlotsSample: Array.from(document.querySelectorAll('[data-bb-slot]'))
             .slice(0, 12)
-            .map((n) => (n as HTMLElement).id),
-          domSlotsSample: (slotRegistryRef?.current
-            ? Object.entries(slotRegistryRef.current)
-                .filter(([, el]) => !!el)
-                .slice(0, 12)
-                .map(([k]) => k)
-            : Array.from(document.querySelectorAll('[data-bb-slot]'))
-                .slice(0, 12)
-                .map((n) => (n as HTMLElement).getAttribute('data-bb-slot'))),
+            .map((n) => (n as HTMLElement).getAttribute('data-bb-slot')),
         };
         // eslint-disable-next-line no-console
-        console.warn('[BB FX] cannot resolve DOM', (window as any).__bb_fx_lastFail);
+        console.warn('[BB FX] cannot resolve DOM for slots', (window as any).__bb_fx_lastFail);
       }
       return;
     }
 
-    // Build flying clone
-    const aRect = attackerEl.getBoundingClientRect();
-    const clone = attackerEl.cloneNode(true) as HTMLElement;
-    clone.style.position = 'fixed';
-    clone.style.left = `${aRect.left}px`;
-    clone.style.top = `${aRect.top}px`;
-    clone.style.width = `${aRect.width}px`;
-    clone.style.height = `${aRect.height}px`;
-    clone.style.margin = '0';
-    clone.style.pointerEvents = 'none';
-    clone.style.zIndex = '999999';
-    clone.style.willChange = 'transform';
-    clone.style.transform = 'translate3d(0,0,0)';
-    overlay.appendChild(clone);
+    flyBetween(attackerEl, targetEl);
+  }, [atkEvents, debug, slotRegistryRef]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const from = centerOf(attackerEl);
-    const to = centerOf(targetEl);
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-
-    const anim = clone.animate(
-      [
-        { transform: `translate3d(0px, 0px, 0px)` },
-        { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
-        { transform: `translate3d(0px, 0px, 0px)` },
-      ],
-      {
-        duration: 520,
-        easing: 'cubic-bezier(.2,.9,.2,1)',
-      }
-    );
-
-    anim.onfinish = () => {
-      try {
-        overlay.removeChild(clone);
-      } catch {}
-    };
-
-    return () => {
-      try {
-        anim.cancel();
-      } catch {}
-      try {
-        overlay.removeChild(clone);
-      } catch {}
-    };
-  }, [atkEvents, debug]);
+  const registryCount = slotRegistryRef?.current ? Object.values(slotRegistryRef.current).filter((el) => !!el).length : 0;
 
   return (
     <>
       <div
         ref={overlayRef}
+        data-bb-fx-root="1"
         style={{
           position: 'fixed',
-          inset: 0,
+          left: 0,
+          top: 0,
+          width: '100vw',
+          height: '100vh',
           pointerEvents: 'none',
-          zIndex: 999999,
+          zIndex: 999998,
         }}
       />
       {debug ? (
         <div
+          className="bb-fx-debug"
           style={{
             position: 'fixed',
             left: 12,
@@ -218,7 +246,10 @@ export default function BattleFxLayer({
           {'FX debug\n'}
           {`toggle: localStorage.bb_fx_debug='1'\n`}
           {`events: ${events.length}\n`}
-          {`dom: ${document.querySelectorAll('[id]').length} ids / ${slotRegistryRef?.current ? Object.values(slotRegistryRef.current).filter(Boolean).length : document.querySelectorAll('[data-bb-slot]').length} slots\n`}
+          {`atkEvents: ${atkEvents.length}\n`}
+          {`domSlots: ${document.querySelectorAll('[data-bb-slot]').length}\n`}
+          {`registrySlots: ${registryCount}\n`}
+          {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}
         </div>
       ) : null}
     </>
