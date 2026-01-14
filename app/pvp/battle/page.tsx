@@ -1596,9 +1596,29 @@ const hpPct = useMemo(() => {
       </div>
       <div
         ref={(el) => {
-          if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
+          if (!el) return;
+
+          // local ref map (used by some FX/logic)
+          if (renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
+
+          // global ref map for BattleFxLayer (works even when querySelector fails)
+          const w = window as any;
+          w.__bb_unitEls = w.__bb_unitEls || {};
+          const map = w.__bb_unitEls as Record<string, HTMLElement>;
+
+          const idKey = renderUnit?.instanceId ?? instId ?? undefined;
+          if (!idKey) return;
+
+          const parts = idKey.split(':');
+          const slot = parts.length >= 4 && (parts[2] === 'p1' || parts[2] === 'p2') ? `${parts[2]}:${parts[3]}` : undefined;
+          const norm = (parts.length > 1 && (parts[0].match(/-/g) || []).length >= 4) ? parts.slice(1).join(':') : idKey;
+
+          map[idKey] = el;
+          map[norm] = el;
+          if (slot) map[slot] = el;
         }}
         data-unit-id={renderUnit?.instanceId ?? instId ?? undefined}
+        data-slot={(renderUnit?.instanceId ?? instId) ? (renderUnit?.instanceId ?? instId)!.split(':').slice(2,4).join(':') : undefined}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
