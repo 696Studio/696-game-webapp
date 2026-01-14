@@ -1573,7 +1573,7 @@ const hpPct = useMemo(() => {
     if (isHidden) return null;
     if (!renderUnit) return null;
     return (
-      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId} data-bb-slot={slotKey} ref={(el) => { if (!slotRegistryRef) return; slotRegistryRef.current[slotKey] = el; }}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId} data-bb-slot={slotKey} ref={(el) => { if (!slotRegistryRef) return; if (el) slotRegistryRef.current[slotKey] = el; else delete slotRegistryRef.current[slotKey]; }}>
         <div className="bb-motion-layer" data-fx-motion="1" style={{ willChange: "transform" }}>
       <div className="bb-fx-anchor">
         
