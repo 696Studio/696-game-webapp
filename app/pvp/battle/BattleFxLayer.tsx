@@ -29,21 +29,45 @@ function pickMovable(el: HTMLElement): HTMLElement {
   return el;
 }
 
+function normalizeUnitId(id: string): string {
+  // Some environments may produce unit ids with differing leading match/battle prefix.
+  // Normalize by dropping the first segment if it looks like a UUID and there are multiple segments.
+  const parts = id.split(':');
+  if (parts.length <= 1) return id;
+  // If first part looks like UUID (contains 4 hyphens), drop it.
+  if ((parts[0].match(/-/g) || []).length >= 4) return parts.slice(1).join(':');
+  return id;
+}
+
 function getUnitEl(unitId: string): HTMLElement | null {
   const w = window as any;
   const map = w.__bb_unitEls as Record<string, HTMLElement> | undefined;
   if (map && map[unitId]) return map[unitId];
 
-  // Avoid CSS selector escaping pitfalls in WebViews by matching in JS.
+  const want = unitId;
+  const wantN = normalizeUnitId(unitId);
+
   const els = document.querySelectorAll('[data-unit-id]');
   for (let i = 0; i < els.length; i++) {
     const el = els[i] as HTMLElement;
-    if (el.getAttribute('data-unit-id') === unitId) return el;
+    const got = el.getAttribute('data-unit-id');
+    if (!got) continue;
+    if (got === want) return el;
   }
+
+  // Fuzzy / normalized match (handles differing leading prefix)
+  for (let i = 0; i < els.length; i++) {
+    const el = els[i] as HTMLElement;
+    const got = el.getAttribute('data-unit-id');
+    if (!got) continue;
+    if (normalizeUnitId(got) === wantN) return el;
+  }
+
   return null;
 }
 
 function getMovableForUnit(unitId: string): HTMLElement | null {
+  // Prefer the dedicated motion wrapper introduced in page.tsx.
   const unitEl = getUnitEl(unitId);
   if (!unitEl) return null;
   return pickMovable(unitEl);
