@@ -85,6 +85,16 @@ function getUnitEl(unitId: string): HTMLElement | null {
   return null;
 }
 
+function collectDomSamples() {
+  const ids = Array.from(document.querySelectorAll('[data-unit-id]'))
+    .slice(0, 12)
+    .map((el) => (el as HTMLElement).getAttribute('data-unit-id') || '');
+  const slots = Array.from(document.querySelectorAll('[data-slot]'))
+    .slice(0, 12)
+    .map((el) => (el as HTMLElement).getAttribute('data-slot') || '');
+  return { ids, slots, unitCount: document.querySelectorAll('[data-unit-id]').length, slotCount: document.querySelectorAll('[data-slot]').length };
+}
+
 function getMovableForUnit(unitId: string): HTMLElement | null {
   const unitEl = getUnitEl(unitId);
   if (!unitEl) return null;
@@ -267,11 +277,20 @@ export default function BattleFxLayer({
     if (!attacker || !target) {
       if (debugEnabled) {
         // eslint-disable-next-line no-console
+        const aSlot = slotKeyFromId(active.attackerId);
+        const tSlot = slotKeyFromId(active.targetId);
+        const samples = collectDomSamples();
         console.warn('[BB FX] cannot resolve DOM', {
           attackerId: active.attackerId,
           targetId: active.targetId,
           attackerFound: !!attacker,
           targetFound: !!target,
+          attackerSlot: aSlot,
+          targetSlot: tSlot,
+          domUnitCount: samples.unitCount,
+          domSlotCount: samples.slotCount,
+          domIdsSample: samples.ids,
+          domSlotsSample: samples.slots,
         });
       }
       (window as any).__bb_fx_resolve = {
@@ -340,6 +359,7 @@ export default function BattleFxLayer({
       <div style={{ opacity: 0.85 }}>toggle: localStorage.bb_fx_debug='1'</div>
       <div>events: {events?.length ?? 0}</div>
       <div>seen: {seenCount}</div>
+      <div style={{ opacity: 0.85 }}>dom: {(typeof document !== 'undefined') ? document.querySelectorAll('[data-unit-id]').length : 0} ids / {(typeof document !== 'undefined') ? document.querySelectorAll('[data-slot]').length : 0} slots</div>
       <div style={{ opacity: 0.85 }}>resolve: {(window as any).__bb_fx_resolve ? `${(window as any).__bb_fx_resolve.attackerFound ? 'A' : 'a'}${(window as any).__bb_fx_resolve.targetFound ? 'T' : 't'}` : '-'}</div>
       {active ? (
         <div style={{ marginTop: 8 }}>
