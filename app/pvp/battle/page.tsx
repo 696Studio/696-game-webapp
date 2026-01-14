@@ -496,7 +496,6 @@ const isArenaDebug = DEBUG_ARENA || uiDebug;
   };
 
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
-  const seenAtkIdsRef = useRef<Set<string>>(new Set());
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
@@ -1091,6 +1090,109 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       const inst = s?.unit?.instanceId;
       if (fid && inst) map[fid] = inst;
     }
+
+  // =========================================================
+  // ATTACK FLIGHT (DOM-SAFE): animate using refs instead of document queries.
+  // This avoids Telegram iframe/devtools context issues.
+  const seenAttackIdsRef = useRef<Set<string>>(new Set());
+
+  const slotKeyFromAnyId = (id: string): string | null => {
+    const parts = String(id || "").split(":");
+    if (parts.length >= 4 && (parts[2] === "p1" || parts[2] === "p2")) return `${parts[2]}:${parts[3]}`;
+    return null;
+  };
+
+  const resolveInstanceId = (id: string): string | null => {
+    if (!id) return null;
+    // 1) direct
+    if (unitElByIdRef.current[id]) return id;
+
+    // 2) via slot key mapping (stable across rounds/steps)
+    const sk = slotKeyFromAnyId(id);
+    if (sk) {
+      const inst = lastInstBySlotRef.current[sk];
+      if (inst && unitElByIdRef.current[inst]) return inst;
+    }
+
+    // 3) fallback: find any registered instance whose id contains ":pX:idx:"
+    if (sk) {
+      const needle = `:${sk.split(":")[0]}:${sk.split(":")[1]}:`;
+      for (const k of Object.keys(unitElByIdRef.current)) {
+        if (k.includes(needle)) return k;
+      }
+    }
+
+    return null;
+  };
+
+  const pickMovableFromCard = (cardEl: HTMLElement): HTMLElement => {
+    // Prefer the motion layer wrapper if present (keeps card internals intact)
+    const slot = cardEl.closest(".bb-slot") as HTMLElement | null;
+    const motion = slot?.querySelector?.('.bb-motion-layer[data-fx-motion="1"]') as HTMLElement | null;
+    return motion || cardEl;
+  };
+
+  useEffect(() => {
+    if (!fxEvents || fxEvents.length === 0) return;
+
+    // Process newest events first, but limit per tick to avoid spam.
+    const pending = fxEvents.slice(-6);
+
+    for (const e of pending) {
+      if (!e || e.type !== "attack") continue;
+      if (seenAttackIdsRef.current.has(e.id)) continue;
+
+      const attackerInst = resolveInstanceId(e.attackerId);
+      const targetInst = resolveInstanceId(e.targetId);
+
+      const attackerCard = attackerInst ? (unitElByIdRef.current[attackerInst] as any as HTMLElement | null) : null;
+      const targetCard = targetInst ? (unitElByIdRef.current[targetInst] as any as HTMLElement | null) : null;
+
+      if (!attackerCard || !targetCard) {
+        // mark as seen to prevent infinite retries spamming the same unresolved event
+        seenAttackIdsRef.current.add(e.id);
+        continue;
+      }
+
+      seenAttackIdsRef.current.add(e.id);
+
+      const aRect = attackerCard.getBoundingClientRect();
+      const tRect = targetCard.getBoundingClientRect();
+      const ax = aRect.left + aRect.width / 2;
+      const ay = aRect.top + aRect.height / 2;
+      const tx = tRect.left + tRect.width / 2;
+      const ty = tRect.top + tRect.height / 2;
+
+      const dx = tx - ax;
+      const dy = ty - ay;
+
+      const movable = pickMovableFromCard(attackerCard);
+
+      // Small "lunge" towards target + snap back
+      const mag = 0.55; // fraction of delta
+      const outX = dx * mag;
+      const outY = dy * mag;
+
+      // Use WAAPI; this composes with existing transforms in most browsers.
+      try {
+        (movable as any).animate(
+          [
+            { transform: "translate3d(0px, 0px, 0px)" },
+            { transform: `translate3d(${outX.toFixed(2)}px, ${outY.toFixed(2)}px, 0px)` },
+            { transform: "translate3d(0px, 0px, 0px)" },
+          ],
+          { duration: 260, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
+        );
+      } catch {
+        // Fallback: set inline transform briefly
+        movable.style.transform = `translate3d(${outX}px, ${outY}px, 0px)`;
+        window.setTimeout(() => {
+          movable.style.transform = "translate3d(0px, 0px, 0px)";
+        }, 180);
+      }
+    }
+  }, [fxEvents]);
+
   }, [topSlots, bottomSlots]);
 
   const teamHp = (unitsBySlot: Record<number, UnitView | null>) => {
@@ -1195,90 +1297,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return out;
   }, [timeline]);
 
-
-  // =========================================================
-  // ATTACK FLIGHT (NO DOM QUERY): animate attacker card by refs
-  // =========================================================
-  useEffect(() => {
-    if (!fxEvents || fxEvents.length === 0) return;
-
-    const run = async () => {
-      for (const ev of fxEvents) {
-        if (!ev || ev.type !== "attack") continue;
-        if (seenAtkIdsRef.current.has(ev.id)) continue;
-
-        // Mark seen immediately so we don't spam on failures
-        seenAtkIdsRef.current.add(ev.id);
-
-        const attackerEl = unitElByIdRef.current[String(ev.attackerId)] || null;
-        const targetEl = unitElByIdRef.current[String(ev.targetId)] || null;
-
-        if (!attackerEl || !targetEl) {
-          // If refs are not ready yet, allow a single retry by deleting the id after a short delay
-          window.setTimeout(() => {
-            // Only retry once
-            if (seenAtkIdsRef.current.has(ev.id)) seenAtkIdsRef.current.delete(ev.id);
-          }, 180);
-          continue;
-        }
-
-        try {
-          const a = attackerEl.getBoundingClientRect();
-          const t = targetEl.getBoundingClientRect();
-          const ax = a.left + a.width / 2;
-          const ay = a.top + a.height / 2;
-          const tx = t.left + t.width / 2;
-          const ty = t.top + t.height / 2;
-
-          let dx = tx - ax;
-          let dy = ty - ay;
-
-          // Don't overshoot across the board; keep it punchy
-          dx = clamp(dx, -220, 220);
-          dy = clamp(dy, -140, 140);
-
-          const base = window.getComputedStyle(attackerEl).transform;
-          const baseT = base && base !== "none" ? base : "";
-          const pushT = `${baseT ? baseT + " " : ""}translate3d(${dx * 0.55}px, ${dy * 0.55}px, 0)`;
-          const backT = baseT || "none";
-
-          const prevZ = attackerEl.style.zIndex;
-          const prevPE = attackerEl.style.pointerEvents;
-          attackerEl.style.zIndex = "2147483640";
-          attackerEl.style.pointerEvents = "none";
-
-          // WAAPI if available, fallback to CSS transition
-          const canWAAPI = typeof (attackerEl as any).animate === "function";
-          if (canWAAPI) {
-            const anim = (attackerEl as any).animate(
-              [
-                { transform: backT },
-                { transform: pushT, offset: 0.55 },
-                { transform: backT },
-              ],
-              { duration: 260, easing: "cubic-bezier(.2,.9,.2,1)" }
-            );
-            await anim.finished.catch(() => {});
-          } else {
-            const prevTransition = attackerEl.style.transition;
-            attackerEl.style.transition = "transform 160ms cubic-bezier(.2,.9,.2,1)";
-            attackerEl.style.transform = pushT;
-            await new Promise((r) => window.setTimeout(r, 170));
-            attackerEl.style.transform = backT;
-            await new Promise((r) => window.setTimeout(r, 120));
-            attackerEl.style.transition = prevTransition;
-          }
-
-          attackerEl.style.zIndex = prevZ;
-          attackerEl.style.pointerEvents = prevPE;
-        } catch {
-          // ignore
-        }
-      }
-    };
-
-    void run();
-  }, [fxEvents]);
 
   const spawnFxByInstance = useMemo(() => {
     const windowSec = 0.35;
