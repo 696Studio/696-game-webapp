@@ -29,12 +29,17 @@ function pickMovable(el: HTMLElement): HTMLElement {
   return el;
 }
 
+function slotKeyFromId(id: string): string | null {
+  const parts = id.split(':');
+  // expected: <match>:<round>:<p1|p2>:<idx>:...
+  if (parts.length >= 4 && (parts[2] === 'p1' || parts[2] === 'p2')) return `${parts[2]}:${parts[3]}`;
+  return null;
+}
+
 function normalizeUnitId(id: string): string {
-  // Some environments may produce unit ids with differing leading match/battle prefix.
-  // Normalize by dropping the first segment if it looks like a UUID and there are multiple segments.
+  // Drop leading match/battle prefix segment if it looks like a UUID and there are multiple segments.
   const parts = id.split(':');
   if (parts.length <= 1) return id;
-  // If first part looks like UUID (contains 4 hyphens), drop it.
   if ((parts[0].match(/-/g) || []).length >= 4) return parts.slice(1).join(':');
   return id;
 }
@@ -42,32 +47,45 @@ function normalizeUnitId(id: string): string {
 function getUnitEl(unitId: string): HTMLElement | null {
   const w = window as any;
   const map = w.__bb_unitEls as Record<string, HTMLElement> | undefined;
+
+  // 1) Fast path via explicit map (best)
   if (map && map[unitId]) return map[unitId];
 
-  const want = unitId;
-  const wantN = normalizeUnitId(unitId);
+  // 2) Try normalized id (handles prefix mismatches)
+  const n = normalizeUnitId(unitId);
+  if (map && map[n]) return map[n];
 
+  // 3) Try slot key (p1:3 / p2:1). We populate this in page.tsx
+  const sk = slotKeyFromId(unitId);
+  if (sk && map && map[sk]) return map[sk];
+
+  // 4) DOM fallback: exact match by attribute (no CSS selector pitfalls)
   const els = document.querySelectorAll('[data-unit-id]');
   for (let i = 0; i < els.length; i++) {
     const el = els[i] as HTMLElement;
-    const got = el.getAttribute('data-unit-id');
-    if (!got) continue;
-    if (got === want) return el;
+    if (el.getAttribute('data-unit-id') === unitId) return el;
   }
 
-  // Fuzzy / normalized match (handles differing leading prefix)
+  // 5) DOM fallback: normalized match
   for (let i = 0; i < els.length; i++) {
     const el = els[i] as HTMLElement;
     const got = el.getAttribute('data-unit-id');
-    if (!got) continue;
-    if (normalizeUnitId(got) === wantN) return el;
+    if (got && normalizeUnitId(got) === n) return el;
+  }
+
+  // 6) DOM fallback: data-slot match
+  if (sk) {
+    const slotEls = document.querySelectorAll('[data-slot]');
+    for (let i = 0; i < slotEls.length; i++) {
+      const el = slotEls[i] as HTMLElement;
+      if (el.getAttribute('data-slot') === sk) return el;
+    }
   }
 
   return null;
 }
 
 function getMovableForUnit(unitId: string): HTMLElement | null {
-  // Prefer the dedicated motion wrapper introduced in page.tsx.
   const unitEl = getUnitEl(unitId);
   if (!unitEl) return null;
   return pickMovable(unitEl);
