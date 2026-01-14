@@ -29,6 +29,31 @@ function pickMovable(el: HTMLElement): HTMLElement {
   return el;
 }
 
+
+function getCandidateDocs(): Document[] {
+  const docs: Document[] = [];
+  if (typeof document === 'undefined') return docs;
+  docs.push(document);
+
+  // Telegram Web and some embeds can render the app inside iframes.
+  // Try to include same-origin iframe documents when accessible.
+  try {
+    const iframes = Array.from(document.querySelectorAll('iframe')) as HTMLIFrameElement[];
+    for (const fr of iframes) {
+      try {
+        const d = fr.contentDocument;
+        if (d && !docs.includes(d)) docs.push(d);
+      } catch {
+        // Cross-origin iframe – ignore
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return docs;
+}
+
 function slotKeyFromId(id: string): string | null {
   const parts = id.split(':');
   // expected: <match>:<round>:<p1|p2>:<idx>:...
@@ -59,26 +84,29 @@ function getUnitEl(unitId: string): HTMLElement | null {
   const sk = slotKeyFromId(unitId);
   if (sk && map && map[sk]) return map[sk];
 
-  // 4) DOM fallback: exact match by attribute (no CSS selector pitfalls)
-  const els = document.querySelectorAll('[data-unit-id]');
-  for (let i = 0; i < els.length; i++) {
-    const el = els[i] as HTMLElement;
-    if (el.getAttribute('data-unit-id') === unitId) return el;
-  }
+  // 4) DOM search across candidate documents (Telegram Web often hosts the mini app in an iframe)
+  const docs = getCandidateDocs();
 
-  // 5) DOM fallback: normalized match
-  for (let i = 0; i < els.length; i++) {
-    const el = els[i] as HTMLElement;
-    const got = el.getAttribute('data-unit-id');
-    if (got && normalizeUnitId(got) === n) return el;
-  }
-
-  // 6) DOM fallback: data-slot match
-  if (sk) {
-    const slotEls = document.querySelectorAll('[data-slot]');
-    for (let i = 0; i < slotEls.length; i++) {
-      const el = slotEls[i] as HTMLElement;
-      if (el.getAttribute('data-slot') === sk) return el;
+  for (const d of docs) {
+    // exact match
+    const els = d.querySelectorAll('[data-unit-id]');
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i] as HTMLElement;
+      if (el.getAttribute('data-unit-id') === unitId) return el;
+    }
+    // normalized match
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i] as HTMLElement;
+      const got = el.getAttribute('data-unit-id');
+      if (got && normalizeUnitId(got) === n) return el;
+    }
+    // slot match
+    if (sk) {
+      const slotEls = d.querySelectorAll('[data-slot]');
+      for (let i = 0; i < slotEls.length; i++) {
+        const el = slotEls[i] as HTMLElement;
+        if (el.getAttribute('data-slot') === sk) return el;
+      }
     }
   }
 
@@ -86,13 +114,30 @@ function getUnitEl(unitId: string): HTMLElement | null {
 }
 
 function collectDomSamples() {
-  const ids = Array.from(document.querySelectorAll('[data-unit-id]'))
+  const docs = getCandidateDocs();
+
+  // Choose the document that appears to contain the battle DOM (max [data-unit-id] count)
+  let best: { doc: Document; unitCount: number; slotCount: number } | null = null;
+  for (const d of docs) {
+    const unitCount = d.querySelectorAll('[data-unit-id]').length;
+    const slotCount = d.querySelectorAll('[data-slot]').length;
+    if (!best || unitCount > best.unitCount) best = { doc: d, unitCount, slotCount };
+  }
+  const doc = best?.doc ?? document;
+
+  const ids = Array.from(doc.querySelectorAll('[data-unit-id]'))
     .slice(0, 12)
     .map((el) => (el as HTMLElement).getAttribute('data-unit-id') || '');
-  const slots = Array.from(document.querySelectorAll('[data-slot]'))
+  const slots = Array.from(doc.querySelectorAll('[data-slot]'))
     .slice(0, 12)
     .map((el) => (el as HTMLElement).getAttribute('data-slot') || '');
-  return { ids, slots, unitCount: document.querySelectorAll('[data-unit-id]').length, slotCount: document.querySelectorAll('[data-slot]').length };
+
+  return {
+    ids,
+    slots,
+    unitCount: best?.unitCount ?? doc.querySelectorAll('[data-unit-id]').length,
+    slotCount: best?.slotCount ?? doc.querySelectorAll('[data-slot]').length,
+  };
 }
 
 function getMovableForUnit(unitId: string): HTMLElement | null {
