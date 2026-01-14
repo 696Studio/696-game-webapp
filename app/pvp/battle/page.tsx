@@ -1195,120 +1195,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   }, [timeline]);
 
 
-  // =========================================================
-  // ATTACK FLIGHT (iframe-safe): animate via refs, not DOM query
-  // =========================================================
-  const seenAttackIdsRef = useRef<Set<string>>(new Set());
-
-  const parseSlotKeyFromInstanceId = (id: string): string | null => {
-    // Expected: <match>:<round>:p1:<idx>:<deck>:<card> (but tolerate variations)
-    const parts = String(id || "").split(":");
-    const pIdx = parts.findIndex((p) => p === "p1" || p === "p2");
-    if (pIdx >= 0 && parts[pIdx + 1] != null) return `${parts[pIdx]}:${parts[pIdx + 1]}`;
-    return null;
-  };
-
-  const resolveUnitElFromRefMap = (id: string): HTMLDivElement | null => {
-    if (!id) return null;
-
-    // 1) direct hit
-    const direct = unitElByIdRef.current[id];
-    if (direct) return direct;
-
-    // 2) drop match+round if present
-    const parts = String(id).split(":");
-    if (parts.length >= 4) {
-      const core = parts.slice(2).join(":"); // pX:idx:...
-      for (const k in unitElByIdRef.current) {
-        if (!k) continue;
-        const kp = String(k).split(":");
-        const kcore = kp.length >= 4 ? kp.slice(2).join(":") : k;
-        if (kcore === core) return unitElByIdRef.current[k] || null;
-      }
-    }
-
-    // 3) slot substring fallback (works when deck/card tails differ)
-    const slot = parseSlotKeyFromInstanceId(id);
-    if (slot) {
-      const needle = `:${slot}:`;
-      for (const k in unitElByIdRef.current) {
-        if (String(k).includes(needle)) return unitElByIdRef.current[k] || null;
-      }
-      // tolerate keys without leading match/round
-      for (const k in unitElByIdRef.current) {
-        if (String(k).startsWith(`${slot}:`)) return unitElByIdRef.current[k] || null;
-      }
-    }
-
-    return null;
-  };
-
-  useEffect(() => {
-    if (!fxEvents || fxEvents.length === 0) return;
-    const arenaEl = arenaRef.current;
-    if (!arenaEl) return;
-
-    for (const ev of fxEvents) {
-      if (!ev || ev.type !== "attack") continue;
-      if (seenAttackIdsRef.current.has(ev.id)) continue;
-      seenAttackIdsRef.current.add(ev.id);
-
-      const attackerCard = resolveUnitElFromRefMap(ev.attackerId);
-      const targetCard = resolveUnitElFromRefMap(ev.targetId);
-
-      if (!attackerCard || !targetCard) {
-        if ((globalThis as any)?.localStorage?.getItem("bb_fx_ref_debug") === "1") {
-          console.warn("[BB FX REF] missing refs", {
-            attackerId: ev.attackerId,
-            targetId: ev.targetId,
-            hasAttacker: !!attackerCard,
-            hasTarget: !!targetCard,
-            refKeys: Object.keys(unitElByIdRef.current || {}).slice(0, 20),
-          });
-        }
-        continue;
-      }
-
-      const attackerMotion =
-        (attackerCard.querySelector('[data-fx-motion="1"]') as HTMLDivElement | null) ||
-        (attackerCard.querySelector(".bb-motion-layer") as HTMLDivElement | null) ||
-        attackerCard;
-      const arenaRect = arenaEl.getBoundingClientRect();
-      const a = attackerCard.getBoundingClientRect();
-      const b = targetCard.getBoundingClientRect();
-
-      const ax = (a.left - arenaRect.left) + a.width / 2;
-      const ay = (a.top - arenaRect.top) + a.height / 2;
-      const bx = (b.left - arenaRect.left) + b.width / 2;
-      const by = (b.top - arenaRect.top) + b.height / 2;
-
-      const dx = bx - ax;
-      const dy = by - ay;
-
-      attackerMotion.style.willChange = "transform";
-
-      // quick lunge forward then back
-      try {
-        attackerMotion.style.willChange = "transform";
-        attackerMotion.style.pointerEvents = "none";
-        attackerMotion.animate(
-          [
-            { transform: "translate3d(0px,0px,0px)" },
-            { transform: `translate3d(${dx * 0.45}px, ${dy * 0.45}px, 0px)` },
-            { transform: "translate3d(0px,0px,0px)" },
-          ],
-          { duration: 240, easing: "cubic-bezier(.2,.9,.2,1)" }
-        ).onfinish = () => {
-          attackerMotion.style.pointerEvents = "";
-          attackerMotion.style.willChange = "";
-        };
-      } catch {
-        // ignore
-      }
-    }
-  }, [fxEvents]);
-
-
   const spawnFxByInstance = useMemo(() => {
     const windowSec = 0.35;
     const fromT = Math.max(0, t - windowSec);
@@ -1533,6 +1419,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   unit,
   fallbackId,
   unitInstanceId,
+  slotKey,
   attackFx,
   spawnFx,
   damageFx,
@@ -1549,6 +1436,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   damageFx?: DamageFx[];
   isDying?: boolean;
   revealed: boolean;
+  slotKey?: string;
   delayMs: number;
 }) {
     const id = card?.id || fallbackId || "";
@@ -1938,7 +1826,7 @@ const hpPct = useMemo(() => {
         </div>
       </div>
 
-      <BattleFxLayer events={fxEvents} unitElByIdRef={unitElByIdRef} />
+      <BattleFxLayer events={fxEvents} />
 
       {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
       {/* Debug UI overlay (no portal) */}
@@ -2354,7 +2242,7 @@ const hpPct = useMemo(() => {
         </div>
       </div>
 
-      <BattleFxLayer events={fxEvents} unitElByIdRef={unitElByIdRef} />
+      <BattleFxLayer events={fxEvents} />
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -3556,6 +3444,7 @@ const hpPct = useMemo(() => {
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
+                    slotKey={s.fallbackId}
                     unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}
                     attackFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? attackFxByInstance[inst] : undefined; })()}
                     spawnFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? spawnFxByInstance[inst] : undefined; })()}
@@ -3588,6 +3477,7 @@ const hpPct = useMemo(() => {
                     card={s.card}
                     fallbackId={s.fallbackId}
                     unit={s.unit}
+                    slotKey={s.fallbackId}
                     unitInstanceId={s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined) ?? null}
                     attackFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? attackFxByInstance[inst] : undefined; })()}
                     spawnFx={(() => { const inst = s.unit?.instanceId ?? (s.fallbackId ? lastInstBySlotRef.current[s.fallbackId] : undefined); return inst ? spawnFxByInstance[inst] : undefined; })()}
