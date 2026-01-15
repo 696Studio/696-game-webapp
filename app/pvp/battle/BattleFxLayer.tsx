@@ -3,12 +3,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-type LaneRect = { left: number; top: number; width: number; height: number } | null;
-
 declare global {
   interface Window {
     __bb_fx_build?: string;
 
+    // Debug / testing
     __bb_fx_ping?: () => void;
     __bb_fx_testFly?: (fromSlot: string, toSlot: string) => boolean;
 
@@ -19,6 +18,7 @@ declare global {
     __bb_fx_lastAtk?: any;
     __bb_fx_atkCount?: number;
 
+    // Persistent caches / queues (survive unmount/remount)
     __bb_fx_slotCenters?: Record<string, { x: number; y: number; w: number; h: number; t: number }>;
     __bb_fx_queue?: Array<{
       k: string;
@@ -33,14 +33,15 @@ declare global {
   }
 }
 
-const FX_DURATION_MS = 420;
-const FX_GAP_MS = 120;
-const FX_WINDOW_MS = 2200; // a bit longer to outlive round transitions
-const TICK_MS = 50;
-const CACHE_POLL_MS = 100;
+const FX_DURATION_MS = 420;      // flight duration
+const FX_GAP_MS = 120;           // gap between fx
+const FX_WINDOW_MS = 1800;       // how long an attack stays "playable"
+const TICK_MS = 50;              // scheduler tick
+const CACHE_POLL_MS = 100;       // slot-center cache poll
 
 function extractSlotKey(id: string): string | null {
   if (!id) return null;
+
   const direct = id.match(/\b(p1|p2):([0-4])\b/);
   if (direct) return `${direct[1]}:${direct[2]}`;
 
@@ -82,17 +83,11 @@ type FxEvent = {
 export default function BattleFxLayer({
   events,
   slotRegistryRef,
-  arenaRef,
-  laneRects,
-  enemySide,
-  youSide,
+  laneCenters,
 }: {
   events: FxEvent[];
   slotRegistryRef?: React.MutableRefObject<Record<string, HTMLElement | null>>;
-  arenaRef?: React.MutableRefObject<HTMLDivElement | null>;
-  laneRects?: { enemy: LaneRect; you: LaneRect } | null;
-  enemySide?: 'p1' | 'p2';
-  youSide?: 'p1' | 'p2';
+  laneCenters?: Record<string, { x: number; y: number }>;
 }) {
   const [debug, setDebug] = useState(() => {
     try {
@@ -112,26 +107,31 @@ export default function BattleFxLayer({
   const queueRef = useRef<NonNullable<Window['__bb_fx_queue']>>([]);
   const centersRef = useRef<NonNullable<Window['__bb_fx_slotCenters']>>({});
 
+  // ===== module init =====
   if (typeof window !== 'undefined') {
-    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v15';
+    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v18';
     if (!window.__bb_fx_slotCenters) window.__bb_fx_slotCenters = {};
     if (!window.__bb_fx_queue) window.__bb_fx_queue = [];
   }
 
+  // ===== mount / portal root =====
   useEffect(() => {
     portalRootRef.current = document.body;
     setMounted(true);
 
+    // Adopt persistent caches
     queueRef.current = (window.__bb_fx_queue || []).slice();
     centersRef.current = { ...(window.__bb_fx_slotCenters || {}) };
 
     return () => {
+      // Persist on unmount
       window.__bb_fx_queue = queueRef.current.slice();
       window.__bb_fx_slotCenters = { ...centersRef.current };
       window.__bb_fx_queueLen = queueRef.current.length;
     };
   }, []);
 
+  // ===== debug flag poll (Telegram WebView) =====
   useEffect(() => {
     const t = window.setInterval(() => {
       try {
@@ -141,7 +141,7 @@ export default function BattleFxLayer({
     return () => window.clearInterval(t);
   }, []);
 
-  // Poll DOM slots into cache (works when UI is present)
+  // ===== slot-center cache poller =====
   useEffect(() => {
     const t = window.setInterval(() => {
       try {
@@ -169,26 +169,6 @@ export default function BattleFxLayer({
     return () => window.clearInterval(t);
   }, [slotRegistryRef]);
 
-  const resolveFromLaneRects = (slotKey: string): { x: number; y: number } | null => {
-    if (!arenaRef?.current) return null;
-    if (!laneRects?.enemy || !laneRects?.you) return null;
-    if (!enemySide || !youSide) return null;
-
-    const m = slotKey.match(/^(p1|p2):([0-4])$/);
-    if (!m) return null;
-    const side = m[1] as 'p1' | 'p2';
-    const idx = Number(m[2]);
-
-    // Determine which lane this side belongs to (top is enemy, bottom is you)
-    const lane = side === enemySide ? laneRects.enemy : side === youSide ? laneRects.you : null;
-    if (!lane) return null;
-
-    const arenaRect = arenaRef.current.getBoundingClientRect();
-    const x = arenaRect.left + lane.left + (idx + 0.5) * (lane.width / 5);
-    const y = arenaRect.top + lane.top + lane.height / 2;
-    return { x, y };
-  };
-
   const resolvePoint = (slotKey: string): { x: number; y: number } | null => {
     // 1) registry
     const reg = slotRegistryRef?.current || {};
@@ -196,6 +176,7 @@ export default function BattleFxLayer({
     if (isUsableEl(el)) {
       const r = el.getBoundingClientRect();
       const c = rectCenter(r);
+      // also refresh cache
       centersRef.current[slotKey] = { x: c.x, y: c.y, w: c.w, h: c.h, t: Date.now() };
       window.__bb_fx_slotCenters = { ...centersRef.current };
       return { x: c.x, y: c.y };
@@ -211,14 +192,9 @@ export default function BattleFxLayer({
       return { x: c.x, y: c.y };
     }
 
-    // 3) deterministic lane fallback (NO DOM needed, only arena + laneRects)
-    const lane = resolveFromLaneRects(slotKey);
-    if (lane) {
-      // also prime cache
-      centersRef.current[slotKey] = { x: lane.x, y: lane.y, w: 0, h: 0, t: Date.now() };
-      window.__bb_fx_slotCenters = { ...centersRef.current };
-      return lane;
-    }
+    // 3) page-provided deterministic centers (best fallback)
+    const lc = laneCenters?.[slotKey];
+    if (lc) return { x: lc.x, y: lc.y };
 
     // 4) cache
     const cached = centersRef.current[slotKey] || window.__bb_fx_slotCenters?.[slotKey];
@@ -258,7 +234,9 @@ export default function BattleFxLayer({
     );
 
     anim.onfinish = () => {
-      try { dot.remove(); } catch {}
+      try {
+        dot.remove();
+      } catch {}
     };
 
     return true;
@@ -271,22 +249,26 @@ export default function BattleFxLayer({
     return flyDot(a, b);
   };
 
-  // Scheduler (keeps trying during FX window)
+  // ===== scheduler ticker (the "iron" sync layer) =====
   useEffect(() => {
     const t = window.setInterval(() => {
       const now = Date.now();
 
+      // persist queue len
       window.__bb_fx_queueLen = queueRef.current.length;
       window.__bb_fx_queue = queueRef.current.slice();
 
+      // if playing, wait
       if (now < playingUntilRef.current) return;
 
+      // drop expired
       queueRef.current = queueRef.current.filter((q) => q.expiresAt > now);
+
       if (!queueRef.current.length) return;
 
       const next = queueRef.current[0];
-      const ok = playOnce(next.attackerSlot, next.targetSlot);
 
+      const ok = playOnce(next.attackerSlot, next.targetSlot);
       if (!ok) {
         if (debug) {
           window.__bb_fx_lastFail = {
@@ -296,7 +278,6 @@ export default function BattleFxLayer({
             dom: window.__bb_fx_domCount ?? null,
             reg: window.__bb_fx_regCount ?? null,
             cacheKeys: Object.keys(window.__bb_fx_slotCenters || {}).slice(0, 12),
-            laneFallbackReady: !!(arenaRef?.current && laneRects?.enemy && laneRects?.you && enemySide && youSide),
             queueLen: queueRef.current.length,
           };
           // eslint-disable-next-line no-console
@@ -305,6 +286,7 @@ export default function BattleFxLayer({
         return;
       }
 
+      // success: consume + set playing window
       queueRef.current.shift();
       playingUntilRef.current = now + FX_DURATION_MS + FX_GAP_MS;
       window.__bb_fx_queueLen = queueRef.current.length;
@@ -312,9 +294,9 @@ export default function BattleFxLayer({
     }, TICK_MS);
 
     return () => window.clearInterval(t);
-  }, [debug, arenaRef, laneRects, enemySide, youSide]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [debug]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Attack-like events
+  // ===== attack-like events =====
   const attackLike = useMemo(() => {
     const out: FxEvent[] = [];
     for (const e of events) {
@@ -324,7 +306,7 @@ export default function BattleFxLayer({
     return out;
   }, [events]);
 
-  // Enqueue newest event
+  // ===== enqueue on latest attack-like =====
   useEffect(() => {
     if (!attackLike.length) return;
 
@@ -372,6 +354,7 @@ export default function BattleFxLayer({
       idx,
     };
 
+    // de-dupe queue by key
     if (!queueRef.current.some((x) => x.k === q.k)) {
       queueRef.current.push(q);
       window.__bb_fx_queue = queueRef.current.slice();
@@ -379,7 +362,7 @@ export default function BattleFxLayer({
     }
   }, [attackLike, debug]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Debug helpers
+  // ===== debug helpers =====
   useEffect(() => {
     window.__bb_fx_ping = () => {
       const overlay = overlayRef.current;
@@ -397,7 +380,9 @@ export default function BattleFxLayer({
       b.style.pointerEvents = 'none';
       overlay.appendChild(b);
       window.setTimeout(() => {
-        try { b.remove(); } catch {}
+        try {
+          b.remove();
+        } catch {}
       }, 700);
     };
 
@@ -426,7 +411,7 @@ export default function BattleFxLayer({
             position: 'fixed',
             left: 12,
             top: 50,
-            maxWidth: 820,
+            maxWidth: 760,
             padding: 10,
             borderRadius: 12,
             background: 'rgba(0,0,0,.45)',
@@ -444,7 +429,7 @@ export default function BattleFxLayer({
           {`domSlots: ${window.__bb_fx_domCount ?? 'n/a'}\n`}
           {`registrySlots: ${window.__bb_fx_regCount ?? 'n/a'}\n`}
           {`cacheKeys: ${Object.keys(window.__bb_fx_slotCenters || {}).slice(0, 10).join(',')}\n`}
-          {`laneFallbackReady: ${String(!!(arenaRef?.current && laneRects?.enemy && laneRects?.you && enemySide && youSide))}\n`}
+          {`laneCenters: ${laneCenters ? 'yes' : 'no'}\n`}
           {`queueLen: ${window.__bb_fx_queueLen ?? 0}\n`}
           {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}
           {`ping: window.__bb_fx_ping()\n`}
@@ -455,5 +440,6 @@ export default function BattleFxLayer({
   );
 
   if (!mounted || !portalRootRef.current) return null;
+
   return createPortal(overlayNode, portalRootRef.current);
 }

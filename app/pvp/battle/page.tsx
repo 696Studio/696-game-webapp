@@ -1834,7 +1834,7 @@ const hpPct = useMemo(() => {
         </div>
       </div>
 
-      <BattleFxLayer events={fxEvents} arenaRef={arenaRef} laneRects={laneRects} enemySide={enemySide} youSide={youSide} />
+      <BattleFxLayer events={fxEvents} />
 
       {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
       {/* Debug UI overlay (no portal) */}
