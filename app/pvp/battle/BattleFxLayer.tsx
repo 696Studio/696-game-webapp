@@ -109,7 +109,7 @@ export default function BattleFxLayer({
   const centersRef = useRef<NonNullable<Window['__bb_fx_slotCenters']>>({});
 
   if (typeof window !== 'undefined') {
-    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v24';
+    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v25';
     if (!window.__bb_fx_slotCenters) window.__bb_fx_slotCenters = {};
     if (!window.__bb_fx_queue) window.__bb_fx_queue = [];
   }
@@ -268,14 +268,67 @@ export default function BattleFxLayer({
     };
   };
 
+
+  const lungeSlot = (fromSlot: string, toSlot: string) => {
+    // Prefer DOM element itself (big + visible). Works even if registrySlots is 0.
+    const fromEl = findSlotEl(fromSlot);
+    const toEl = findSlotEl(toSlot);
+    if (!isUsableEl(fromEl) || !isUsableEl(toEl)) return false;
+
+    const a = centerOfRect(fromEl.getBoundingClientRect());
+    const b = centerOfRect(toEl.getBoundingClientRect());
+
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+
+    // Move ~35% toward target then back (Hearthstone-like "lunge")
+    const k = 0.35;
+    const tx = dx * k;
+    const ty = dy * k;
+
+    // elevate above neighbors during anim
+    const prevTransform = fromEl.style.transform;
+    const prevZ = fromEl.style.zIndex;
+    const prevPos = fromEl.style.position;
+    const prevWill = fromEl.style.willChange;
+
+    fromEl.style.willChange = 'transform';
+    if (!prevPos) fromEl.style.position = 'relative';
+    fromEl.style.zIndex = '9999';
+
+    const anim = fromEl.animate(
+      [
+        { transform: prevTransform || 'translate3d(0px,0px,0px)' },
+        { transform: `translate3d(${tx}px, ${ty}px, 0px)` },
+        { transform: prevTransform || 'translate3d(0px,0px,0px)' },
+      ],
+      { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
+    );
+
+    anim.onfinish = () => {
+      try {
+        fromEl.style.transform = prevTransform;
+        fromEl.style.zIndex = prevZ;
+        fromEl.style.position = prevPos;
+        fromEl.style.willChange = prevWill;
+      } catch {}
+    };
+
+    return true;
+  };
+
   const playOnce = (attackerSlot: string, targetSlot: string) => {
     const a = resolvePoint(attackerSlot);
     const b = resolvePoint(targetSlot);
     if (!a || !b) return false;
     (window as any).__bb_fx_lastPlayed = { ts: Date.now(), from: attackerSlot, to: targetSlot, ax: a.x, ay: a.y, bx: b.x, by: b.y };
-    const ok = flyDot(a, b);
+    // Primary: move the attacker card itself (visible lunge)
+    const moved = lungeSlot(attackerSlot, targetSlot);
+    // Secondary: flash on target for hit feedback
     flashAt(b);
-    return ok;
+    // Optional: keep dot as extra signal (can remove later)
+    const ok = flyDot(a, b);
+    return moved || ok;
   };
 
   // Scheduler ticker
@@ -463,7 +516,7 @@ export default function BattleFxLayer({
           {`lastAttackLikeLen: ${window.__bb_fx_lastAttackLikeLen ?? 'n/a'}\n`}
           {`lastEnqueue: ${window.__bb_fx_lastEnqueue ? 'yes' : 'no'}\n`}
           {`queueLen: ${queueLenState} (win=${window.__bb_fx_queueLen ?? 0})\n`}
-          {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}
+          {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}{`manual2: (card lunge) just trigger an attack\n`}
           {`ping: window.__bb_fx_ping()\n`}
           {`lastPlayed: ${(window as any).__bb_fx_lastPlayed ? `${(window as any).__bb_fx_lastPlayed.from}->${(window as any).__bb_fx_lastPlayed.to}` : 'n/a'}\n`}
           {`lastFail: window.__bb_fx_lastFail\n`}
