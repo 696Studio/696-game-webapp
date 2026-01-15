@@ -32,7 +32,6 @@ declare global {
     // v23 debug
     __bb_fx_lastAttackLikeLen?: number;
     __bb_fx_lastEnqueue?: any;
-    __bb_fx_lastPlayed?: any;
   }
 }
 
@@ -44,6 +43,37 @@ type FxEvent = {
   attackerSlot?: string;
   targetSlot?: string;
   [k: string]: any;
+};
+
+
+
+const flashAt = (p: { x: number; y: number }, root: HTMLElement | null) => {
+  if (!root) return;
+  const ring = document.createElement('div');
+  ring.style.position = 'fixed';
+  ring.style.left = `${p.x - 40}px`;
+  ring.style.top = `${p.y - 40}px`;
+  ring.style.width = '80px';
+  ring.style.height = '80px';
+  ring.style.borderRadius = '999px';
+  ring.style.border = '4px solid rgba(255,0,170,0.95)';
+  ring.style.boxShadow = '0 0 28px rgba(255,0,170,0.85)';
+  ring.style.pointerEvents = 'none';
+  ring.style.zIndex = '2147483647';
+  ring.style.willChange = 'transform, opacity';
+  root.appendChild(ring);
+
+  const anim = ring.animate(
+    [
+      { transform: 'scale(0.4)', opacity: 0.95 },
+      { transform: 'scale(1.1)', opacity: 0.7 },
+      { transform: 'scale(1.4)', opacity: 0 },
+    ],
+    { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
+  );
+  anim.onfinish = () => {
+    try { ring.remove(); } catch {}
+  };
 };
 
 const FX_DURATION_MS = 420;
@@ -109,7 +139,7 @@ export default function BattleFxLayer({
   const centersRef = useRef<NonNullable<Window['__bb_fx_slotCenters']>>({});
 
   if (typeof window !== 'undefined') {
-    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v25';
+    window.__bb_fx_build = 'BattleFxLayer.attack.motion.v26';
     if (!window.__bb_fx_slotCenters) window.__bb_fx_slotCenters = {};
     if (!window.__bb_fx_queue) window.__bb_fx_queue = [];
   }
@@ -198,7 +228,59 @@ export default function BattleFxLayer({
     return null;
   };
 
-  const flyDot = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+  
+  const pickMoveEl = (slotEl: HTMLElement): HTMLElement => {
+    const byClass =
+      (slotEl.querySelector('.bb-card') as HTMLElement | null) ||
+      (slotEl.querySelector('[class*="bb-card"]') as HTMLElement | null) ||
+      (slotEl.querySelector('[class*="cardart"]') as HTMLElement | null) ||
+      (slotEl.querySelector('[class*="CardArt"]') as HTMLElement | null);
+    return byClass || (slotEl.firstElementChild as HTMLElement) || slotEl;
+  };
+
+  const lungeCard = (fromSlot: string, toSlot: string) => {
+    const fromSlotEl = findSlotEl(fromSlot);
+    const toSlotEl = findSlotEl(toSlot);
+    if (!isUsableEl(fromSlotEl) || !isUsableEl(toSlotEl)) return false;
+
+    const fromRect = fromSlotEl.getBoundingClientRect();
+    const toRect = toSlotEl.getBoundingClientRect();
+    const a = centerOfRect(fromRect);
+    const b = centerOfRect(toRect);
+
+    const dx = (b.x - a.x) * 0.35;
+    const dy = (b.y - a.y) * 0.35;
+
+    const moveEl = pickMoveEl(fromSlotEl);
+
+    const prevZ = moveEl.style.zIndex;
+    const prevWill = moveEl.style.willChange;
+    const prevTransform = moveEl.style.transform;
+
+    moveEl.style.willChange = 'transform';
+    moveEl.style.zIndex = '9999';
+
+    const anim = moveEl.animate(
+      [
+        { transform: prevTransform || 'translate3d(0px,0px,0px)' },
+        { transform: `translate3d(${dx}px, ${dy}px, 0px) scale(1.04)` },
+        { transform: prevTransform || 'translate3d(0px,0px,0px)' },
+      ],
+      { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
+    );
+
+    anim.onfinish = () => {
+      try {
+        moveEl.style.zIndex = prevZ;
+        moveEl.style.willChange = prevWill;
+        moveEl.style.transform = prevTransform;
+      } catch {}
+    };
+
+    return true;
+  };
+
+const flyDot = (from: { x: number; y: number }, to: { x: number; y: number }) => {
     const overlay = overlayRef.current;
     if (!overlay) return false;
 
@@ -237,98 +319,20 @@ export default function BattleFxLayer({
     return true;
   };
 
-
-  const flashAt = (p: { x: number; y: number }) => {
-    const overlay = overlayRef.current;
-    if (!overlay) return;
-    const ring = document.createElement('div');
-    ring.style.position = 'fixed';
-    ring.style.left = `${p.x - 40}px`;
-    ring.style.top = `${p.y - 40}px`;
-    ring.style.width = '80px';
-    ring.style.height = '80px';
-    ring.style.borderRadius = '999px';
-    ring.style.border = '4px solid rgba(255,0,170,0.95)';
-    ring.style.boxShadow = '0 0 28px rgba(255,0,170,0.85)';
-    ring.style.pointerEvents = 'none';
-    ring.style.zIndex = '2147483647';
-    ring.style.willChange = 'transform, opacity';
-    overlay.appendChild(ring);
-
-    const anim = ring.animate(
-      [
-        { transform: 'scale(0.4)', opacity: 0.95 },
-        { transform: 'scale(1.1)', opacity: 0.7 },
-        { transform: 'scale(1.4)', opacity: 0 },
-      ],
-      { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
-    );
-    anim.onfinish = () => {
-      try { ring.remove(); } catch {}
-    };
-  };
-
-
-  const lungeSlot = (fromSlot: string, toSlot: string) => {
-    // Prefer DOM element itself (big + visible). Works even if registrySlots is 0.
-    const fromEl = findSlotEl(fromSlot);
-    const toEl = findSlotEl(toSlot);
-    if (!isUsableEl(fromEl) || !isUsableEl(toEl)) return false;
-
-    const a = centerOfRect(fromEl.getBoundingClientRect());
-    const b = centerOfRect(toEl.getBoundingClientRect());
-
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-
-    // Move ~35% toward target then back (Hearthstone-like "lunge")
-    const k = 0.35;
-    const tx = dx * k;
-    const ty = dy * k;
-
-    // elevate above neighbors during anim
-    const prevTransform = fromEl.style.transform;
-    const prevZ = fromEl.style.zIndex;
-    const prevPos = fromEl.style.position;
-    const prevWill = fromEl.style.willChange;
-
-    fromEl.style.willChange = 'transform';
-    if (!prevPos) fromEl.style.position = 'relative';
-    fromEl.style.zIndex = '9999';
-
-    const anim = fromEl.animate(
-      [
-        { transform: prevTransform || 'translate3d(0px,0px,0px)' },
-        { transform: `translate3d(${tx}px, ${ty}px, 0px)` },
-        { transform: prevTransform || 'translate3d(0px,0px,0px)' },
-      ],
-      { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
-    );
-
-    anim.onfinish = () => {
-      try {
-        fromEl.style.transform = prevTransform;
-        fromEl.style.zIndex = prevZ;
-        fromEl.style.position = prevPos;
-        fromEl.style.willChange = prevWill;
-      } catch {}
-    };
-
-    return true;
-  };
-
   const playOnce = (attackerSlot: string, targetSlot: string) => {
     const a = resolvePoint(attackerSlot);
     const b = resolvePoint(targetSlot);
     if (!a || !b) return false;
+
     (window as any).__bb_fx_lastPlayed = { ts: Date.now(), from: attackerSlot, to: targetSlot, ax: a.x, ay: a.y, bx: b.x, by: b.y };
-    // Primary: move the attacker card itself (visible lunge)
-    const moved = lungeSlot(attackerSlot, targetSlot);
-    // Secondary: flash on target for hit feedback
-    flashAt(b);
-    // Optional: keep dot as extra signal (can remove later)
-    const ok = flyDot(a, b);
-    return moved || ok;
+
+    // Primary: move the real attacker card element
+    const moved = lungeCard(attackerSlot, targetSlot);
+
+    // Secondary: flash on target for hit feedback (hard to miss)
+    flashAt(b, overlayRef.current);
+
+    return moved;
   };
 
   // Scheduler ticker
@@ -516,9 +520,8 @@ export default function BattleFxLayer({
           {`lastAttackLikeLen: ${window.__bb_fx_lastAttackLikeLen ?? 'n/a'}\n`}
           {`lastEnqueue: ${window.__bb_fx_lastEnqueue ? 'yes' : 'no'}\n`}
           {`queueLen: ${queueLenState} (win=${window.__bb_fx_queueLen ?? 0})\n`}
-          {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}{`manual2: (card lunge) just trigger an attack\n`}
+          {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}
           {`ping: window.__bb_fx_ping()\n`}
-          {`lastPlayed: ${(window as any).__bb_fx_lastPlayed ? `${(window as any).__bb_fx_lastPlayed.from}->${(window as any).__bb_fx_lastPlayed.to}` : 'n/a'}\n`}
           {`lastFail: window.__bb_fx_lastFail\n`}
         </div>
       ) : null}
