@@ -1648,13 +1648,7 @@ const hpPct = useMemo(() => {
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
     return (
-      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
-        <div
-          data-bb-slot={slotKey}
-          className="bb-motion-layer bb-card-root"
-          data-fx-motion="1"
-          style={{ willChange: "transform" }}
-        >
+      <div data-bb-slot={slotKey} data-fx-motion="1" style={{ willChange: "transform" }} className={["bb-slot","bb-motion-layer","bb-card-root", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
       <div className="bb-fx-anchor">
         
         {isDyingUi ? <div className="bb-death" /> : null}
@@ -1726,9 +1720,7 @@ const hpPct = useMemo(() => {
                     POW <b className="tabular-nums">{power}</b>
                   </span>
                 )}
-              </div>
-
-              {renderUnit && (
+      {renderUnit && (
                 <div className="bb-bars">
                   <div className="bb-bar bb-bar--hp">
                     <div style={{ width: `${hpPct}%` }} />
