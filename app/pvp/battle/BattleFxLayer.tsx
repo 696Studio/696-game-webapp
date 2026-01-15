@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 
 declare global {
   interface Window {
+    __bb_fx_lastEventsLen?: number;
     __bb_fx_build?: string;
 
     // Debug / testing
@@ -110,7 +111,7 @@ export default function BattleFxLayer({
 
   // ===== module init =====
   if (typeof window !== 'undefined') {
-    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v20';
+    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v21';
     if (!window.__bb_fx_slotCenters) window.__bb_fx_slotCenters = {};
     if (!window.__bb_fx_queue) window.__bb_fx_queue = [];
   }
