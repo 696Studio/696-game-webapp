@@ -377,88 +377,83 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const isGridDebug = DEBUG_GRID || uiDebugOn;
 
   const testAttackLunge = useCallback(() => {
-    try {
-      // Pick a "bottom" slot as attacker and a "top" slot as target by screen Y,
-      // because p1/p2 can swap depending on who is you in the match.
-      const nodes = Array.from(document.querySelectorAll('[data-bb-slot]')) as HTMLElement[];
-      const usable = nodes
-        .map((el) => ({ el, r: el.getBoundingClientRect() }))
-        .filter(({ r }) => r.width > 10 && r.height > 10);
+  try {
+    const slotNodes = Array.from(document.querySelectorAll('[data-bb-slot]')) as HTMLElement[];
+    if (!slotNodes.length) return;
 
-      if (!usable.length) return;
+    const items = slotNodes
+      .map((el) => ({ el, r: el.getBoundingClientRect() }))
+      .filter((x) => x.r.width > 0 && x.r.height > 0);
 
-      // Use arena container if present for a better midpoint, else viewport midpoint.
-      const arenaEl = document.querySelector('[data-bb-arena="1"]') as HTMLElement | null;
-      const midY = arenaEl ? arenaEl.getBoundingClientRect().top + arenaEl.getBoundingClientRect().height / 2 : window.innerHeight / 2;
+    if (!items.length) return;
 
-      const bottoms = usable.filter(({ r }) => r.top + r.height / 2 > midY).sort((a, b) => a.r.left - b.r.left);
-      const tops = usable.filter(({ r }) => r.top + r.height / 2 <= midY).sort((a, b) => a.r.left - b.r.left);
+    // Split "top row" vs "bottom row" by vertical midpoint on screen.
+    const minTop = Math.min(...items.map((x) => x.r.top));
+    const maxBottom = Math.max(...items.map((x) => x.r.bottom));
+    const midY = (minTop + maxBottom) / 2;
 
-      const attacker = (bottoms[0] || usable[0]).el;
-      const target = (tops[0] || usable[usable.length - 1]).el;
+    const topRow = items.filter((x) => x.r.top < midY).sort((a, b) => a.r.left - b.r.left);
+    const botRow = items.filter((x) => x.r.top >= midY).sort((a, b) => a.r.left - b.r.left);
 
-      const ar = attacker.getBoundingClientRect();
-      const tr = target.getBoundingClientRect();
+    // Prefer: attacker from bottom row, target from top row. Fallback to extremes.
+    const attackerSlot = botRow[0] ?? items.sort((a, b) => b.r.top - a.r.top)[0];
+    const targetSlot = topRow[0] ?? items.sort((a, b) => a.r.top - b.r.top)[0];
 
-      const ax = ar.left + ar.width / 2;
-      const ay = ar.top + ar.height / 2;
-      const tx = tr.left + tr.width / 2;
-      const ty = tr.top + tr.height / 2;
+    if (!attackerSlot || !targetSlot) return;
 
-      // Big, visible lunge (but still returns back)
-      const dx = (tx - ax) * 0.85;
-      const dy = (ty - ay) * 0.85;
+    // Move the WHOLE slot wrapper (card + hud) if present.
+    const moveEl =
+      ((attackerSlot.el.closest('.bb-slot') as HTMLElement | null) ?? attackerSlot.el);
 
-      const prevZ = attacker.style.zIndex;
-      const prevWill = attacker.style.willChange;
-      const prevTransform = attacker.style.transform;
+    const fromRect = moveEl.getBoundingClientRect();
+    const toRect = targetSlot.el.getBoundingClientRect();
 
-      attacker.style.willChange = 'transform';
-      attacker.style.zIndex = '99999';
+    const ax = fromRect.left + fromRect.width / 2;
+    const ay = fromRect.top + fromRect.height / 2;
+    const bx = toRect.left + toRect.width / 2;
+    const by = toRect.top + toRect.height / 2;
 
-      const base = prevTransform && prevTransform.trim().length ? prevTransform : 'translate3d(0px,0px,0px)';
+    // Make it visible: move ~45% toward target.
+    const dx = (bx - ax) * 0.45;
+    const dy = (by - ay) * 0.45;
 
-      // Prefer WAAPI; fallback to CSS transition for older WebViews.
-      const canAnimate = typeof (attacker as any).animate === 'function';
+    const prevTransform = moveEl.style.transform;
+    const prevTransition = moveEl.style.transition;
+    const prevZ = moveEl.style.zIndex;
+    const prevWill = moveEl.style.willChange;
 
-      if (canAnimate) {
-        const anim = attacker.animate(
-          [
-            { transform: base },
-            { transform: `translate3d(${dx}px, ${dy}px, 0px) scale(1.06)` },
-            { transform: `translate3d(${dx}px, ${dy}px, 0px) scale(1.06)` },
-            { transform: base },
-          ],
-          { duration: 520, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
-        );
+    moveEl.style.willChange = 'transform';
+    moveEl.style.zIndex = '9999';
 
-        const cleanup = () => {
-          try {
-            attacker.style.zIndex = prevZ;
-            attacker.style.willChange = prevWill;
-            attacker.style.transform = prevTransform;
-          } catch {}
-        };
+    const start = prevTransform || 'translate3d(0px,0px,0px)';
+    const mid = `translate3d(${dx}px, ${dy}px, 0px) scale(1.04)`;
 
-        anim.onfinish = cleanup;
-        anim.oncancel = cleanup;
-      } else {
-        // Fallback: transition
-        attacker.style.transition = 'transform 260ms cubic-bezier(.2,.8,.2,1)';
-        attacker.style.transform = `translate3d(${dx}px, ${dy}px, 0px) scale(1.06)`;
-        window.setTimeout(() => {
-          attacker.style.transform = base;
-          window.setTimeout(() => {
-            try {
-              attacker.style.transition = '';
-              attacker.style.zIndex = prevZ;
-              attacker.style.willChange = prevWill;
-              attacker.style.transform = prevTransform;
-            } catch {}
-          }, 300);
-        }, 280);
-      }
-    } catch {}
+    const cleanup = () => {
+      try {
+        moveEl.style.zIndex = prevZ;
+        moveEl.style.willChange = prevWill;
+        moveEl.style.transition = prevTransition;
+        moveEl.style.transform = prevTransform;
+      } catch {}
+    };
+
+    // Prefer WAAPI; fallback to transition for Telegram WebView weirdness.
+    const anyEl = moveEl as any;
+    if (typeof anyEl.animate === 'function') {
+      const anim = anyEl.animate(
+        [{ transform: start }, { transform: mid }, { transform: start }],
+        { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
+      );
+      anim.onfinish = cleanup;
+    } else {
+      moveEl.style.transition = 'transform 160ms cubic-bezier(.2,.8,.2,1)';
+      moveEl.style.transform = mid;
+      window.setTimeout(() => {
+        moveEl.style.transform = start;
+        window.setTimeout(cleanup, 180);
+      }, 170);
+    }
+  } catch {}
   }, []);
 
   const [dbgClick, setDbgClick] = useState<null | { nx: number; ny: number; x: number; y: number }>(null);
