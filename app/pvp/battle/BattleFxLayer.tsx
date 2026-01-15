@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 declare global {
   interface Window {
     __bb_fx_lastEventsLen?: number;
+    __bb_fx_lastEnqueue?: any;
     __bb_fx_build?: string;
 
     // Debug / testing
@@ -111,7 +112,7 @@ export default function BattleFxLayer({
 
   // ===== module init =====
   if (typeof window !== 'undefined') {
-    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v21';
+    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v22';
     if (!window.__bb_fx_slotCenters) window.__bb_fx_slotCenters = {};
     if (!window.__bb_fx_queue) window.__bb_fx_queue = [];
   }
@@ -435,6 +436,8 @@ export default function BattleFxLayer({
           {`registrySlots: ${window.__bb_fx_regCount ?? 'n/a'}\n`}
           {`cacheKeys: ${Object.keys(window.__bb_fx_slotCenters || {}).slice(0, 10).join(',')}\n`}
           {`laneCenters: ${laneCenters ? 'yes' : 'no'}\n`}
+          {`lastEventsLen: ${(window as any).__bb_fx_lastEventsLen ?? 'n/a'}\n`}
+          {`lastEnqueue: ${((window as any).__bb_fx_lastEnqueue) ? 'yes' : 'no'}\n`}
           {`queueLen: ${queueLenState} (win=${window.__bb_fx_queueLen ?? 0})\n`}
           {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}
           {`ping: window.__bb_fx_ping()\n`}
