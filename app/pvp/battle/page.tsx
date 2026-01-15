@@ -1902,36 +1902,38 @@ const hpPct = useMemo(() => {
 
       {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
       {/* Debug UI overlay (no portal) */}
-      <div
-        style={{
-          position: "fixed",
-          right: 12,
-          bottom: 12,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setUiDebug((v) => !v)}
+      {!HIDE_VISUAL_DEBUG && (
+        <div
           style={{
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.22)",
-            background: "rgba(0,0,0,0.7)",
-            color: "white",
-            fontSize: 13,
-            fontWeight: 800,
-            letterSpacing: 0.3,
+            position: "fixed",
+            right: 12,
+            bottom: 12,
+            zIndex: 2147483647,
             pointerEvents: "auto",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
           }}
         >
-          DBG {uiDebugOn ? "ON" : "OFF"}
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => setUiDebug((v) => !v)}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.22)",
+              background: "rgba(0,0,0,0.7)",
+              color: "white",
+              fontSize: 13,
+              fontWeight: 800,
+              letterSpacing: 0.3,
+              pointerEvents: "auto",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+            }}
+          >
+            DBG {uiDebugOn ? "ON" : "OFF"}
+          </button>
+        </div>
+      )}
 
-      {isArenaDebug ? (
+      {!HIDE_VISUAL_DEBUG && isArenaDebug ? (
         <div
           style={{
             position: "fixed",
@@ -3149,10 +3151,35 @@ const hpPct = useMemo(() => {
         }}
       />
 
-      {/* DEBUG TOGGLE (always visible) */}
+      {/* DEBUG TOGGLE (hidden in clean mode) */}
+      {!HIDE_VISUAL_DEBUG && (
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            position: "fixed",
+            top: 10,
+            left: 10,
+            zIndex: 2147483647,
+            pointerEvents: "auto",
+            padding: "6px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.25)",
+            background: "rgba(0,0,0,0.55)",
+            color: "rgba(255,255,255,0.92)",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 1,
+          }}
+        >
+          DBG
+        </button>
+      )}
+
+      {/* TEST ATTACK (always visible) */}
       <button
         type="button"
-        onClick={() => setUiDebug((v) => !v)}
+        onClick={testAttackLunge}
         style={{
           position: "fixed",
           top: 10,
@@ -3169,35 +3196,10 @@ const hpPct = useMemo(() => {
           letterSpacing: 1,
         }}
       >
-        DBG
-
-      {/* TEST ATTACK (always visible) */}
-      <button
-        type="button"
-        onClick={testAttackLunge}
-        style={{
-          position: "fixed",
-          top: 10,
-          left: 62,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-          padding: "6px 10px",
-          borderRadius: 10,
-          border: "1px solid rgba(255,255,255,0.25)",
-          background: "rgba(0,0,0,0.55)",
-          color: "rgba(255,255,255,0.92)",
-          fontSize: 12,
-          fontWeight: 900,
-          letterSpacing: 1,
-        }}
-      >
         TEST
       </button>
 
-
-      </button>
-
-      {uiDebugOn && (
+      {!HIDE_VISUAL_DEBUG && uiDebugOn && (
         <div
           style={{
             position: "fixed",
@@ -3654,24 +3656,25 @@ export default function BattlePage() {
   if (!mounted) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-{/* DBG_ALWAYS_V10: if you don't see this magenta label, you're not running this page.tsx */}
-<div
-  style={{
-    position: "fixed",
-    top: 8,
-    right: 8,
-    zIndex: 2147483647,
-    background: "rgba(0,0,0,0.75)",
-    color: "#ff00ff",
-    padding: "6px 10px",
-    borderRadius: 10,
-    fontWeight: 900,
-    fontSize: 14,
-    pointerEvents: "none",
-  }}
->
-  DBG_ALWAYS_V10
-</div>
+	{!HIDE_VISUAL_DEBUG && (
+	  <div
+	    style={{
+	      position: "fixed",
+	      top: 8,
+	      right: 8,
+	      zIndex: 2147483647,
+	      background: "rgba(0,0,0,0.75)",
+	      color: "#ff00ff",
+	      padding: "6px 10px",
+	      borderRadius: 10,
+	      fontWeight: 900,
+	      fontSize: 14,
+	      pointerEvents: "none",
+	    }}
+	  >
+	    DBG_ALWAYS_V10
+	  </div>
+	)}
 
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загрузка…</div>
