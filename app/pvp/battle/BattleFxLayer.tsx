@@ -32,6 +32,7 @@ declare global {
     // v23 debug
     __bb_fx_lastAttackLikeLen?: number;
     __bb_fx_lastEnqueue?: any;
+    __bb_fx_lastPlayed?: any;
   }
 }
 
@@ -108,7 +109,7 @@ export default function BattleFxLayer({
   const centersRef = useRef<NonNullable<Window['__bb_fx_slotCenters']>>({});
 
   if (typeof window !== 'undefined') {
-    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v23';
+    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v24';
     if (!window.__bb_fx_slotCenters) window.__bb_fx_slotCenters = {};
     if (!window.__bb_fx_queue) window.__bb_fx_queue = [];
   }
@@ -236,11 +237,45 @@ export default function BattleFxLayer({
     return true;
   };
 
+
+  const flashAt = (p: { x: number; y: number }) => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    const ring = document.createElement('div');
+    ring.style.position = 'fixed';
+    ring.style.left = `${p.x - 40}px`;
+    ring.style.top = `${p.y - 40}px`;
+    ring.style.width = '80px';
+    ring.style.height = '80px';
+    ring.style.borderRadius = '999px';
+    ring.style.border = '4px solid rgba(255,0,170,0.95)';
+    ring.style.boxShadow = '0 0 28px rgba(255,0,170,0.85)';
+    ring.style.pointerEvents = 'none';
+    ring.style.zIndex = '2147483647';
+    ring.style.willChange = 'transform, opacity';
+    overlay.appendChild(ring);
+
+    const anim = ring.animate(
+      [
+        { transform: 'scale(0.4)', opacity: 0.95 },
+        { transform: 'scale(1.1)', opacity: 0.7 },
+        { transform: 'scale(1.4)', opacity: 0 },
+      ],
+      { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
+    );
+    anim.onfinish = () => {
+      try { ring.remove(); } catch {}
+    };
+  };
+
   const playOnce = (attackerSlot: string, targetSlot: string) => {
     const a = resolvePoint(attackerSlot);
     const b = resolvePoint(targetSlot);
     if (!a || !b) return false;
-    return flyDot(a, b);
+    (window as any).__bb_fx_lastPlayed = { ts: Date.now(), from: attackerSlot, to: targetSlot, ax: a.x, ay: a.y, bx: b.x, by: b.y };
+    const ok = flyDot(a, b);
+    flashAt(b);
+    return ok;
   };
 
   // Scheduler ticker
@@ -430,6 +465,7 @@ export default function BattleFxLayer({
           {`queueLen: ${queueLenState} (win=${window.__bb_fx_queueLen ?? 0})\n`}
           {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}
           {`ping: window.__bb_fx_ping()\n`}
+          {`lastPlayed: ${(window as any).__bb_fx_lastPlayed ? `${(window as any).__bb_fx_lastPlayed.from}->${(window as any).__bb_fx_lastPlayed.to}` : 'n/a'}\n`}
           {`lastFail: window.__bb_fx_lastFail\n`}
         </div>
       ) : null}
