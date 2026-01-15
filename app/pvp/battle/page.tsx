@@ -378,54 +378,86 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const testAttackLunge = useCallback(() => {
     try {
-      const pickSide = (side: 'p1' | 'p2') => {
-        const preferred = document.querySelector(`[data-bb-slot="${side}:0"]`) as HTMLElement | null;
-        if (preferred) return preferred;
-        const nodes = Array.from(document.querySelectorAll(`[data-bb-slot^="${side}:"]`)) as HTMLElement[];
-        for (const n of nodes) {
-          const r = n.getBoundingClientRect();
-          if (r.width > 0 && r.height > 0) return n;
-        }
-        return null;
-      };
+      // Pick a "bottom" slot as attacker and a "top" slot as target by screen Y,
+      // because p1/p2 can swap depending on who is you in the match.
+      const nodes = Array.from(document.querySelectorAll('[data-bb-slot]')) as HTMLElement[];
+      const usable = nodes
+        .map((el) => ({ el, r: el.getBoundingClientRect() }))
+        .filter(({ r }) => r.width > 10 && r.height > 10);
 
-      const fromEl = pickSide('p1');
-      const toEl = pickSide('p2');
-      if (!fromEl || !toEl) return;
+      if (!usable.length) return;
 
-      const a = fromEl.getBoundingClientRect();
-      const b = toEl.getBoundingClientRect();
-      const ax = a.left + a.width / 2;
-      const ay = a.top + a.height / 2;
-      const bx = b.left + b.width / 2;
-      const by = b.top + b.height / 2;
+      // Use arena container if present for a better midpoint, else viewport midpoint.
+      const arenaEl = document.querySelector('[data-bb-arena="1"]') as HTMLElement | null;
+      const midY = arenaEl ? arenaEl.getBoundingClientRect().top + arenaEl.getBoundingClientRect().height / 2 : window.innerHeight / 2;
 
-      const dx = (bx - ax) * 0.35;
-      const dy = (by - ay) * 0.35;
+      const bottoms = usable.filter(({ r }) => r.top + r.height / 2 > midY).sort((a, b) => a.r.left - b.r.left);
+      const tops = usable.filter(({ r }) => r.top + r.height / 2 <= midY).sort((a, b) => a.r.left - b.r.left);
 
-      const prevZ = fromEl.style.zIndex;
-      const prevWill = fromEl.style.willChange;
-      const prevTransform = fromEl.style.transform;
+      const attacker = (bottoms[0] || usable[0]).el;
+      const target = (tops[0] || usable[usable.length - 1]).el;
 
-      fromEl.style.willChange = 'transform';
-      fromEl.style.zIndex = '999999';
+      const ar = attacker.getBoundingClientRect();
+      const tr = target.getBoundingClientRect();
 
-      const anim = fromEl.animate(
-        [
-          { transform: prevTransform || 'translate3d(0px,0px,0px)' },
-          { transform: `translate3d(${dx}px, ${dy}px, 0px) scale(1.04)` },
-          { transform: prevTransform || 'translate3d(0px,0px,0px)' },
-        ],
-        { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
-      );
+      const ax = ar.left + ar.width / 2;
+      const ay = ar.top + ar.height / 2;
+      const tx = tr.left + tr.width / 2;
+      const ty = tr.top + tr.height / 2;
 
-      anim.onfinish = () => {
-        try {
-          fromEl.style.zIndex = prevZ;
-          fromEl.style.willChange = prevWill;
-          fromEl.style.transform = prevTransform;
-        } catch {}
-      };
+      // Big, visible lunge (but still returns back)
+      const dx = (tx - ax) * 0.85;
+      const dy = (ty - ay) * 0.85;
+
+      const prevZ = attacker.style.zIndex;
+      const prevWill = attacker.style.willChange;
+      const prevTransform = attacker.style.transform;
+
+      attacker.style.willChange = 'transform';
+      attacker.style.zIndex = '99999';
+
+      const base = prevTransform && prevTransform.trim().length ? prevTransform : 'translate3d(0px,0px,0px)';
+
+      // Prefer WAAPI; fallback to CSS transition for older WebViews.
+      const canAnimate = typeof (attacker as any).animate === 'function';
+
+      if (canAnimate) {
+        const anim = attacker.animate(
+          [
+            { transform: base },
+            { transform: `translate3d(${dx}px, ${dy}px, 0px) scale(1.06)` },
+            { transform: `translate3d(${dx}px, ${dy}px, 0px) scale(1.06)` },
+            { transform: base },
+          ],
+          { duration: 520, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
+        );
+
+        const cleanup = () => {
+          try {
+            attacker.style.zIndex = prevZ;
+            attacker.style.willChange = prevWill;
+            attacker.style.transform = prevTransform;
+          } catch {}
+        };
+
+        anim.onfinish = cleanup;
+        anim.oncancel = cleanup;
+      } else {
+        // Fallback: transition
+        attacker.style.transition = 'transform 260ms cubic-bezier(.2,.8,.2,1)';
+        attacker.style.transform = `translate3d(${dx}px, ${dy}px, 0px) scale(1.06)`;
+        window.setTimeout(() => {
+          attacker.style.transform = base;
+          window.setTimeout(() => {
+            try {
+              attacker.style.transition = '';
+              attacker.style.zIndex = prevZ;
+              attacker.style.willChange = prevWill;
+              attacker.style.transform = prevTransform;
+            } catch {}
+          }, 300);
+        }, 280);
+      }
     } catch {}
   }, []);
 
