@@ -96,6 +96,7 @@ export default function BattleFxLayer({
       return false;
     }
   });
+  const [queueLenState, setQueueLenState] = useState<number>(() => (window.__bb_fx_queueLen ?? 0));
 
   const [mounted, setMounted] = useState(false);
   const portalRootRef = useRef<HTMLElement | null>(null);
@@ -103,14 +104,13 @@ export default function BattleFxLayer({
 
   const playingUntilRef = useRef<number>(0);
   const lastSeenRef = useRef<string>('');
-  const lastProcessedIdxRef = useRef<number>(-1);
 
   const queueRef = useRef<NonNullable<Window['__bb_fx_queue']>>([]);
   const centersRef = useRef<NonNullable<Window['__bb_fx_slotCenters']>>({});
 
   // ===== module init =====
   if (typeof window !== 'undefined') {
-    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v19';
+    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v20';
     if (!window.__bb_fx_slotCenters) window.__bb_fx_slotCenters = {};
     if (!window.__bb_fx_queue) window.__bb_fx_queue = [];
   }
@@ -193,7 +193,7 @@ export default function BattleFxLayer({
       return { x: c.x, y: c.y };
     }
 
-    // 3) page-provided deterministic centers (best fallback)
+    // 3) page-provided deterministic centers
     const lc = laneCenters?.[slotKey];
     if (lc) return { x: lc.x, y: lc.y };
 
@@ -258,6 +258,8 @@ export default function BattleFxLayer({
       // persist queue len
       window.__bb_fx_queueLen = queueRef.current.length;
       window.__bb_fx_queue = queueRef.current.slice();
+      setQueueLenState(queueRef.current.length);
+      setQueueLenState(queueRef.current.length);
 
       // if playing, wait
       if (now < playingUntilRef.current) return;
@@ -287,15 +289,12 @@ export default function BattleFxLayer({
         return;
       }
 
-      if (debug) {
-        // eslint-disable-next-line no-console
-        console.debug('[BB FX] scheduler played', { from: next.attackerSlot, to: next.targetSlot, queueLen: queueRef.current.length });
-      }
       // success: consume + set playing window
       queueRef.current.shift();
       playingUntilRef.current = now + FX_DURATION_MS + FX_GAP_MS;
       window.__bb_fx_queueLen = queueRef.current.length;
       window.__bb_fx_queue = queueRef.current.slice();
+      setQueueLenState(queueRef.current.length);
     }, TICK_MS);
 
     return () => window.clearInterval(t);
@@ -315,61 +314,56 @@ export default function BattleFxLayer({
   useEffect(() => {
     if (!attackLike.length) return;
 
-    // Enqueue ALL new attack-like events since last render (do not rely on "latest only").
-    const start = Math.max(0, lastProcessedIdxRef.current + 1);
-    const end = attackLike.length - 1;
-    if (start > end) return;
+    const idx = attackLike.length - 1;
+    const last = attackLike[idx];
+    if (!last || typeof last !== 'object') return;
 
-    for (let idx = start; idx <= end; idx++) {
-      const e = attackLike[idx];
-      if (!e || typeof e !== 'object') continue;
+    const key = `${idx}:${String(last.type ?? '')}:${String(last.attackerId ?? '')}>${String(last.targetId ?? '')}`;
+    if (key === lastSeenRef.current) return;
+    lastSeenRef.current = key;
 
-      const key = `${idx}:${String(e.type ?? '')}:${String(e.attackerId ?? '')}>${String(e.targetId ?? '')}`;
-      // De-dupe by key across remounts/fast rerenders
-      if (queueRef.current.some((x) => x.k === key)) continue;
+    const attackerSlot = last.attackerSlot || extractSlotKey(String(last.attackerId ?? ''));
+    const targetSlot = last.targetSlot || extractSlotKey(String(last.targetId ?? ''));
 
-      const attackerSlot = e.attackerSlot || extractSlotKey(String(e.attackerId ?? ''));
-      const targetSlot = e.targetSlot || extractSlotKey(String(e.targetId ?? ''));
+    if (debug) {
+      window.__bb_fx_lastAtk = last;
+      window.__bb_fx_atkCount = attackLike.length;
+      // eslint-disable-next-line no-console
+      console.debug('[BB FX] enqueue attack', { idx, type: last.type, attackerSlot, targetSlot });
+    }
 
-      if (!attackerSlot || !targetSlot) {
-        if (debug) {
-          window.__bb_fx_lastFail = {
-            reason: 'cannot_extract_slot',
-            idx,
-            type: String(e.type ?? ''),
-            attackerId: e.attackerId,
-            targetId: e.targetId,
-          };
-          // eslint-disable-next-line no-console
-          console.warn('[BB FX] cannot extract slot', window.__bb_fx_lastFail);
-        }
-        continue;
+    if (!attackerSlot || !targetSlot) {
+      if (debug) {
+        window.__bb_fx_lastFail = {
+          reason: 'cannot_extract_slot',
+          idx,
+          type: String(last.type ?? ''),
+          attackerId: last.attackerId,
+          targetId: last.targetId,
+        };
+        // eslint-disable-next-line no-console
+        console.warn('[BB FX] cannot extract slot', window.__bb_fx_lastFail);
       }
+      return;
+    }
 
-      const now = Date.now();
-      const q = {
-        k: key,
-        attackerSlot,
-        targetSlot,
-        createdAt: now,
-        expiresAt: now + FX_WINDOW_MS,
-        type: String(e.type ?? ''),
-        idx,
-      };
+    const now = Date.now();
+    const q = {
+      k: key,
+      attackerSlot,
+      targetSlot,
+      createdAt: now,
+      expiresAt: now + FX_WINDOW_MS,
+      type: String(last.type ?? ''),
+      idx,
+    };
 
+    // de-dupe queue by key
+    if (!queueRef.current.some((x) => x.k === q.k)) {
       queueRef.current.push(q);
       window.__bb_fx_queue = queueRef.current.slice();
       window.__bb_fx_queueLen = queueRef.current.length;
-
-      if (debug) {
-        window.__bb_fx_lastAtk = e;
-        window.__bb_fx_atkCount = attackLike.length;
-        // eslint-disable-next-line no-console
-        console.debug('[BB FX] enqueued', { idx, from: attackerSlot, to: targetSlot, queueLen: queueRef.current.length });
-      }
     }
-
-    lastProcessedIdxRef.current = end;
   }, [attackLike, debug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ===== debug helpers =====
@@ -440,7 +434,7 @@ export default function BattleFxLayer({
           {`registrySlots: ${window.__bb_fx_regCount ?? 'n/a'}\n`}
           {`cacheKeys: ${Object.keys(window.__bb_fx_slotCenters || {}).slice(0, 10).join(',')}\n`}
           {`laneCenters: ${laneCenters ? 'yes' : 'no'}\n`}
-          {`queueLen: ${window.__bb_fx_queueLen ?? 0}\n`}
+          {`queueLen: ${queueLenState} (win=${window.__bb_fx_queueLen ?? 0})\n`}
           {`manual: window.__bb_fx_testFly('p1:0','p2:0')\n`}
           {`ping: window.__bb_fx_ping()\n`}
           {`lastFail: window.__bb_fx_lastFail\n`}
