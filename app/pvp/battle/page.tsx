@@ -1,7 +1,7 @@
 "use client";
 // @ts-nocheck
 
-import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import React, {Suspense, useEffect, useMemo, useRef, useState, useCallback} from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
@@ -372,6 +372,59 @@ function BattleInner() {
   // Debug UI is rendered directly in JSX (no portals/DOM mutations).
 const isArenaDebug = DEBUG_ARENA || uiDebug;
   const isGridDebug = DEBUG_GRID || uiDebug;
+
+  const testAttackLunge = useCallback(() => {
+    try {
+      const pickSide = (side: 'p1' | 'p2') => {
+        const preferred = document.querySelector(`[data-bb-slot="${side}:0"]`) as HTMLElement | null;
+        if (preferred) return preferred;
+        const nodes = Array.from(document.querySelectorAll(`[data-bb-slot^="${side}:"]`)) as HTMLElement[];
+        for (const n of nodes) {
+          const r = n.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) return n;
+        }
+        return null;
+      };
+
+      const fromEl = pickSide('p1');
+      const toEl = pickSide('p2');
+      if (!fromEl || !toEl) return;
+
+      const a = fromEl.getBoundingClientRect();
+      const b = toEl.getBoundingClientRect();
+      const ax = a.left + a.width / 2;
+      const ay = a.top + a.height / 2;
+      const bx = b.left + b.width / 2;
+      const by = b.top + b.height / 2;
+
+      const dx = (bx - ax) * 0.35;
+      const dy = (by - ay) * 0.35;
+
+      const prevZ = fromEl.style.zIndex;
+      const prevWill = fromEl.style.willChange;
+      const prevTransform = fromEl.style.transform;
+
+      fromEl.style.willChange = 'transform';
+      fromEl.style.zIndex = '999999';
+
+      const anim = fromEl.animate(
+        [
+          { transform: prevTransform || 'translate3d(0px,0px,0px)' },
+          { transform: `translate3d(${dx}px, ${dy}px, 0px) scale(1.04)` },
+          { transform: prevTransform || 'translate3d(0px,0px,0px)' },
+        ],
+        { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }
+      );
+
+      anim.onfinish = () => {
+        try {
+          fromEl.style.zIndex = prevZ;
+          fromEl.style.willChange = prevWill;
+          fromEl.style.transform = prevTransform;
+        } catch {}
+      };
+    } catch {}
+  }, []);
 
   const [dbgClick, setDbgClick] = useState<null | { nx: number; ny: number; x: number; y: number }>(null);
 
@@ -1578,8 +1631,13 @@ const hpPct = useMemo(() => {
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
     return (
-      <div data-bb-slot={slotKey} className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
-        <div className="bb-motion-layer" data-fx-motion="1" style={{ willChange: "transform" }}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+        <div
+          data-bb-slot={slotKey}
+          className="bb-motion-layer bb-card-root"
+          data-fx-motion="1"
+          style={{ willChange: "transform" }}
+        >
       <div className="bb-fx-anchor">
         
         {isDyingUi ? <div className="bb-death" /> : null}
@@ -1686,7 +1744,6 @@ const hpPct = useMemo(() => {
 
             </div>
         </div>
-      </div>
       {renderUnit && (
         <div className="bb-hud" aria-hidden="true">
           <span className="bb-hud-item">
@@ -1700,6 +1757,8 @@ const hpPct = useMemo(() => {
           </span>
         </div>
       )}
+
+      </div>
 
       <style jsx>{`
         .bb-hud {
@@ -3094,6 +3153,31 @@ const hpPct = useMemo(() => {
         }}
       >
         DBG
+
+      {/* TEST ATTACK (always visible) */}
+      <button
+        type="button"
+        onClick={testAttackLunge}
+        style={{
+          position: "fixed",
+          top: 10,
+          left: 62,
+          zIndex: 2147483647,
+          pointerEvents: "auto",
+          padding: "6px 10px",
+          borderRadius: 10,
+          border: "1px solid rgba(255,255,255,0.25)",
+          background: "rgba(0,0,0,0.55)",
+          color: "rgba(255,255,255,0.92)",
+          fontSize: 12,
+          fontWeight: 900,
+          letterSpacing: 1,
+        }}
+      >
+        TEST
+      </button>
+
+
       </button>
 
       {uiDebug && (
