@@ -378,31 +378,58 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const testAttackLunge = useCallback(() => {
     try {
-      // Move EXACTLY ONE card (the element that actually carries data-bb-slot)
-      const slotNodes = Array.from(document.querySelectorAll('[data-bb-slot]')) as HTMLElement[];
+      // Move ONE attacking card (CardRoot / slot element carrying data-bb-slot) towards ONE target and back.
+      const allSlots = Array.from(document.querySelectorAll('[data-bb-slot]')) as HTMLElement[];
+      if (!allSlots.length) return;
+
+      // Prefer slots that actually contain a unit/card.
+      const slotsWithUnit = allSlots.filter((el) => {
+        // Heuristic: a real occupied slot usually has .bb-card.has-unit somewhere inside.
+        const hasUnit = !!el.querySelector('.bb-card.has-unit') || !!el.querySelector('.bb-card');
+        // Ignore fully hidden slots
+        const cs = window.getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+        return hasUnit;
+      });
+
+      const slotNodes = (slotsWithUnit.length ? slotsWithUnit : allSlots)
+        .map((el) => ({ el, r: el.getBoundingClientRect() }))
+        .filter((x) => x.r.width > 0 && x.r.height > 0);
+
       if (!slotNodes.length) return;
 
       // Split into top/bottom rows by median Y
-      const rects = slotNodes.map((el) => ({ el, r: el.getBoundingClientRect() })).filter((x) => x.r.width > 0 && x.r.height > 0);
-      if (!rects.length) return;
-
-      const ys = rects.map((x) => x.r.top + x.r.height / 2).sort((a, b) => a - b);
+      const ys = slotNodes.map((x) => x.r.top + x.r.height / 2).sort((a, b) => a - b);
       const midY = ys[Math.floor(ys.length / 2)];
 
-      const topRow = rects.filter((x) => x.r.top + x.r.height / 2 < midY).sort((a, b) => a.r.left - b.r.left);
-      const botRow = rects.filter((x) => x.r.top + x.r.height / 2 >= midY).sort((a, b) => a.r.left - b.r.left);
+      const topRow = slotNodes
+        .filter((x) => x.r.top + x.r.height / 2 < midY)
+        .sort((a, b) => a.r.left - b.r.left);
 
-      // Prefer p1:0 -> p2:0, but fall back to "leftmost bottom" -> "leftmost top"
-      const preferredAttacker = (document.querySelector('[data-bb-slot="p1:0"]') as HTMLElement | null) || (document.querySelector('[data-bb-slot="p2:0"]') as HTMLElement | null);
-      const preferredTarget = (document.querySelector('[data-bb-slot="p2:0"]') as HTMLElement | null) || (document.querySelector('[data-bb-slot="p1:0"]') as HTMLElement | null);
+      const botRow = slotNodes
+        .filter((x) => x.r.top + x.r.height / 2 >= midY)
+        .sort((a, b) => a.r.left - b.r.left);
 
-      const attackerEl =
-        (preferredAttacker && botRow.some((x) => x.el === preferredAttacker) ? preferredAttacker : null) ||
-        (botRow[0]?.el ?? rects[0].el);
+      // Choose attacker: left-most in bottom row. Target: closest aligned in top row (or left-most top).
+      const attackerEl = botRow[0]?.el ?? slotNodes[0].el;
+      let targetEl: HTMLElement | null = topRow[0]?.el ?? null;
 
-      const targetEl =
-        (preferredTarget && topRow.some((x) => x.el === preferredTarget) ? preferredTarget : null) ||
-        (topRow[0]?.el ?? rects[0].el);
+      if (targetEl && botRow.length && topRow.length) {
+        const a = attackerEl.getBoundingClientRect();
+        const ax = a.left + a.width / 2;
+        // pick target with closest X to attacker
+        let best = topRow[0].el;
+        let bestDx = Infinity;
+        for (const t of topRow) {
+          const bx = t.r.left + t.r.width / 2;
+          const d = Math.abs(bx - ax);
+          if (d < bestDx) {
+            bestDx = d;
+            best = t.el;
+          }
+        }
+        targetEl = best;
+      }
 
       if (!attackerEl || !targetEl || attackerEl === targetEl) return;
 
@@ -413,34 +440,46 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       const bx = b.left + b.width / 2;
       const by = b.top + b.height / 2;
 
-      // Big, obvious move towards opponent
-      const dx = (bx - ax) * 0.85;
-      const dy = (by - ay) * 0.85;
+      // Strong, visible lunge (but not full overlap)
+      const dx = (bx - ax) * 0.78;
+      const dy = (by - ay) * 0.78;
 
-      // Animate ONLY attacker element
       const moveEl = attackerEl;
 
       const prevTransform = moveEl.style.transform;
+      const prevTransition = moveEl.style.transition;
       const prevWill = moveEl.style.willChange;
       const prevZ = moveEl.style.zIndex;
 
+      // Ensure we animate only this element and don't affect others
       moveEl.style.willChange = 'transform';
       moveEl.style.zIndex = '99999';
 
-      // Fallback-safe animation (works in Telegram WebView too)
-      moveEl.style.transition = 'transform 220ms cubic-bezier(.2,.8,.2,1)';
-      moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+      // Two-phase transition: out -> back (WAAPI is flaky in some WebViews)
+      // Phase 1: go to target
+      moveEl.style.transition = 'transform 180ms cubic-bezier(.18,.9,.22,1)';
+      // Force reflow so transition always triggers
+      void moveEl.offsetHeight;
+      moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0px) scale(1.05)`;
+
+      // Optional impact on target (single element) without moving other cards
+      targetEl.classList.add('is-attack-to');
 
       window.setTimeout(() => {
-        moveEl.style.transform = prevTransform || '';
+        // Phase 2: return back
+        moveEl.style.transition = 'transform 170ms cubic-bezier(.2,.0,.2,1)';
+        void moveEl.offsetHeight;
+        moveEl.style.transform = prevTransform || 'translate3d(0px,0px,0px)';
+
         window.setTimeout(() => {
           try {
-            moveEl.style.transition = '';
+            targetEl.classList.remove('is-attack-to');
+            moveEl.style.transition = prevTransition || '';
             moveEl.style.willChange = prevWill;
             moveEl.style.zIndex = prevZ;
           } catch {}
-        }, 240);
-      }, 240);
+        }, 220);
+      }, 210);
     } catch {}
   }, []);
   const [dbgClick, setDbgClick] = useState<null | { nx: number; ny: number; x: number; y: number }>(null);
@@ -1648,7 +1687,13 @@ const hpPct = useMemo(() => {
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
     return (
-      <div data-bb-slot={slotKey} data-fx-motion="1" style={{ willChange: "transform" }} className={["bb-slot","bb-motion-layer","bb-card-root", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+        <div
+          data-bb-slot={slotKey}
+          className="bb-motion-layer bb-card-root"
+          data-fx-motion="1"
+          style={{ willChange: "transform" }}
+        >
       <div className="bb-fx-anchor">
         
         {isDyingUi ? <div className="bb-death" /> : null}
@@ -1720,7 +1765,9 @@ const hpPct = useMemo(() => {
                     POW <b className="tabular-nums">{power}</b>
                   </span>
                 )}
-      {renderUnit && (
+              </div>
+
+              {renderUnit && (
                 <div className="bb-bars">
                   <div className="bb-bar bb-bar--hp">
                     <div style={{ width: `${hpPct}%` }} />
