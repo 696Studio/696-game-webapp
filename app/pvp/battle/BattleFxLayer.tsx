@@ -103,13 +103,14 @@ export default function BattleFxLayer({
 
   const playingUntilRef = useRef<number>(0);
   const lastSeenRef = useRef<string>('');
+  const lastProcessedIdxRef = useRef<number>(-1);
 
   const queueRef = useRef<NonNullable<Window['__bb_fx_queue']>>([]);
   const centersRef = useRef<NonNullable<Window['__bb_fx_slotCenters']>>({});
 
   // ===== module init =====
   if (typeof window !== 'undefined') {
-    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v18';
+    window.__bb_fx_build = 'BattleFxLayer.portal.scheduler.v19';
     if (!window.__bb_fx_slotCenters) window.__bb_fx_slotCenters = {};
     if (!window.__bb_fx_queue) window.__bb_fx_queue = [];
   }
@@ -209,10 +210,10 @@ export default function BattleFxLayer({
 
     const dot = document.createElement('div');
     dot.style.position = 'fixed';
-    dot.style.left = `${from.x - 10}px`;
-    dot.style.top = `${from.y - 10}px`;
-    dot.style.width = '20px';
-    dot.style.height = '20px';
+    dot.style.left = `${from.x - 14}px`;
+    dot.style.top = `${from.y - 14}px`;
+    dot.style.width = '28px';
+    dot.style.height = '28px';
     dot.style.borderRadius = '999px';
     dot.style.background = 'rgba(255,0,170,0.95)';
     dot.style.boxShadow = '0 0 22px rgba(255,0,170,0.8)';
@@ -286,6 +287,10 @@ export default function BattleFxLayer({
         return;
       }
 
+      if (debug) {
+        // eslint-disable-next-line no-console
+        console.debug('[BB FX] scheduler played', { from: next.attackerSlot, to: next.targetSlot, queueLen: queueRef.current.length });
+      }
       // success: consume + set playing window
       queueRef.current.shift();
       playingUntilRef.current = now + FX_DURATION_MS + FX_GAP_MS;
@@ -310,56 +315,61 @@ export default function BattleFxLayer({
   useEffect(() => {
     if (!attackLike.length) return;
 
-    const idx = attackLike.length - 1;
-    const last = attackLike[idx];
-    if (!last || typeof last !== 'object') return;
+    // Enqueue ALL new attack-like events since last render (do not rely on "latest only").
+    const start = Math.max(0, lastProcessedIdxRef.current + 1);
+    const end = attackLike.length - 1;
+    if (start > end) return;
 
-    const key = `${idx}:${String(last.type ?? '')}:${String(last.attackerId ?? '')}>${String(last.targetId ?? '')}`;
-    if (key === lastSeenRef.current) return;
-    lastSeenRef.current = key;
+    for (let idx = start; idx <= end; idx++) {
+      const e = attackLike[idx];
+      if (!e || typeof e !== 'object') continue;
 
-    const attackerSlot = last.attackerSlot || extractSlotKey(String(last.attackerId ?? ''));
-    const targetSlot = last.targetSlot || extractSlotKey(String(last.targetId ?? ''));
+      const key = `${idx}:${String(e.type ?? '')}:${String(e.attackerId ?? '')}>${String(e.targetId ?? '')}`;
+      // De-dupe by key across remounts/fast rerenders
+      if (queueRef.current.some((x) => x.k === key)) continue;
 
-    if (debug) {
-      window.__bb_fx_lastAtk = last;
-      window.__bb_fx_atkCount = attackLike.length;
-      // eslint-disable-next-line no-console
-      console.debug('[BB FX] enqueue attack', { idx, type: last.type, attackerSlot, targetSlot });
-    }
+      const attackerSlot = e.attackerSlot || extractSlotKey(String(e.attackerId ?? ''));
+      const targetSlot = e.targetSlot || extractSlotKey(String(e.targetId ?? ''));
 
-    if (!attackerSlot || !targetSlot) {
-      if (debug) {
-        window.__bb_fx_lastFail = {
-          reason: 'cannot_extract_slot',
-          idx,
-          type: String(last.type ?? ''),
-          attackerId: last.attackerId,
-          targetId: last.targetId,
-        };
-        // eslint-disable-next-line no-console
-        console.warn('[BB FX] cannot extract slot', window.__bb_fx_lastFail);
+      if (!attackerSlot || !targetSlot) {
+        if (debug) {
+          window.__bb_fx_lastFail = {
+            reason: 'cannot_extract_slot',
+            idx,
+            type: String(e.type ?? ''),
+            attackerId: e.attackerId,
+            targetId: e.targetId,
+          };
+          // eslint-disable-next-line no-console
+          console.warn('[BB FX] cannot extract slot', window.__bb_fx_lastFail);
+        }
+        continue;
       }
-      return;
-    }
 
-    const now = Date.now();
-    const q = {
-      k: key,
-      attackerSlot,
-      targetSlot,
-      createdAt: now,
-      expiresAt: now + FX_WINDOW_MS,
-      type: String(last.type ?? ''),
-      idx,
-    };
+      const now = Date.now();
+      const q = {
+        k: key,
+        attackerSlot,
+        targetSlot,
+        createdAt: now,
+        expiresAt: now + FX_WINDOW_MS,
+        type: String(e.type ?? ''),
+        idx,
+      };
 
-    // de-dupe queue by key
-    if (!queueRef.current.some((x) => x.k === q.k)) {
       queueRef.current.push(q);
       window.__bb_fx_queue = queueRef.current.slice();
       window.__bb_fx_queueLen = queueRef.current.length;
+
+      if (debug) {
+        window.__bb_fx_lastAtk = e;
+        window.__bb_fx_atkCount = attackLike.length;
+        // eslint-disable-next-line no-console
+        console.debug('[BB FX] enqueued', { idx, from: attackerSlot, to: targetSlot, queueLen: queueRef.current.length });
+      }
     }
+
+    lastProcessedIdxRef.current = end;
   }, [attackLike, debug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ===== debug helpers =====
