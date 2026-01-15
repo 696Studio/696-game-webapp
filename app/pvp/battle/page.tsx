@@ -9,6 +9,8 @@ import CardArt from "../../components/CardArt";
 
 import BattleFxLayer from './BattleFxLayer';
 
+const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (leave only TEST)
+
 type MatchRow = {
   id: string;
   mode: string | null;
@@ -370,8 +372,9 @@ function BattleInner() {
   const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
 
   // Debug UI is rendered directly in JSX (no portals/DOM mutations).
-const isArenaDebug = DEBUG_ARENA || uiDebug;
-  const isGridDebug = DEBUG_GRID || uiDebug;
+const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
+  const isArenaDebug = DEBUG_ARENA || uiDebugOn;
+  const isGridDebug = DEBUG_GRID || uiDebugOn;
 
   const testAttackLunge = useCallback(() => {
     try {
@@ -1850,6 +1853,7 @@ const hpPct = useMemo(() => {
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -1876,7 +1880,7 @@ const hpPct = useMemo(() => {
             letterSpacing: 0.3,
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -1892,8 +1896,9 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
-      <BattleFxLayer events={fxEvents} />
+      {!HIDE_VISUAL_DEBUG ? <BattleFxLayer events={fxEvents} /> : null}
 
       {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
       {/* Debug UI overlay (no portal) */}
@@ -1922,7 +1927,7 @@ const hpPct = useMemo(() => {
             boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
       </div>
 
@@ -1956,7 +1961,9 @@ const hpPct = useMemo(() => {
               <div>
                 offsetX/Y: {Math.round(debugCover.offsetX)},{Math.round(debugCover.offsetY)}
               </div>
+{!HIDE_VISUAL_DEBUG && (
               <div>scale: {debugCover.scale.toFixed(4)}</div>
+)}
               <div style={{ marginTop: 6, opacity: 0.9 }}>
                 Tap arena → nx/ny: {dbgClick ? `${dbgClick.nx.toFixed(4)} / ${dbgClick.ny.toFixed(4)}` : "—"}
               </div>
@@ -1967,7 +1974,7 @@ const hpPct = useMemo(() => {
         </div>
       ) : null}
 
-{uiDebug && (
+{uiDebugOn && (
         <div
           className="bb-debug-hud"
           style={{
@@ -2035,6 +2042,7 @@ const hpPct = useMemo(() => {
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2061,7 +2069,7 @@ const hpPct = useMemo(() => {
             letterSpacing: 0.3,
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -2077,6 +2085,7 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загрузка…</div>
@@ -2092,6 +2101,7 @@ const hpPct = useMemo(() => {
   if (timedOut || error) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2118,7 +2128,7 @@ const hpPct = useMemo(() => {
             letterSpacing: 0.3,
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -2134,6 +2144,7 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
         <div className="w-full max-w-md ui-card p-5">
           <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
@@ -2149,6 +2160,7 @@ const hpPct = useMemo(() => {
   if (errText) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2175,7 +2187,7 @@ const hpPct = useMemo(() => {
             letterSpacing: 0.3,
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -2191,6 +2203,7 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
         <div className="w-full max-w-md ui-card p-5">
           <div className="text-lg font-semibold">Ошибка</div>
@@ -2206,6 +2219,7 @@ const hpPct = useMemo(() => {
   if (!match) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2232,7 +2246,7 @@ const hpPct = useMemo(() => {
             letterSpacing: 0.3,
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -2248,6 +2262,7 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загружаю матч…</div>
@@ -2265,6 +2280,7 @@ const hpPct = useMemo(() => {
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
       {/* DBG_V11: always-visible toggle (Telegram + browser). Should be visible during battle. */}
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2292,7 +2308,7 @@ const hpPct = useMemo(() => {
             boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -2308,8 +2324,9 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
-      <BattleFxLayer events={fxEvents} />
+      {!HIDE_VISUAL_DEBUG ? <BattleFxLayer events={fxEvents} /> : null}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -3180,7 +3197,7 @@ const hpPct = useMemo(() => {
 
       </button>
 
-      {uiDebug && (
+      {uiDebugOn && (
         <div
           style={{
             position: "fixed",
