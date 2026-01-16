@@ -526,40 +526,55 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       const dx = (bx - ax) * 0.78;
       const dy = (by - ay) * 0.78;
 
+      const ease = 'cubic-bezier(.18,.9,.22,1)';
+      const outMs = 260;   // slower so it's visible
+      const backMs = 220;
+
       const moveEl = attackerRoot;
       moveEl.getAnimations?.().forEach((anim) => anim.cancel());
 
-      const ease = 'cubic-bezier(.18,.9,.22,1)';
-      const outMs = 170;
-      const backMs = 160;
+      // Keep previous inline styles so we don't permanently mutate layout
+      const prevPos = moveEl.style.position;
+      const prevWill = moveEl.style.willChange;
+      const prevZ = moveEl.style.zIndex;
+      const prevTrans = moveEl.style.transition;
+      const prevLeft = moveEl.style.left;
+      const prevTop = moveEl.style.top;
 
       moveEl.style.setProperty('position', 'relative', 'important');
       moveEl.style.setProperty('will-change', 'top,left', 'important');
       moveEl.style.setProperty('z-index', '99999', 'important');
       moveEl.style.setProperty('transition', `top ${outMs}ms ${ease}, left ${outMs}ms ${ease}`, 'important');
+
+      // Start from 0,0 so transition actually runs (avoid auto->px snap)
+      moveEl.style.setProperty('left', '0px', 'important');
+      moveEl.style.setProperty('top', '0px', 'important');
       void moveEl.offsetHeight;
-      moveEl.style.setProperty('left', `${dx}px`, 'important');
-      moveEl.style.setProperty('top', `${dy}px`, 'important');
 
       targetRoot.classList.add('is-attack-to');
 
-      window.setTimeout(() => {
-        moveEl.style.setProperty('transition', `top ${backMs}ms ${ease}, left ${backMs}ms ${ease}`, 'important');
-        void moveEl.offsetHeight;
-        moveEl.style.setProperty('left', '0px', 'important');
-        moveEl.style.setProperty('top', '0px', 'important');
+      requestAnimationFrame(() => {
+        moveEl.style.setProperty('left', `${dx}px`, 'important');
+        moveEl.style.setProperty('top', `${dy}px`, 'important');
 
         window.setTimeout(() => {
-          try {
-            targetRoot.classList.remove('is-attack-to');
-            moveEl.style.removeProperty('transition');
-            moveEl.style.removeProperty('left');
-            moveEl.style.removeProperty('top');
-            moveEl.style.removeProperty('will-change');
-            moveEl.style.removeProperty('z-index');
-          } catch {}
-        }, backMs + 40);
-      }, outMs + 40);
+          moveEl.style.setProperty('transition', `top ${backMs}ms ${ease}, left ${backMs}ms ${ease}`, 'important');
+          moveEl.style.setProperty('left', '0px', 'important');
+          moveEl.style.setProperty('top', '0px', 'important');
+
+          window.setTimeout(() => {
+            try {
+              targetRoot.classList.remove('is-attack-to');
+              moveEl.style.position = prevPos;
+              moveEl.style.willChange = prevWill;
+              moveEl.style.zIndex = prevZ;
+              moveEl.style.transition = prevTrans;
+              moveEl.style.left = prevLeft;
+              moveEl.style.top = prevTop;
+            } catch {}
+          }, backMs + 60);
+        }, outMs + 80);
+      });
     } catch {}
   }, []);
 
