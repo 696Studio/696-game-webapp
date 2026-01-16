@@ -1,23 +1,3 @@
-
-// ===== JS LUNGE (STEP C) =====
-function bbTestLunge(attackerSlot: string, targetSlot: string) {
-  const a = document.querySelector(`[data-bb-slot="${attackerSlot}"]`) as HTMLElement | null;
-  const b = document.querySelector(`[data-bb-slot="${targetSlot}"]`) as HTMLElement | null;
-  if (!a || !b) return;
-  const ar = a.getBoundingClientRect();
-  const br = b.getBoundingClientRect();
-  const dx = (br.left + br.width / 2) - (ar.left + ar.width / 2);
-  const dy = (br.top + br.height / 2) - (ar.top + ar.height / 2);
-  a.style.willChange = "transform";
-  a.style.transition = "transform 220ms cubic-bezier(.18,.9,.22,1)";
-  a.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.06)`;
-  setTimeout(() => {
-    a.style.transform = "";
-    a.style.transition = "";
-    a.style.willChange = "";
-  }, 240);
-}
-
 "use client";
 // @ts-nocheck
 
@@ -28,6 +8,31 @@ import { useGameSessionContext } from "../../context/GameSessionContext";
 import CardArt from "../../components/CardArt";
 
 import BattleFxLayer from './BattleFxLayer';
+
+
+// ===== JS LUNGE (STEP C) =====
+// Moves ONLY CardRoot ([data-bb-slot]) towards target and back.
+function bbTestLunge(attackerSlot: string, targetSlot: string) {
+  const a = document.querySelector(`[data-bb-slot="${attackerSlot}"]`) as HTMLElement | null;
+  const b = document.querySelector(`[data-bb-slot="${targetSlot}"]`) as HTMLElement | null;
+  if (!a || !b) return;
+
+  const ar = a.getBoundingClientRect();
+  const br = b.getBoundingClientRect();
+
+  const dx = (br.left + br.width / 2) - (ar.left + ar.width / 2);
+  const dy = (br.top + br.height / 2) - (ar.top + ar.height / 2);
+
+  a.style.willChange = "transform";
+  a.style.transition = "transform 220ms cubic-bezier(.18,.9,.22,1)";
+  a.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.06)`;
+
+  window.setTimeout(() => {
+    a.style.transform = "";
+    a.style.transition = "";
+    a.style.willChange = "";
+  }, 240);
+}
 
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (leave only TEST)
 
@@ -3565,10 +3570,10 @@ const hpPct = useMemo(() => {
               <div className="dbg-cross" style={{ left: debugCover.topX, top: debugCover.topY }} />
               <div className="dbg-cross" style={{ left: debugCover.botX, top: debugCover.botY }} />
             
-{process.env.NODE_ENV !== 'production' && (
+{process.env.NODE_ENV !== "production" && (
   <button
-    onClick={() => bbTestLunge('p1:0','p2:0')}
-    style={{position:'fixed',bottom:16,right:16,zIndex:9999}}
+    onClick={() => bbTestLunge("p1:0", "p2:0")}
+    style={{ position: "fixed", bottom: 16, right: 16, zIndex: 9999 }}
   >
     TEST LUNGE
   </button>
