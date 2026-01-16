@@ -3837,6 +3837,16 @@ export default function BattlePage() {
     setMounted(true);
   }, []);
 
+
+  // iOS Telegram WebView: mark root for CSS stability overrides
+  useEffect(() => {
+    if (!mounted) return;
+    if (isIosWebView()) document.documentElement.classList.add('bb-ios');
+    return () => {
+      document.documentElement.classList.remove('bb-ios');
+    };
+  }, [mounted]);
+
   if (!mounted) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
