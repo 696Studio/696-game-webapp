@@ -547,112 +547,154 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   // =========================================================
   // REAL ATTACK LUNGE (during battle timeline)
-  // FINAL: Detach (fixed) -> lunge via transform -> return -> restore.
-  // This avoids Telegram WebView/layout flakiness when animating inside slots.
+  // TG iOS WebView can be flaky with transform, so we animate
+  // the CardRoot (data-bb-slot element) via top/left.
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
-    // debug tick (kept, but no new UI added)
+    // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
     try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
 
-    try {
-      const fromCard = unitElByIdRef.current[fromId];
-      const toCard = unitElByIdRef.current[toId];
-      const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
-      const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
-      if (!attackerRoot || !targetRoot) {
-        bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}\nfoundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
-        return;
+    const fromCard = unitElByIdRef.current[fromId];
+    const toCard = unitElByIdRef.current[toId];
+    const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
+    const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
+    if (!attackerRoot || !targetRoot) {
+      bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}
+foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
+      return;
+    }
+    if (attackerRoot === targetRoot) return;
+
+    // Cancel WAAPI animations if any, so transform/transition is deterministic.
+    attackerRoot.getAnimations?.().forEach((anim) => anim.cancel());
+
+    // Create (or reuse) a top-level fixed overlay layer to avoid Telegram WebView layout/stacking issues.
+    const getOverlay = (): HTMLDivElement => {
+      const id = 'bb-anim-layer';
+      let el = document.getElementById(id) as HTMLDivElement | null;
+      if (!el) {
+        el = document.createElement('div');
+        el.id = id;
+        el.style.position = 'fixed';
+        el.style.left = '0px';
+        el.style.top = '0px';
+        el.style.right = '0px';
+        el.style.bottom = '0px';
+        el.style.pointerEvents = 'none';
+        el.style.zIndex = '2147483647';
+        // Prevent iOS Safari from creating a new stacking context that can swallow fixed children
+        el.style.transform = 'translateZ(0)';
+        document.body.appendChild(el);
       }
-      if (attackerRoot === targetRoot) return;
+      return el;
+    };
 
-      // Cancel WAAPI animations if any, so transform/transition is deterministic.
-      attackerRoot.getAnimations?.().forEach((anim) => anim.cancel());
+    const ar = attackerRoot.getBoundingClientRect();
+    const br = targetRoot.getBoundingClientRect();
+    const ax = ar.left + ar.width / 2;
+    const ay = ar.top + ar.height / 2;
+    const bx = br.left + br.width / 2;
+    const by = br.top + br.height / 2;
 
-      const ar = attackerRoot.getBoundingClientRect();
-      const br = targetRoot.getBoundingClientRect();
-      const ax = ar.left + ar.width / 2;
-      const ay = ar.top + ar.height / 2;
-      const bx = br.left + br.width / 2;
-      const by = br.top + br.height / 2;
+    const dx = (bx - ax) * 0.78;
+    const dy = (by - ay) * 0.78;
 
-      const dx = (bx - ax) * 0.78;
-      const dy = (by - ay) * 0.78;
+    const ease = 'cubic-bezier(.18,.9,.22,1)';
+    const outMs = 220;
+    const backMs = 200;
 
-      const ease = 'cubic-bezier(.18,.9,.22,1)';
-      const outMs = 220;
-      const backMs = 200;
+    // Save inline styles for full restore.
+    const prev = {
+      position: attackerRoot.style.position,
+      left: attackerRoot.style.left,
+      top: attackerRoot.style.top,
+      right: attackerRoot.style.right,
+      bottom: attackerRoot.style.bottom,
+      width: attackerRoot.style.width,
+      height: attackerRoot.style.height,
+      transform: attackerRoot.style.transform,
+      transition: attackerRoot.style.transition,
+      zIndex: attackerRoot.style.zIndex,
+      willChange: attackerRoot.style.willChange,
+      pointerEvents: attackerRoot.style.pointerEvents,
+    };
 
-      // Save current inline styles (full restore).
-      const prev = {
-        position: attackerRoot.style.position,
-        left: attackerRoot.style.left,
-        top: attackerRoot.style.top,
-        transform: attackerRoot.style.transform,
-        transition: attackerRoot.style.transition,
-        zIndex: attackerRoot.style.zIndex,
-        willChange: attackerRoot.style.willChange,
-        pointerEvents: attackerRoot.style.pointerEvents,
-        width: attackerRoot.style.width,
-        height: attackerRoot.style.height,
-      };
+    const restoreStyles = () => {
+      attackerRoot.style.position = prev.position;
+      attackerRoot.style.left = prev.left;
+      attackerRoot.style.top = prev.top;
+      attackerRoot.style.right = prev.right;
+      attackerRoot.style.bottom = prev.bottom;
+      attackerRoot.style.width = prev.width;
+      attackerRoot.style.height = prev.height;
+      attackerRoot.style.transform = prev.transform;
+      attackerRoot.style.transition = prev.transition;
+      attackerRoot.style.zIndex = prev.zIndex;
+      attackerRoot.style.willChange = prev.willChange;
+      attackerRoot.style.pointerEvents = prev.pointerEvents;
+    };
 
-      const restore = () => {
-        try {
-          attackerRoot.style.position = prev.position;
-          attackerRoot.style.left = prev.left;
-          attackerRoot.style.top = prev.top;
-          attackerRoot.style.transform = prev.transform;
-          attackerRoot.style.transition = prev.transition;
-          attackerRoot.style.zIndex = prev.zIndex;
-          attackerRoot.style.willChange = prev.willChange;
-          attackerRoot.style.pointerEvents = prev.pointerEvents;
-          attackerRoot.style.width = prev.width;
-          attackerRoot.style.height = prev.height;
-        } catch {}
-      };
+    // Re-parent (detach) the *same DOM node* into overlay, with a placeholder so we can return it.
+    const parent = attackerRoot.parentNode;
+    const nextSibling = attackerRoot.nextSibling;
+    const placeholder = document.createComment('bb-lunge-placeholder');
+    try {
+      parent?.insertBefore(placeholder, attackerRoot);
+      getOverlay().appendChild(attackerRoot);
+    } catch {
+      // If reparent fails, do nothing.
+    }
 
-      // DETACH -> FIXED (place exactly where it is right now)
-      attackerRoot.style.position = 'fixed';
-      attackerRoot.style.left = `${ar.left}px`;
-      attackerRoot.style.top = `${ar.top}px`;
-      attackerRoot.style.width = `${ar.width}px`;
-      attackerRoot.style.height = `${ar.height}px`;
-      attackerRoot.style.zIndex = '999999';
-      attackerRoot.style.pointerEvents = 'none';
-      attackerRoot.style.willChange = 'transform';
-      attackerRoot.style.transition = 'none';
-      attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+    // DETACH: fixed at the exact current screen rect.
+    attackerRoot.style.position = 'fixed';
+    attackerRoot.style.left = `${ar.left}px`;
+    attackerRoot.style.top = `${ar.top}px`;
+    attackerRoot.style.right = 'auto';
+    attackerRoot.style.bottom = 'auto';
+    attackerRoot.style.width = `${ar.width}px`;
+    attackerRoot.style.height = `${ar.height}px`;
+    attackerRoot.style.zIndex = '2147483647';
+    attackerRoot.style.pointerEvents = 'none';
+    attackerRoot.style.willChange = 'transform';
+    attackerRoot.style.transition = 'none';
+    attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
 
-      targetRoot.classList.add('is-attack-to');
+    try { targetRoot.classList.add('is-attack-to'); } catch {}
 
-      // Force style apply, then animate out.
+    // LUNGE: animate only transform.
+    requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
-          attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
-          bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
+        attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
+        attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+        try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
+        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
+
+        window.setTimeout(() => {
+          attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
+          attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
 
           window.setTimeout(() => {
-            attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
-            attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+            try { targetRoot.classList.remove('is-attack-to'); } catch {}
 
-            window.setTimeout(() => {
-              try { targetRoot.classList.remove('is-attack-to'); } catch {}
-              restore();
-            }, backMs + 70);
-          }, outMs + 70);
-        });
+            // RETURN: put the node back where it was, then restore styles.
+            try {
+              if (placeholder.parentNode) {
+                placeholder.parentNode.insertBefore(attackerRoot, placeholder);
+                placeholder.parentNode.removeChild(placeholder);
+              } else if (parent) {
+                // fallback
+                if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
+                else parent.appendChild(attackerRoot);
+              }
+            } catch {}
+
+            restoreStyles();
+          }, backMs + 80);
+        }, outMs + 80);
       });
-    } catch {
-      // Make sure we don't leave a card "stuck" in fixed mode.
-      try {
-        const fromCard = unitElByIdRef.current[fromId];
-        const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
-        attackerRoot?.style && (attackerRoot.style.position = '');
-      } catch {}
-    }
+    });
   }, []);
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
@@ -710,7 +752,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
-    bbDbgSet('DBG READY — waiting for ATTACK events...');
+    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for ATTACK events...'); }
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
