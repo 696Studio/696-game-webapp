@@ -1,13 +1,15 @@
 "use client";
 // @ts-nocheck
 
-import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {Suspense, useEffect, useMemo, useRef, useState, useCallback} from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
 import CardArt from "../../components/CardArt";
 
 import BattleFxLayer from './BattleFxLayer';
+
+const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (leave only TEST)
 
 type MatchRow = {
   id: string;
@@ -370,69 +372,116 @@ function BattleInner() {
   const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
 
   // Debug UI is rendered directly in JSX (no portals/DOM mutations).
+const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
+  const isArenaDebug = DEBUG_ARENA || uiDebugOn;
+  const isGridDebug = DEBUG_GRID || uiDebugOn;
 
-  // TEST: move one CardRoot (the bottom-most occupied slot) toward one target (top-most occupied slot) and back.
   const testAttackLunge = useCallback(() => {
     try {
-      const roots = Array.from(document.querySelectorAll('[data-bb-slot]')) as HTMLElement[];
-      if (!roots.length) return;
+      // Move ONE attacking card (CardRoot / slot element carrying data-bb-slot) towards ONE target and back.
+      const allSlots = Array.from(document.querySelectorAll('[data-bb-slot]')) as HTMLElement[];
+      if (!allSlots.length) return;
 
-      const occupied = roots.filter((el) => !!el.querySelector('.bb-card.has-unit'));
-      if (!occupied.length) return;
+      // Prefer slots that actually contain a unit/card.
+      const slotsWithUnit = allSlots.filter((el) => {
+        // Heuristic: a real occupied slot usually has .bb-card.has-unit somewhere inside.
+        const hasUnit = !!el.querySelector('.bb-card.has-unit') || !!el.querySelector('.bb-card');
+        // Ignore fully hidden slots
+        const cs = window.getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+        return hasUnit;
+      });
 
-      const withRect = occupied
+      const slotNodes = (slotsWithUnit.length ? slotsWithUnit : allSlots)
         .map((el) => ({ el, r: el.getBoundingClientRect() }))
-        .filter((x) => x.r.width > 4 && x.r.height > 4);
+        .filter((x) => x.r.width > 0 && x.r.height > 0);
 
-      if (withRect.length < 2) return;
+      if (!slotNodes.length) return;
 
-      // attacker = lowest on screen, target = highest on screen
-      const attacker = withRect.reduce((a, b) => (b.r.top > a.r.top ? b : a));
-      const target = withRect.reduce((a, b) => (b.r.top < a.r.top ? b : a));
+      // Split into top/bottom rows by median Y
+      const ys = slotNodes.map((x) => x.r.top + x.r.height / 2).sort((a, b) => a - b);
+      const midY = ys[Math.floor(ys.length / 2)];
 
-      const ax = attacker.r.left + attacker.r.width / 2;
-      const ay = attacker.r.top + attacker.r.height / 2;
-      const tx = target.r.left + target.r.width / 2;
-      const ty = target.r.top + target.r.height / 2;
+      const topRow = slotNodes
+        .filter((x) => x.r.top + x.r.height / 2 < midY)
+        .sort((a, b) => a.r.left - b.r.left);
 
-      const dx = tx - ax;
-      const dy = ty - ay;
+      const botRow = slotNodes
+        .filter((x) => x.r.top + x.r.height / 2 >= midY)
+        .sort((a, b) => a.r.left - b.r.left);
 
-      // Use existing CSS animation: bb_motion_lunge_to_target expects --atk-dx/--atk-dy on the motion element.
-      const el = attacker.el;
-      el.style.setProperty('--atk-dx', `${dx}px`);
-      el.style.setProperty('--atk-dy', `${dy}px`);
+      // Choose attacker: left-most in bottom row. Target: closest aligned in top row (or left-most top).
+      const attackerEl = botRow[0]?.el ?? slotNodes[0].el;
+      let targetEl: HTMLElement | null = topRow[0]?.el ?? null;
 
-      // Clear any previous run cleanly
-      el.classList.remove('is-attacking');
-      void el.offsetHeight;
-
-      el.classList.add('is-attacking');
-
-      // Target flash (only on its own .bb-card)
-      const targetCard = target.el.querySelector('.bb-card') as HTMLElement | null;
-      if (targetCard) {
-        targetCard.classList.remove('is-attack-target');
-        void targetCard.offsetHeight;
-        targetCard.classList.add('is-attack-target');
-        window.setTimeout(() => {
-          try { targetCard.classList.remove('is-attack-target'); } catch {}
-        }, 220);
+      if (targetEl && botRow.length && topRow.length) {
+        const a = attackerEl.getBoundingClientRect();
+        const ax = a.left + a.width / 2;
+        // pick target with closest X to attacker
+        let best = topRow[0].el;
+        let bestDx = Infinity;
+        for (const t of topRow) {
+          const bx = t.r.left + t.r.width / 2;
+          const d = Math.abs(bx - ax);
+          if (d < bestDx) {
+            bestDx = d;
+            best = t.el;
+          }
+        }
+        targetEl = best;
       }
 
+      if (!attackerEl || !targetEl || attackerEl === targetEl) return;
+
+      const a = attackerEl.getBoundingClientRect();
+      const b = targetEl.getBoundingClientRect();
+      const ax = a.left + a.width / 2;
+      const ay = a.top + a.height / 2;
+      const bx = b.left + b.width / 2;
+      const by = b.top + b.height / 2;
+
+      // Strong, visible lunge (but not full overlap)
+      const dx = (bx - ax) * 0.78;
+      const dy = (by - ay) * 0.78;
+
+      const moveEl = attackerEl;
+
+      const prevTransform = moveEl.style.transform;
+      const prevTransition = moveEl.style.transition;
+      const prevWill = moveEl.style.willChange;
+      const prevZ = moveEl.style.zIndex;
+
+      // Ensure we animate only this element and don't affect others
+      moveEl.style.willChange = 'transform';
+      moveEl.style.zIndex = '99999';
+
+      // Two-phase transition: out -> back (WAAPI is flaky in some WebViews)
+      // Phase 1: go to target
+      moveEl.style.transition = 'transform 180ms cubic-bezier(.18,.9,.22,1)';
+      // Force reflow so transition always triggers
+      void moveEl.offsetHeight;
+      moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0px) scale(1.05)`;
+
+      // Optional impact on target (single element) without moving other cards
+      targetEl.classList.add('is-attack-to');
+
       window.setTimeout(() => {
-        try {
-          el.classList.remove('is-attacking');
-          el.style.removeProperty('--atk-dx');
-          el.style.removeProperty('--atk-dy');
-        } catch {}
-      }, 520);
+        // Phase 2: return back
+        moveEl.style.transition = 'transform 170ms cubic-bezier(.2,.0,.2,1)';
+        void moveEl.offsetHeight;
+        moveEl.style.transform = prevTransform || 'translate3d(0px,0px,0px)';
+
+        window.setTimeout(() => {
+          try {
+            targetEl.classList.remove('is-attack-to');
+            moveEl.style.transition = prevTransition || '';
+            moveEl.style.willChange = prevWill;
+            moveEl.style.zIndex = prevZ;
+          } catch {}
+        }, 220);
+      }, 210);
     } catch {}
   }, []);
-
-const isArenaDebug = DEBUG_ARENA || uiDebug;
-  const isGridDebug = DEBUG_GRID || uiDebug;
-
   const [dbgClick, setDbgClick] = useState<null | { nx: number; ny: number; x: number; y: number }>(null);
 
   const matchId = sp.get("matchId") || "";
@@ -1638,8 +1687,13 @@ const hpPct = useMemo(() => {
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
     return (
-      <div data-bb-slot={slotKey} className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
-        <div data-bb-slot={slotKey} className="bb-motion-layer bb-card-root" data-fx-motion="1" style={{ willChange: "transform" }}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+        <div
+          data-bb-slot={slotKey}
+          className="bb-motion-layer bb-card-root"
+          data-fx-motion="1"
+          style={{ willChange: "transform" }}
+        >
       <div className="bb-fx-anchor">
         
         {isDyingUi ? <div className="bb-death" /> : null}
@@ -1746,7 +1800,6 @@ const hpPct = useMemo(() => {
 
             </div>
         </div>
-      </div>
       {renderUnit && (
         <div className="bb-hud" aria-hidden="true">
           <span className="bb-hud-item">
@@ -1760,6 +1813,8 @@ const hpPct = useMemo(() => {
           </span>
         </div>
       )}
+
+      </div>
 
       <style jsx>{`
         .bb-hud {
@@ -1851,6 +1906,7 @@ const hpPct = useMemo(() => {
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -1877,33 +1933,8 @@ const hpPct = useMemo(() => {
             letterSpacing: 0.3,
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            testAttackLunge();
-          }}
-          style={{
-            position: "fixed",
-            top: 12,
-            left: 78,
-            zIndex: 2147483647,
-            pointerEvents: "auto",
-            border: "none",
-            borderRadius: 12,
-            padding: "8px 12px",
-            boxShadow: "0 6px 22px rgba(0,0,0,0.22)",
-            background: "rgba(0,0,0,0.70)",
-            color: "white",
-            fontSize: 12,
-            fontWeight: 900,
-            letterSpacing: 0.3,
-          }}
-        >
-          TEST
-        </button>
-
         <div
           style={{
             padding: "6px 8px",
@@ -1918,41 +1949,44 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
-      <BattleFxLayer events={fxEvents} />
+      {!HIDE_VISUAL_DEBUG ? <BattleFxLayer events={fxEvents} /> : null}
 
       {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
       {/* Debug UI overlay (no portal) */}
-      <div
-        style={{
-          position: "fixed",
-          right: 12,
-          bottom: 12,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setUiDebug((v) => !v)}
+      {!HIDE_VISUAL_DEBUG && (
+        <div
           style={{
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.22)",
-            background: "rgba(0,0,0,0.7)",
-            color: "white",
-            fontSize: 13,
-            fontWeight: 800,
-            letterSpacing: 0.3,
+            position: "fixed",
+            right: 12,
+            bottom: 12,
+            zIndex: 2147483647,
             pointerEvents: "auto",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => setUiDebug((v) => !v)}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.22)",
+              background: "rgba(0,0,0,0.7)",
+              color: "white",
+              fontSize: 13,
+              fontWeight: 800,
+              letterSpacing: 0.3,
+              pointerEvents: "auto",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+            }}
+          >
+            DBG {uiDebugOn ? "ON" : "OFF"}
+          </button>
+        </div>
+      )}
 
-      {isArenaDebug ? (
+      {!HIDE_VISUAL_DEBUG && isArenaDebug ? (
         <div
           style={{
             position: "fixed",
@@ -1982,7 +2016,9 @@ const hpPct = useMemo(() => {
               <div>
                 offsetX/Y: {Math.round(debugCover.offsetX)},{Math.round(debugCover.offsetY)}
               </div>
+{!HIDE_VISUAL_DEBUG && (
               <div>scale: {debugCover.scale.toFixed(4)}</div>
+)}
               <div style={{ marginTop: 6, opacity: 0.9 }}>
                 Tap arena → nx/ny: {dbgClick ? `${dbgClick.nx.toFixed(4)} / ${dbgClick.ny.toFixed(4)}` : "—"}
               </div>
@@ -1993,7 +2029,7 @@ const hpPct = useMemo(() => {
         </div>
       ) : null}
 
-{uiDebug && (
+{uiDebugOn && (
         <div
           className="bb-debug-hud"
           style={{
@@ -2061,6 +2097,7 @@ const hpPct = useMemo(() => {
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2087,7 +2124,7 @@ const hpPct = useMemo(() => {
             letterSpacing: 0.3,
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -2103,6 +2140,7 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загрузка…</div>
@@ -2118,6 +2156,7 @@ const hpPct = useMemo(() => {
   if (timedOut || error) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2144,7 +2183,7 @@ const hpPct = useMemo(() => {
             letterSpacing: 0.3,
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -2160,6 +2199,7 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
         <div className="w-full max-w-md ui-card p-5">
           <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
@@ -2175,6 +2215,7 @@ const hpPct = useMemo(() => {
   if (errText) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2201,7 +2242,7 @@ const hpPct = useMemo(() => {
             letterSpacing: 0.3,
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -2217,6 +2258,7 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
         <div className="w-full max-w-md ui-card p-5">
           <div className="text-lg font-semibold">Ошибка</div>
@@ -2232,6 +2274,7 @@ const hpPct = useMemo(() => {
   if (!match) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2258,7 +2301,7 @@ const hpPct = useMemo(() => {
             letterSpacing: 0.3,
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -2274,6 +2317,7 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загружаю матч…</div>
@@ -2291,6 +2335,7 @@ const hpPct = useMemo(() => {
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
       {/* DBG_V11: always-visible toggle (Telegram + browser). Should be visible during battle. */}
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2318,7 +2363,7 @@ const hpPct = useMemo(() => {
             boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
           }}
         >
-          DBG {uiDebug ? "ON" : "OFF"}
+          DBG {uiDebugOn ? "ON" : "OFF"}
         </button>
         <div
           style={{
@@ -2334,8 +2379,9 @@ const hpPct = useMemo(() => {
           DBG_V11
         </div>
       </div>
+)}
 
-      <BattleFxLayer events={fxEvents} />
+      {!HIDE_VISUAL_DEBUG ? <BattleFxLayer events={fxEvents} /> : null}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -3158,10 +3204,35 @@ const hpPct = useMemo(() => {
         }}
       />
 
-      {/* DEBUG TOGGLE (always visible) */}
+      {/* DEBUG TOGGLE (hidden in clean mode) */}
+      {!HIDE_VISUAL_DEBUG && (
+        <button
+          type="button"
+          onClick={() => setUiDebug((v) => !v)}
+          style={{
+            position: "fixed",
+            top: 10,
+            left: 10,
+            zIndex: 2147483647,
+            pointerEvents: "auto",
+            padding: "6px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.25)",
+            background: "rgba(0,0,0,0.55)",
+            color: "rgba(255,255,255,0.92)",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 1,
+          }}
+        >
+          DBG
+        </button>
+      )}
+
+      {/* TEST ATTACK (always visible) */}
       <button
         type="button"
-        onClick={() => setUiDebug((v) => !v)}
+        onClick={testAttackLunge}
         style={{
           position: "fixed",
           top: 10,
@@ -3178,10 +3249,10 @@ const hpPct = useMemo(() => {
           letterSpacing: 1,
         }}
       >
-        DBG
+        TEST
       </button>
 
-      {uiDebug && (
+      {!HIDE_VISUAL_DEBUG && uiDebugOn && (
         <div
           style={{
             position: "fixed",
@@ -3638,24 +3709,25 @@ export default function BattlePage() {
   if (!mounted) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-{/* DBG_ALWAYS_V10: if you don't see this magenta label, you're not running this page.tsx */}
-<div
-  style={{
-    position: "fixed",
-    top: 8,
-    right: 8,
-    zIndex: 2147483647,
-    background: "rgba(0,0,0,0.75)",
-    color: "#ff00ff",
-    padding: "6px 10px",
-    borderRadius: 10,
-    fontWeight: 900,
-    fontSize: 14,
-    pointerEvents: "none",
-  }}
->
-  DBG_ALWAYS_V10
-</div>
+	{!HIDE_VISUAL_DEBUG && (
+	  <div
+	    style={{
+	      position: "fixed",
+	      top: 8,
+	      right: 8,
+	      zIndex: 2147483647,
+	      background: "rgba(0,0,0,0.75)",
+	      color: "#ff00ff",
+	      padding: "6px 10px",
+	      borderRadius: 10,
+	      fontWeight: 900,
+	      fontSize: 14,
+	      pointerEvents: "none",
+	    }}
+	  >
+	    DBG_ALWAYS_V10
+	  </div>
+	)}
 
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загрузка…</div>
