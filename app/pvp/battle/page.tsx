@@ -1878,7 +1878,8 @@ const hpPct = useMemo(() => {
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
-          `rt-${revealTick}`,
+	          // iOS: avoid any revealTick-driven flip/shake CSS that can cause continuous spinning.
+	          !ios ? `rt-${revealTick}` : "",
           renderUnit ? "has-unit" : "",
           isDead ? "is-dead" : "",
           isActive ? "is-active" : "",
@@ -1889,10 +1890,13 @@ const hpPct = useMemo(() => {
         ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
-        <div className="bb-card-inner">
-          <div className="bb-face bb-back">
-            <div className="bb-mark">696</div>
-          </div>
+	        <div className={["bb-card-inner", ios ? "ios-flat" : ""].join(" ")}>
+	          {/* iOS: disable 3D backface flip entirely (prevents invisible cards + random spinning) */}
+	          {!ios ? (
+	            <div className="bb-face bb-back">
+	              <div className="bb-mark">696</div>
+	            </div>
+	          ) : null}
 
           <div className={["bb-face bb-front", rarityFxClass(r)].join(" ")}>
             <CardArt
@@ -3103,6 +3107,20 @@ const hpPct = useMemo(() => {
           transition: transform 420ms var(--ease-out);
           transform: rotateY(0deg);
         }
+
+	        /* iOS Telegram WebView: flatten the card to avoid 3D flip bugs (invisible cards / random spinning). */
+	        .bb-card-inner.ios-flat {
+	          transform-style: flat;
+	          transform: none !important;
+	          transition: none !important;
+	        }
+	        .bb-card-inner.ios-flat .bb-face {
+	          backface-visibility: visible;
+	          -webkit-backface-visibility: visible;
+	        }
+	        .bb-card-inner.ios-flat .bb-front {
+	          transform: none !important;
+	        }
         .bb-card.is-revealed .bb-card-inner { transform: rotateY(180deg); }
         .bb-card.is-revealed { animation: flipIn 520ms var(--ease-out) both; }
 
