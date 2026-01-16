@@ -597,3 +597,45 @@ z-index: 21;
     transform: translate3d(0,0,0) rotateY(0deg) !important;
   }
 }
+
+/* =========================================================
+   iOS (Telegram WebView) STABILITY OVERRIDES
+   - iOS sometimes keeps .is-hidden on slots after hydration => cards become invisible.
+     Neutralize it on iOS only.
+   - iOS glitches on rotate() inside keyframes; use translate+scale only.
+   - Flatten 3D for ALIVE cards only (death flip stays intact).
+   ========================================================= */
+@supports (-webkit-touch-callout: none) {
+  /* Never fully hide slots/cards on iOS (prevents 'no cards until death' / 'no cards at all') */
+  .bb-slot.is-hidden {
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+  .bb-slot.is-hidden .bb-card {
+    display: block !important;
+  }
+
+  /* Flatten 3D for alive cards to avoid iOS random flip/jitter */
+  .bb-card:not(.is-dead) .bb-card-inner {
+    transform-style: flat !important;
+    -webkit-transform-style: flat !important;
+    transform: translateZ(0) !important;
+    -webkit-transform: translateZ(0) !important;
+  }
+  .bb-card:not(.is-dead) {
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+  }
+
+  /* Safer hit shake: translate+scale only (no rotate) */
+  .bb-slot.is-damage {
+    animation: bb_hit_shake_ios 140ms var(--bb-hit-ease) both !important;
+  }
+  @keyframes bb_hit_shake_ios {
+    0% { transform: translate3d(0,0,0) scale(1); }
+    25% { transform: translate3d(-2px,0,0) scale(.995); }
+    50% { transform: translate3d(2px,0,0) scale(1.005); }
+    100% { transform: translate3d(0,0,0) scale(1); }
+  }
+}
