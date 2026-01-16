@@ -1219,13 +1219,30 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     for (const e of timeline) {
       if (e.t < fromT) continue;
       if (e.t > t) break;
-      if (e.type === "attack") {
-        const fromId = String((e as any)?.from?.instanceId ?? "");
-        const toId = String((e as any)?.to?.instanceId ?? "");
-        if (!fromId || !toId) continue;
-        (map[fromId] ||= []).push({ t: e.t, fromId, toId });
-        (map[toId] ||= []).push({ t: e.t, fromId, toId });
-      }
+      if (e.type !== "attack") continue;
+
+      // Be resilient: event schemas differ between engines/log versions.
+      const fromRef = readUnitRefFromEvent(e as any, "from") || readUnitRefFromEvent(e as any, "unit");
+      const toRef = readUnitRefFromEvent(e as any, "to") || readUnitRefFromEvent(e as any, "target");
+
+      const fromId = String(
+        (fromRef as any)?.instanceId ??
+          (e as any)?.from?.instanceId ??
+          (e as any)?.fromId ??
+          (e as any)?.attackerId ??
+          "",
+      );
+      const toId = String(
+        (toRef as any)?.instanceId ??
+          (e as any)?.to?.instanceId ??
+          (e as any)?.toId ??
+          (e as any)?.targetId ??
+          "",
+      );
+      if (!fromId || !toId) continue;
+
+      (map[fromId] ||= []).push({ t: (e as any).t, fromId, toId });
+      (map[toId] ||= []).push({ t: (e as any).t, fromId, toId });
     }
     return map;
   }, [timeline, t]);
@@ -1234,15 +1251,31 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const windowSec = 0.22;
     const fromT = Math.max(0, t - windowSec);
     const arr: AttackFx[] = [];
+
     for (const e of timeline) {
       if (e.t < fromT) continue;
       if (e.t > t) break;
-      if (e.type === "attack") {
-        const fromId = String((e as any)?.from?.instanceId ?? "");
-        const toId = String((e as any)?.to?.instanceId ?? "");
-        if (!fromId || !toId) continue;
-        arr.push({ t: e.t, fromId, toId });
-      }
+      if (e.type !== "attack") continue;
+
+      const fromRef = readUnitRefFromEvent(e as any, "from") || readUnitRefFromEvent(e as any, "unit");
+      const toRef = readUnitRefFromEvent(e as any, "to") || readUnitRefFromEvent(e as any, "target");
+      const fromId = String(
+        (fromRef as any)?.instanceId ??
+          (e as any)?.from?.instanceId ??
+          (e as any)?.fromId ??
+          (e as any)?.attackerId ??
+          "",
+      );
+      const toId = String(
+        (toRef as any)?.instanceId ??
+          (e as any)?.to?.instanceId ??
+          (e as any)?.toId ??
+          (e as any)?.targetId ??
+          "",
+      );
+      if (!fromId || !toId) continue;
+
+      arr.push({ t: (e as any).t, fromId, toId });
     }
     return arr.slice(-2);
   }, [timeline, t]);
@@ -3656,26 +3689,6 @@ export default function BattlePage() {
   if (!mounted) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-	{!HIDE_VISUAL_DEBUG && (
-	  <div
-	    style={{
-	      position: "fixed",
-	      top: 8,
-	      right: 8,
-	      zIndex: 2147483647,
-	      background: "rgba(0,0,0,0.75)",
-	      color: "#ff00ff",
-	      padding: "6px 10px",
-	      borderRadius: 10,
-	      fontWeight: 900,
-	      fontSize: 14,
-	      pointerEvents: "none",
-	    }}
-	  >
-	    DBG_ALWAYS_V10
-	  </div>
-	)}
-
         <div className="w-full max-w-md ui-card p-5 text-center">
           <div className="text-sm font-semibold">Загрузка…</div>
           <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
