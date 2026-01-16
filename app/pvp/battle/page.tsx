@@ -24,8 +24,8 @@ function bbDbgEnabled() {
     if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
     if (ls === "1" || ss === "1") return true;
 
-    // Default OFF (enable only when you need it).
-    return false;
+    // Default ON for now (so you always see it in Telegram). Remove later when animation is stable.
+    return true;
   } catch {
     return true;
   }
@@ -55,21 +55,6 @@ function bbDbgSet(msg: string) {
 }
 
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
-
-// iOS Telegram WebView can exaggerate CSS transform-based FX (shake/flip),
-// especially on frequently-damaged units. We keep the visual FX elements
-// (flash/float text), but gate the transform-heavy CSS classes on iOS.
-function isIosWebView() {
-  try {
-    if (typeof navigator === "undefined") return false;
-    const ua = String(navigator.userAgent || "");
-    const isIOS = /iPad|iPhone|iPod/.test(ua);
-    // Telegram iOS uses WKWebView; this check is enough for our purposes.
-    return isIOS;
-  } catch {
-    return false;
-  }
-}
 
 type MatchRow = {
   id: string;
@@ -428,6 +413,25 @@ function BattleInner() {
   const fxdebug = sp.get("fxdebug") === "1";
   const layoutdebug = sp.get("layoutdebug") === "1" || fxdebug;
 
+  // iOS Telegram WebView is extremely sensitive to competing transforms (3D flip + CSS shakes + our detach-lunge).
+  // We keep detection conservative and SSR-safe.
+  const isIosWebView = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    const isiOS = /iPad|iPhone|iPod/i.test(ua) || (/(Macintosh)/i.test(ua) && (navigator as any).maxTouchPoints > 1);
+    return !!isiOS;
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    if (isIosWebView) root.classList.add("bb-ios");
+    else root.classList.remove("bb-ios");
+    return () => {
+      root.classList.remove("bb-ios");
+    };
+  }, [isIosWebView]);
+
   // Local toggle (does not affect layout): lets you enable debug overlay without URL params.
   const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
 
@@ -558,7 +562,11 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     console.log("[layoutdebug] click:", { nx, ny, x, y });
   };
 
-  const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
+  // Map unit instanceId -> DOM nodes.
+  // IMPORTANT: for detach-lunge we must move the whole CardRoot (motion layer), not just .bb-card,
+  // otherwise iOS can show a "ghost/clone" feel (anchor stays in the slot).
+  const unitRootByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const unitSlotByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
 
   // =========================================================
   // REAL ATTACK LUNGE (during battle timeline)
@@ -567,144 +575,109 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
 
-  const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
-    // (FINAL) Detach → Fixed Overlay → Lunge → Return → Restore (ORIGINAL DOM)
-    // TG WebView (iOS/Windows) is unreliable for transforms inside slot layout.
-    // We temporarily re-parent the *same* CardRoot into document.body and animate it as a fixed layer.
+  const lungeByInstanceIds = useCallback(
+    (fromId: string, toId: string) => {
+      // debug tick
+      try {
+        (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1;
+      } catch {}
 
-    try {
-      try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
+      try {
+        const attackerRoot = unitRootByIdRef.current[fromId];
+        const targetRoot = unitRootByIdRef.current[toId];
+        const attackerSlot = unitSlotByIdRef.current[fromId];
+        const targetSlot = unitSlotByIdRef.current[toId];
 
-      const fromCard = unitElByIdRef.current[fromId];
-      const toCard = unitElByIdRef.current[toId];
-      const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
-      const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
+        if (!attackerRoot || !targetRoot) {
+          bbDbgSet(
+            `#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}\nfoundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`
+          );
+          return;
+        }
+        if (attackerRoot === targetRoot) return;
 
-      if (!attackerRoot || !targetRoot) {
-        bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}
-foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
-        return;
-      }
-      if (attackerRoot === targetRoot) return;
+        const ar = attackerRoot.getBoundingClientRect();
+        const br = targetRoot.getBoundingClientRect();
+        const ax = ar.left + ar.width / 2;
+        const ay = ar.top + ar.height / 2;
+        const bx = br.left + br.width / 2;
+        const by = br.top + br.height / 2;
 
-      const a = attackerRoot.getBoundingClientRect();
-      const b = targetRoot.getBoundingClientRect();
-      const ax = a.left + a.width / 2;
-      const ay = a.top + a.height / 2;
-      const bx = b.left + b.width / 2;
-      const by = b.top + b.height / 2;
+        // Slightly dampen travel so it doesn't overshoot on small boards.
+        const travel = isIosWebView ? 0.92 : 0.86;
+        const dx = (bx - ax) * travel;
+        const dy = (by - ay) * travel;
 
-      const dx = (bx - ax) * 0.95;
-      const dy = (by - ay) * 0.95;
+        const ease = "cubic-bezier(.18,.9,.22,1)";
+        const outMs = isIosWebView ? 360 : 260;
+        const backMs = isIosWebView ? 320 : 220;
 
-      // iOS TG feels faster; bump timings a bit (still OK on desktop)
-      const ease = 'cubic-bezier(.18,.9,.22,1)';
-      const outMs = 320;// tuned for iOS
-      const scaleUp = 1.06;
-      const backMs = 260;
+        // Cancel any running WAAPI animations on this node.
+        (attackerRoot as any).getAnimations?.()?.forEach((anim: any) => anim.cancel());
 
-      const moveEl = attackerRoot;
+        // Snapshot inline styles we will mutate.
+        const prev = {
+          position: attackerRoot.style.position,
+          left: attackerRoot.style.left,
+          top: attackerRoot.style.top,
+          transform: attackerRoot.style.transform,
+          transition: attackerRoot.style.transition,
+          zIndex: attackerRoot.style.zIndex,
+          willChange: attackerRoot.style.willChange,
+          pointerEvents: attackerRoot.style.pointerEvents,
+        };
 
-      // Cancel WAAPI animations if any
-      moveEl.getAnimations?.().forEach((anim) => anim.cancel());
+        // Add per-slot recoil classes (CSS-based, safe) and auto-clear.
+        if (targetSlot) {
+          targetSlot.classList.add("is-attack-to");
+          window.setTimeout(() => targetSlot.classList.remove("is-attack-to"), Math.max(outMs, backMs) + 120);
+        }
+        if (attackerSlot) {
+          attackerSlot.classList.add("is-attack-from");
+          window.setTimeout(() => attackerSlot.classList.remove("is-attack-from"), Math.max(outMs, backMs) + 120);
+        }
 
-      // Save inline styles we might touch
-      const prev = {
-        position: moveEl.style.position,
-        left: moveEl.style.left,
-        top: moveEl.style.top,
-        width: moveEl.style.width,
-        height: moveEl.style.height,
-        transform: moveEl.style.transform,
-        transition: moveEl.style.transition,
-        zIndex: moveEl.style.zIndex,
-        willChange: moveEl.style.willChange,
-        pointerEvents: moveEl.style.pointerEvents,
-        margin: moveEl.style.margin,
-        animation: (moveEl.style as any).animation || '',
-      };
+        // DETACH -> FIXED
+        attackerRoot.style.position = "fixed";
+        attackerRoot.style.left = `${ar.left}px`;
+        attackerRoot.style.top = `${ar.top}px`;
+        attackerRoot.style.zIndex = "999999";
+        attackerRoot.style.willChange = "transform";
+        attackerRoot.style.pointerEvents = "none";
+        attackerRoot.style.transition = "none";
+        attackerRoot.style.transform = "translate3d(0px, 0px, 0px)";
 
-      // Some iOS “spins” come from CSS keyframes competing with our transform.
-      // Disable CSS animation on attacker root during flight.
-      const prevAnimProp = (moveEl.style as any).animation;
+        // Force style flush so iOS doesn't skip the first transition.
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        attackerRoot.offsetHeight;
 
-      // Keep layout slot size: insert placeholder where the element was.
-      const ph = document.createElement('div');
-      ph.setAttribute('data-bb-ph', '1');
-      ph.style.width = `${a.width}px`;
-      ph.style.height = `${a.height}px`;
-      ph.style.pointerEvents = 'none';
-      ph.style.visibility = 'hidden';
-
-      const parent = moveEl.parentNode;
-      const next = moveEl.nextSibling;
-      if (parent) parent.insertBefore(ph, next);
-
-      // Re-parent SAME DOM node into body
-      document.body.appendChild(moveEl);
-
-      // Detach → fixed at current viewport coords
-      moveEl.style.position = 'fixed';
-      moveEl.style.left = `${a.left}px`;
-      moveEl.style.top = `${a.top}px`;
-      moveEl.style.width = `${a.width}px`;
-      moveEl.style.height = `${a.height}px`;
-      moveEl.style.margin = '0';
-      moveEl.style.transform = 'translate3d(0px, 0px, 0px) scale(1)';
-      moveEl.style.zIndex = '999999';
-      moveEl.style.willChange = 'transform';
-      moveEl.style.pointerEvents = 'none';
-      (moveEl.style as any).animation = 'none';
-
-      targetRoot.classList.add('is-attack-to');
-
-      // Force layout flush so TG iOS doesn't skip the first transition
-      void moveEl.offsetHeight;
-
-      // Two RAFs = noticeably more stable in iOS WebView
-      requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          moveEl.style.transition = `transform ${outMs}ms ${ease}`;
-          moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0px) scale(${scaleUp})`; 
+          attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
+          attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
           bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
           window.setTimeout(() => {
-            moveEl.style.transition = `transform ${backMs}ms ${ease}`;
-            moveEl.style.transform = 'translate3d(0px, 0px, 0px) scale(1)';
+            attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
+            attackerRoot.style.transform = "translate3d(0px, 0px, 0px)";
 
             window.setTimeout(() => {
               try {
-                targetRoot.classList.remove('is-attack-to');
-
-                // Move back into original place
-                if (parent) {
-                  if (next) parent.insertBefore(moveEl, next);
-                  else parent.appendChild(moveEl);
-                }
-
-                // Remove placeholder
-                try { ph.remove(); } catch {}
-
-                // Restore inline styles (exact)
-                moveEl.style.position = prev.position;
-                moveEl.style.left = prev.left;
-                moveEl.style.top = prev.top;
-                moveEl.style.width = prev.width;
-                moveEl.style.height = prev.height;
-                moveEl.style.margin = prev.margin;
-                moveEl.style.transform = prev.transform;
-                moveEl.style.transition = prev.transition;
-                moveEl.style.zIndex = prev.zIndex;
-                moveEl.style.willChange = prev.willChange;
-                moveEl.style.pointerEvents = prev.pointerEvents;
-                (moveEl.style as any).animation = prevAnimProp || prev.animation || '';
+                attackerRoot.style.position = prev.position;
+                attackerRoot.style.left = prev.left;
+                attackerRoot.style.top = prev.top;
+                attackerRoot.style.transform = prev.transform;
+                attackerRoot.style.transition = prev.transition;
+                attackerRoot.style.zIndex = prev.zIndex;
+                attackerRoot.style.willChange = prev.willChange;
+                attackerRoot.style.pointerEvents = prev.pointerEvents;
               } catch {}
-            }, backMs + 70);
-          }, outMs + 90);
+            }, backMs + 80);
+          }, outMs + 40);
         });
-      });
-    } catch {}
-  }, []);
+      } catch {}
+    },
+    [isIosWebView]
+  );
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
@@ -731,7 +704,7 @@ const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
     if (!arenaEl) return;
 
     const arenaRect = arenaEl.getBoundingClientRect();
-    const targetEl = unitElByIdRef.current[instanceId];
+    const targetEl = unitRootByIdRef.current[instanceId];
     const r = targetEl?.getBoundingClientRect();
     if (!r) return;
 
@@ -1253,25 +1226,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return "Есть победитель";
   }, [match]);
 
-  // Platform hint (client-only): Telegram iOS WebView has some paint/phase quirks.
-  // Keep this guard SSR-safe.
-  const ios = useMemo(() => {
-    if (typeof navigator === "undefined") return false;
-    const ua = navigator.userAgent || "";
-    const isIOS = /iPad|iPhone|iPod/.test(ua);
-    const isIPadOS13Plus =
-      !isIOS &&
-      ua.includes("Mac") &&
-      typeof document !== "undefined" &&
-      // iPadOS reports as Mac but has touch.
-      "ontouchend" in document;
-    return isIOS || isIPadOS13Plus;
-  }, []);
-
-  // iOS Telegram WebView can fail to advance `phase` fast enough at battle start,
-  // keeping cards on the legacy back-face. Our CardArt overrides make that back-face
-  // visually minimal, which looks like "no cards". Force reveal on iOS.
-  const revealed = ios || phase === "reveal" || phase === "score" || phase === "end";
+  const revealed = phase === "reveal" || phase === "score" || phase === "end";
   const scored = phase === "score" || phase === "end";
 
   const p1Slots = useMemo(
@@ -1529,7 +1484,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   function getCenterInArena(instanceId: string) {
     const arenaEl = arenaRef.current;
-    const el = unitElByIdRef.current[instanceId];
+    const el = unitRootByIdRef.current[instanceId];
     if (!arenaEl || !el) return null;
 
     const aRect = arenaEl.getBoundingClientRect();
@@ -1720,7 +1675,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   slotKey?: string;
   delayMs: number;
 }) {
-    const ios = useMemo(() => isIosWebView(), []);
     const id = card?.id || fallbackId || "";
 
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
@@ -1822,19 +1776,14 @@ const hpPct = useMemo(() => {
       return clamp((activeUnit.shield / maxHp) * 100, 0, 100);
     }, [activeUnit?.instanceId, activeUnit?.shield, activeUnit?.maxHp]);
 
-    // NOTE: iOS WebView can exaggerate "shake" / 3D effects when these classes linger.
-    // We only treat the latest fx as "active" for a short window.
     const atk = useMemo(() => {
       if (!renderUnit || !attackFx || attackFx.length === 0) return null;
       const last = attackFx[attackFx.length - 1];
-      // `t` is the battle timeline time (seconds). `last.t` is the event time.
-      // Keep the visual class for a brief moment only.
-      if (typeof last?.t === "number" && typeof t === "number" && t - last.t > 0.16) return null;
       const isFrom = last.fromId === renderUnit.instanceId;
       const isTo = last.toId === renderUnit.instanceId;
       if (!isFrom && !isTo) return null;
       return { ...last, isFrom, isTo };
-    }, [renderUnit?.instanceId, attackFx, t]);
+    }, [renderUnit?.instanceId, attackFx]);
 
     const spawned = useMemo(() => {
       if (!renderUnit || !spawnFx || spawnFx.length === 0) return null;
@@ -1843,11 +1792,8 @@ const hpPct = useMemo(() => {
 
     const dmg = useMemo(() => {
       if (!renderUnit || !damageFx || damageFx.length === 0) return null;
-      const last = damageFx[damageFx.length - 1];
-      // Same idea as attack: keep active very briefly to avoid iOS "vibration" artifacts.
-      if (typeof last?.t === "number" && typeof t === "number" && t - last.t > 0.14) return null;
-      return last;
-    }, [renderUnit?.instanceId, damageFx, t]);
+      return damageFx[damageFx.length - 1];
+    }, [renderUnit?.instanceId, damageFx]);
 
     const tags = useMemo(() => {
       if (!activeUnit) return [];
@@ -1859,8 +1805,21 @@ const hpPct = useMemo(() => {
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
     return (
-      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+      <div
+        ref={(el) => {
+          const id = renderUnit?.instanceId;
+          if (!id) return;
+          unitSlotByIdRef.current[id] = el;
+        }}
+        className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}
+        data-unit-id={renderUnit?.instanceId}
+      >
         <div
+          ref={(el) => {
+            const id = renderUnit?.instanceId;
+            if (!id) return;
+            unitRootByIdRef.current[id] = el;
+          }}
           data-bb-slot={slotKey}
           className="bb-motion-layer bb-card-root"
           data-fx-motion="1"
@@ -1871,32 +1830,24 @@ const hpPct = useMemo(() => {
         {isDyingUi ? <div className="bb-death" /> : null}
       </div>
       <div
-        ref={(el) => {
-          if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
-        }}
         data-unit-id={renderUnit?.instanceId}
         className={[
           "bb-card",
           revealed ? "is-revealed" : "",
-	          // iOS: avoid any revealTick-driven flip/shake CSS that can cause continuous spinning.
-	          !ios ? `rt-${revealTick}` : "",
+          `rt-${revealTick}`,
           renderUnit ? "has-unit" : "",
           isDead ? "is-dead" : "",
           isActive ? "is-active" : "",
           spawned ? "is-spawn" : "",
-          // On iOS, avoid transform-heavy shake/flip classes; keep flash/float FX below.
-          dmg && !ios ? "is-damage" : "",
+          dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
         ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
       >
-	        <div className={["bb-card-inner", ios ? "ios-flat" : ""].join(" ")}>
-	          {/* iOS: disable 3D backface flip entirely (prevents invisible cards + random spinning) */}
-	          {!ios ? (
-	            <div className="bb-face bb-back">
-	              <div className="bb-mark">696</div>
-	            </div>
-	          ) : null}
+        <div className="bb-card-inner">
+          <div className="bb-face bb-back">
+            <div className="bb-mark">696</div>
+          </div>
 
           <div className={["bb-face bb-front", rarityFxClass(r)].join(" ")}>
             <CardArt
@@ -3107,20 +3058,6 @@ const hpPct = useMemo(() => {
           transition: transform 420ms var(--ease-out);
           transform: rotateY(0deg);
         }
-
-	        /* iOS Telegram WebView: flatten the card to avoid 3D flip bugs (invisible cards / random spinning). */
-	        .bb-card-inner.ios-flat {
-	          transform-style: flat;
-	          transform: none !important;
-	          transition: none !important;
-	        }
-	        .bb-card-inner.ios-flat .bb-face {
-	          backface-visibility: visible;
-	          -webkit-backface-visibility: visible;
-	        }
-	        .bb-card-inner.ios-flat .bb-front {
-	          transform: none !important;
-	        }
         .bb-card.is-revealed .bb-card-inner { transform: rotateY(180deg); }
         .bb-card.is-revealed { animation: flipIn 520ms var(--ease-out) both; }
 
@@ -3875,16 +3812,6 @@ export default function BattlePage() {
   useEffect(() => {
     setMounted(true);
   }, []);
-
-
-  // iOS Telegram WebView: mark root for CSS stability overrides
-  useEffect(() => {
-    if (!mounted) return;
-    if (isIosWebView()) document.documentElement.classList.add('bb-ios');
-    return () => {
-      document.documentElement.classList.remove('bb-ios');
-    };
-  }, [mounted]);
 
   if (!mounted) {
     return (
