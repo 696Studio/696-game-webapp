@@ -9,55 +9,7 @@ import CardArt from "../../components/CardArt";
 
 import BattleFxLayer from './BattleFxLayer';
 
-
-// ===== BB_LUNGE_GLOBAL (STEP C) =====
-function bbFindFirstOccupied(prefix: "p1" | "p2"): string | null {
-  const card = document.querySelector(`[data-bb-slot^="${prefix}:"] .bb-card.has-unit`) as HTMLElement | null;
-  if (card) {
-    const root = card.closest("[data-bb-slot]") as HTMLElement | null;
-    if (root) return root.getAttribute("data-bb-slot");
-  }
-  const any = document.querySelector(`[data-bb-slot^="${prefix}:"]`) as HTMLElement | null;
-  return any ? any.getAttribute("data-bb-slot") : null;
-}
-
-function bbLunge(attackerSlot: string, targetSlot: string) {
-  const a = document.querySelector(`[data-bb-slot="${attackerSlot}"]`) as HTMLElement | null;
-  const b = document.querySelector(`[data-bb-slot="${targetSlot}"]`) as HTMLElement | null;
-  if (!a || !b) return;
-
-  const ar = a.getBoundingClientRect();
-  const br = b.getBoundingClientRect();
-  const dx = (br.left + br.width / 2) - (ar.left + ar.width / 2);
-  const dy = (br.top + br.height / 2) - (ar.top + ar.height / 2);
-
-  // Cancel in-flight animations to avoid stacking
-  a.getAnimations?.().forEach((anim) => anim.cancel());
-
-  // Force transform even if some stylesheet uses !important
-  const ease = "cubic-bezier(.18,.9,.22,1)";
-  const outMs = 180;
-  const backMs = 160;
-
-  // Go out
-  a.style.setProperty("will-change", "transform");
-  a.style.setProperty("transition", `transform ${outMs}ms ${ease}`, "important");
-  a.style.setProperty("transform", `translate3d(${dx}px, ${dy}px, 0) scale(1.06)`, "important");
-
-  // Return
-  window.setTimeout(() => {
-    a.style.setProperty("transition", `transform ${backMs}ms ${ease}`, "important");
-    a.style.setProperty("transform", "translate3d(0,0,0) scale(1)", "important");
-
-    window.setTimeout(() => {
-      a.style.removeProperty("transition");
-      a.style.removeProperty("transform");
-      a.style.removeProperty("will-change");
-    }, backMs + 30);
-  }, outMs + 30);
-}
-
-const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (leave only TEST)
+const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
 
 type MatchRow = {
   id: string;
@@ -424,112 +376,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const isArenaDebug = DEBUG_ARENA || uiDebugOn;
   const isGridDebug = DEBUG_GRID || uiDebugOn;
 
-  const testAttackLunge = useCallback(() => {
-    try {
-      // Move ONE attacking card (CardRoot / slot element carrying data-bb-slot) towards ONE target and back.
-      const allSlots = Array.from(document.querySelectorAll('[data-bb-slot]')) as HTMLElement[];
-      if (!allSlots.length) return;
-
-      // Prefer slots that actually contain a unit/card.
-      const slotsWithUnit = allSlots.filter((el) => {
-        // Heuristic: a real occupied slot usually has .bb-card.has-unit somewhere inside.
-        const hasUnit = !!el.querySelector('.bb-card.has-unit') || !!el.querySelector('.bb-card');
-        // Ignore fully hidden slots
-        const cs = window.getComputedStyle(el);
-        if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
-        return hasUnit;
-      });
-
-      const slotNodes = (slotsWithUnit.length ? slotsWithUnit : allSlots)
-        .map((el) => ({ el, r: el.getBoundingClientRect() }))
-        .filter((x) => x.r.width > 0 && x.r.height > 0);
-
-      if (!slotNodes.length) return;
-
-      // Split into top/bottom rows by median Y
-      const ys = slotNodes.map((x) => x.r.top + x.r.height / 2).sort((a, b) => a - b);
-      const midY = ys[Math.floor(ys.length / 2)];
-
-      const topRow = slotNodes
-        .filter((x) => x.r.top + x.r.height / 2 < midY)
-        .sort((a, b) => a.r.left - b.r.left);
-
-      const botRow = slotNodes
-        .filter((x) => x.r.top + x.r.height / 2 >= midY)
-        .sort((a, b) => a.r.left - b.r.left);
-
-      // Choose attacker: left-most in bottom row. Target: closest aligned in top row (or left-most top).
-      const attackerEl = botRow[0]?.el ?? slotNodes[0].el;
-      let targetEl: HTMLElement | null = topRow[0]?.el ?? null;
-
-      if (targetEl && botRow.length && topRow.length) {
-        const a = attackerEl.getBoundingClientRect();
-        const ax = a.left + a.width / 2;
-        // pick target with closest X to attacker
-        let best = topRow[0].el;
-        let bestDx = Infinity;
-        for (const t of topRow) {
-          const bx = t.r.left + t.r.width / 2;
-          const d = Math.abs(bx - ax);
-          if (d < bestDx) {
-            bestDx = d;
-            best = t.el;
-          }
-        }
-        targetEl = best;
-      }
-
-      if (!attackerEl || !targetEl || attackerEl === targetEl) return;
-
-      const a = attackerEl.getBoundingClientRect();
-      const b = targetEl.getBoundingClientRect();
-      const ax = a.left + a.width / 2;
-      const ay = a.top + a.height / 2;
-      const bx = b.left + b.width / 2;
-      const by = b.top + b.height / 2;
-
-      // Strong, visible lunge (but not full overlap)
-      const dx = (bx - ax) * 0.78;
-      const dy = (by - ay) * 0.78;
-
-      const moveEl = attackerEl;
-
-      const prevTransform = moveEl.style.transform;
-      const prevTransition = moveEl.style.transition;
-      const prevWill = moveEl.style.willChange;
-      const prevZ = moveEl.style.zIndex;
-
-      // Ensure we animate only this element and don't affect others
-      moveEl.style.willChange = 'transform';
-      moveEl.style.zIndex = '99999';
-
-      // Two-phase transition: out -> back (WAAPI is flaky in some WebViews)
-      // Phase 1: go to target
-      moveEl.style.transition = 'transform 180ms cubic-bezier(.18,.9,.22,1)';
-      // Force reflow so transition always triggers
-      void moveEl.offsetHeight;
-      moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0px) scale(1.05)`;
-
-      // Optional impact on target (single element) without moving other cards
-      targetEl.classList.add('is-attack-to');
-
-      window.setTimeout(() => {
-        // Phase 2: return back
-        moveEl.style.transition = 'transform 170ms cubic-bezier(.2,.0,.2,1)';
-        void moveEl.offsetHeight;
-        moveEl.style.transform = prevTransform || 'translate3d(0px,0px,0px)';
-
-        window.setTimeout(() => {
-          try {
-            targetEl.classList.remove('is-attack-to');
-            moveEl.style.transition = prevTransition || '';
-            moveEl.style.willChange = prevWill;
-            moveEl.style.zIndex = prevZ;
-          } catch {}
-        }, 220);
-      }, 210);
-    } catch {}
-  }, []);
   const [dbgClick, setDbgClick] = useState<null | { nx: number; ny: number; x: number; y: number }>(null);
 
   const matchId = sp.get("matchId") || "";
@@ -653,6 +499,69 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   };
 
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // =========================================================
+  // REAL ATTACK LUNGE (during battle timeline)
+  // TG iOS WebView can be flaky with transform, so we animate
+  // the CardRoot (data-bb-slot element) via top/left.
+  // =========================================================
+  const lastAttackSigRef = useRef<string>("");
+
+  const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
+    try {
+      const fromCard = unitElByIdRef.current[fromId];
+      const toCard = unitElByIdRef.current[toId];
+      const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
+      const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
+      if (!attackerRoot || !targetRoot) return;
+      if (attackerRoot === targetRoot) return;
+
+      const a = attackerRoot.getBoundingClientRect();
+      const b = targetRoot.getBoundingClientRect();
+      const ax = a.left + a.width / 2;
+      const ay = a.top + a.height / 2;
+      const bx = b.left + b.width / 2;
+      const by = b.top + b.height / 2;
+
+      const dx = (bx - ax) * 0.78;
+      const dy = (by - ay) * 0.78;
+
+      const moveEl = attackerRoot;
+      moveEl.getAnimations?.().forEach((anim) => anim.cancel());
+
+      const ease = 'cubic-bezier(.18,.9,.22,1)';
+      const outMs = 170;
+      const backMs = 160;
+
+      moveEl.style.setProperty('position', 'relative', 'important');
+      moveEl.style.setProperty('will-change', 'top,left', 'important');
+      moveEl.style.setProperty('z-index', '99999', 'important');
+      moveEl.style.setProperty('transition', `top ${outMs}ms ${ease}, left ${outMs}ms ${ease}`, 'important');
+      void moveEl.offsetHeight;
+      moveEl.style.setProperty('left', `${dx}px`, 'important');
+      moveEl.style.setProperty('top', `${dy}px`, 'important');
+
+      targetRoot.classList.add('is-attack-to');
+
+      window.setTimeout(() => {
+        moveEl.style.setProperty('transition', `top ${backMs}ms ${ease}, left ${backMs}ms ${ease}`, 'important');
+        void moveEl.offsetHeight;
+        moveEl.style.setProperty('left', '0px', 'important');
+        moveEl.style.setProperty('top', '0px', 'important');
+
+        window.setTimeout(() => {
+          try {
+            targetRoot.classList.remove('is-attack-to');
+            moveEl.style.removeProperty('transition');
+            moveEl.style.removeProperty('left');
+            moveEl.style.removeProperty('top');
+            moveEl.style.removeProperty('will-change');
+            moveEl.style.removeProperty('z-index');
+          } catch {}
+        }, backMs + 40);
+      }, outMs + 40);
+    } catch {}
+  }, []);
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
@@ -1337,6 +1246,17 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     }
     return arr.slice(-2);
   }, [timeline, t]);
+
+  // Trigger one lunge per new attack event (no TEST button).
+  useEffect(() => {
+    if (!recentAttacks || recentAttacks.length === 0) return;
+    const last = recentAttacks[recentAttacks.length - 1];
+    if (!last?.fromId || !last?.toId) return;
+    const sig = `${last.t}:${last.fromId}:${last.toId}`;
+    if (sig === lastAttackSigRef.current) return;
+    lastAttackSigRef.current = sig;
+    lungeByInstanceIds(last.fromId, last.toId);
+  }, [recentAttacks, lungeByInstanceIds]);
 
   // FX events derived from recent attacks (used by BattleFxLayer).
   const fxEvents = useMemo(() => {
@@ -3277,28 +3197,7 @@ const hpPct = useMemo(() => {
         </button>
       )}
 
-      {/* TEST ATTACK (always visible) */}
-      <button
-        type="button"
-        onClick={() => (window as any).bbTestLunge?.()}
-        style={{
-          position: "fixed",
-          top: 10,
-          left: 10,
-          zIndex: 2147483647,
-          pointerEvents: "auto",
-          padding: "6px 10px",
-          borderRadius: 10,
-          border: "1px solid rgba(255,255,255,0.25)",
-          background: "rgba(0,0,0,0.55)",
-          color: "rgba(255,255,255,0.92)",
-          fontSize: 12,
-          fontWeight: 900,
-          letterSpacing: 1,
-        }}
-      >
-        TEST
-      </button>
+      {/* TEST button removed: lunge is played from real battle timeline events */}
 
       {!HIDE_VISUAL_DEBUG && uiDebugOn && (
         <div
@@ -3745,16 +3644,6 @@ const hpPct = useMemo(() => {
 }
 
 export default function BattlePage() {
-  // Attach lunge helper for Telegram WebView debugging
-  useEffect(() => {
-    (window as any).bbTestLunge = () => {
-      const a = bbFindFirstOccupied("p1") || "p1:0";
-      const b = bbFindFirstOccupied("p2") || "p2:0";
-      bbLunge(a, b);
-    };
-    return () => { try { delete (window as any).bbTestLunge; } catch {} };
-  }, []);
-
   // IMPORTANT: Fix React hydration crash (#418) in Telegram WebView.
   // Even though this file is a Client Component, Next.js still pre-renders it on the server.
   // Any client-only differences (viewport/theme, timers, DOM measurements, etc.) can cause
