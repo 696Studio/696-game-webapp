@@ -1,83 +1,191 @@
-:root{ --bb-ease-out: cubic-bezier(.18,.9,.22,1); --bb-ease-inout: cubic-bezier(.2,.0,.2,1); --bb-hit-ease: cubic-bezier(.2,.8,.2,1); --bb-fx-tint-hue: 195deg; --bb-fx-tint-sat: 1.6; --bb-fx-tint-bright: 1.05; --bb-fx-shadow: 0 0 14px rgba(120, 220, 255, .35);
-} .bb-card-inner{ position: relative; transform-style: preserve-3d; }
-.bb-face{ backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-.bb-face.bb-back{
-transform: rotateY(180deg);
-background: radial-gradient(circle at 30% 20%, rgba(255,255,255,.08), rgba(0,0,0,0) 55%), linear-gradient(135deg, rgba(20,20,25,.98), rgba(5,5,8,.98));
-border: 1px solid rgba(255,255,255,.08);
+:root {
+  --bb-ease-out: cubic-bezier(.18,.9,.22,1);
+  --bb-ease-inout: cubic-bezier(.2,.0,.2,1);
+  --bb-hit-ease: cubic-bezier(.2,.8,.2,1);
+  --bb-fx-tint-hue: 195deg;
+  --bb-fx-tint-sat: 1.6;
+  --bb-fx-tint-bright: 1.05;
+  --bb-fx-shadow: 0 0 14px rgba(120, 220, 255, .35);
 }
-.bb-face.bb-back .bb-mark{
-position: absolute;
-inset: 0;
-display: grid;
-place-items: center;
-font-weight: 800;
-letter-spacing: .12em;
-opacity: .55;
-text-shadow: 0 6px 20px rgba(0,0,0,.65);
-} .bb-slot.is-dying .bb-card{
-animation: bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both;
-transform-style: preserve-3d;
-} .bb-slot.is-dying.is-vanish .bb-card,
-.bb-slot.is-vanish .bb-card{
-animation: bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both, bb_card_vanish 260ms cubic-bezier(.2,.9,.2,1) forwards;
-animation-delay: 0ms, 520ms;
-transform-style: preserve-3d;
-} @keyframes bb_card_vanish{
-} @keyframes bb_card_death_to_back{
-18% { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
-} .bb-card.is-dead{
-opacity: 1 !important;
+
+.bb-card-inner { position: relative; transform-style: preserve-3d; }
+.bb-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.bb-face.bb-back {
+  transform: rotateY(180deg);
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.08), rgba(0,0,0,0) 55%),
+    linear-gradient(135deg, rgba(20,20,25,.98), rgba(5,5,8,.98));
+  border: 1px solid rgba(255,255,255,.08);
 }
-.bb-card.is-dead .bb-card-inner{
-transform: rotateY(180deg) !important;
-} .bb-slot{ position: relative; overflow: visible; } .bb-fx-burst--death .bb-fx-burst__atlas{
-width: 100%;
-height: 100%;
-background-image: none;
-background-repeat: no-repeat;
-background-size: calc(194px * var(--bb-strip-scale, 2)) calc(59px * var(--bb-strip-scale, 2));
-background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%;
-will-change: background-position, opacity;
-image-rendering: auto;
-animation: bb-death-atlas-3 520ms linear forwards;
-} .bb-fx-burst--death .bb-fx-burst__img{
-animation: none !important;
-} @keyframes bb-death-atlas-3{ 0%, 32.9% { background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-33%, 65.9% { background-position: calc(-66px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-66%, 92.9% { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-} @keyframes bb_death_sprite{
-from { background-position: 0 50%; opacity: 1; }
-to { background-position: 100% 50%; opacity: 0; }
-} .bb-fx{ z-index: 12 !important; } .bb-slot{ will-change: transform, opacity; transform-origin: 50% 70%;
-} .bb-slot.is-spawn{ animation: bb_spawn 420ms var(--bb-ease-out) both; filter: saturate(1.02);
+.bb-face.bb-back .bb-mark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  letter-spacing: .12em;
+  opacity: .55;
+  text-shadow: 0 6px 20px rgba(0,0,0,.65);
 }
-@keyframes bb_spawn{
-55% { opacity: 1; transform: translate3d(0,-2px,0) scale(1.02); }
-} .bb-slot.is-damage{ animation: bb_hit_shake 140ms var(--bb-hit-ease) both;
+
+/* Death flip to card back + optional vanish */
+.bb-slot.is-dying .bb-card {
+  animation: bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both;
+  transform-style: preserve-3d;
 }
-@keyframes bb_hit_shake{
-25% { transform: translate3d(-2px,0,0) scale(.995); }
-} .bb-slot.is-damage::after{ content:""; position:absolute; inset:-6px; border-radius: 14px; pointer-events:none; background: radial-gradient(closest-side, rgba(255,80,80,.35), rgba(255,80,80,0) 70%); mix-blend-mode: screen; opacity:0; animation: bb_hit_flash 160ms var(--bb-ease-out) both;
+.bb-slot.is-dying.is-vanish .bb-card,
+.bb-slot.is-vanish .bb-card {
+  animation:
+    bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both,
+    bb_card_vanish 260ms cubic-bezier(.2,.9,.2,1) forwards;
+  animation-delay: 0ms, 520ms;
+  transform-style: preserve-3d;
 }
-@keyframes bb_hit_flash{
-45%{ opacity:1; transform: scale(1.02); }
-} .bb-slot.is-attack-from{ animation: bb_attack_lunge 240ms var(--bb-ease-out) both;
+
+@keyframes bb_card_vanish {
+  0% { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+  100% { opacity: 0; transform: translate3d(0,0,0) scale(.985); }
 }
-@keyframes bb_attack_lunge{
-55% { transform: translate3d(0,-10px,0) scale(1.03); } } .bb-slot.is-attack-to{ animation: bb_attack_recoil 220ms var(--bb-ease-out) both;
+
+@keyframes bb_card_death_to_back {
+  0% { transform: translate3d(0,0,0) rotateY(0deg) scale(1); }
+  18% { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
+  100% { transform: translate3d(0,0,0) rotateY(180deg) scale(1); }
 }
-@keyframes bb_attack_recoil{
-45% { transform: translate3d(0,6px,0) scale(.99); }
-} .bb-slot.is-dying{ animation: bb_death_collapse 680ms var(--bb-ease-inout) both; filter: saturate(.35) brightness(.92) contrast(1.05);
-} @keyframes bb_death_collapse{
-18% { opacity:1; transform: translate3d(0,0,0) scale(1.01); } } .bb-slot.is-dying .bb-death::after{ content:""; position:absolute; inset:0; background: radial-gradient(circle at 50% 50%, rgba(120,220,255,.26), rgba(120,220,255,0) 65%); mix-blend-mode: screen; opacity:0; animation: bb_halo 520ms var(--bb-ease-out) both; pointer-events:none;
-} @keyframes bb_sprite8{ from { background-position: 0% 50%; } to { background-position: 100% 50%; }
+
+.bb-card.is-dead { opacity: 1 !important; }
+.bb-card.is-dead .bb-card-inner { transform: rotateY(180deg) !important; }
+
+.bb-slot { position: relative; overflow: visible; }
+
+.bb-fx-burst--death .bb-fx-burst__atlas {
+  width: 100%;
+  height: 100%;
+  background-image: none;
+  background-repeat: no-repeat;
+  background-size: calc(194px * var(--bb-strip-scale, 2)) calc(59px * var(--bb-strip-scale, 2));
+  background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%;
+  will-change: background-position, opacity;
+  image-rendering: auto;
+  animation: bb-death-atlas-3 520ms linear forwards;
 }
-@keyframes bb_halo{
-25%{ opacity:.75; transform: scale(1.02); }
-} @media (prefers-reduced-motion: reduce){ .bb-slot.is-spawn, .bb-slot.is-damage, .bb-slot.is-attack-from, .bb-slot.is-attack-to, .bb-slot.is-dying{ animation: none !important; } .bb-slot.is-damage::after, .bb-slot.is-dying::before, .bb-slot.is-dying .bb-death::before, .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
-} .bb-slot{ position: relative; }
+.bb-fx-burst--death .bb-fx-burst__img { animation: none !important; }
+
+@keyframes bb-death-atlas-3 {
+  0%, 32.9% { background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+  33%, 65.9% { background-position: calc(-66px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+  66%, 92.9% { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+}
+
+@keyframes bb_death_sprite {
+  from { background-position: 0 50%; opacity: 1; }
+  to { background-position: 100% 50%; opacity: 0; }
+}
+
+.bb-fx { z-index: 12 !important; }
+
+/* Slot state animations (PC/Web ok; iOS overrides later in this file) */
+.bb-slot { will-change: transform, opacity; transform-origin: 50% 70%; }
+
+.bb-slot.is-spawn {
+  animation: bb_spawn 420ms var(--bb-ease-out) both;
+  filter: saturate(1.02);
+}
+@keyframes bb_spawn {
+  0% { opacity: 0; transform: translate3d(0,4px,0) scale(.98); }
+  55% { opacity: 1; transform: translate3d(0,-2px,0) scale(1.02); }
+  100% { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+}
+
+.bb-slot.is-damage { animation: bb_hit_shake 140ms var(--bb-hit-ease) both; }
+@keyframes bb_hit_shake {
+  0% { transform: translate3d(0,0,0) scale(1); }
+  25% { transform: translate3d(-2px,0,0) scale(.995); }
+  50% { transform: translate3d(2px,0,0) scale(.995); }
+  100% { transform: translate3d(0,0,0) scale(1); }
+}
+
+.bb-slot.is-damage::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 14px;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(255,80,80,.35), rgba(255,80,80,0) 70%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: bb_hit_flash 160ms var(--bb-ease-out) both;
+}
+@keyframes bb_hit_flash {
+  0% { opacity: 0; transform: scale(1); }
+  45% { opacity: 1; transform: scale(1.02); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+.bb-slot.is-attack-from { animation: bb_attack_lunge 240ms var(--bb-ease-out) both; }
+@keyframes bb_attack_lunge {
+  0% { transform: translate3d(0,0,0) scale(1); }
+  55% { transform: translate3d(0,-10px,0) scale(1.03); }
+  100% { transform: translate3d(0,0,0) scale(1); }
+}
+
+.bb-slot.is-attack-to { animation: bb_attack_recoil 220ms var(--bb-ease-out) both; }
+@keyframes bb_attack_recoil {
+  0% { transform: translate3d(0,0,0) scale(1); }
+  45% { transform: translate3d(0,6px,0) scale(.99); }
+  100% { transform: translate3d(0,0,0) scale(1); }
+}
+
+.bb-slot.is-dying {
+  animation: bb_death_collapse 680ms var(--bb-ease-inout) both;
+  filter: saturate(.35) brightness(.92) contrast(1.05);
+}
+@keyframes bb_death_collapse {
+  0% { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+  18% { opacity: 1; transform: translate3d(0,0,0) scale(1.01); }
+  100% { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+}
+
+.bb-slot.is-dying .bb-death::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(120,220,255,.26), rgba(120,220,255,0) 65%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: bb_halo 520ms var(--bb-ease-out) both;
+  pointer-events: none;
+}
+
+@keyframes bb_sprite8 {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
+}
+
+@keyframes bb_halo {
+  0% { opacity: 0; transform: scale(1); }
+  25% { opacity: .75; transform: scale(1.02); }
+  100% { opacity: 0; transform: scale(1.02); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bb-slot.is-spawn,
+  .bb-slot.is-damage,
+  .bb-slot.is-attack-from,
+  .bb-slot.is-attack-to,
+  .bb-slot.is-dying {
+    animation: none !important;
+  }
+  .bb-slot.is-damage::after,
+  .bb-slot.is-dying::before,
+  .bb-slot.is-dying .bb-death::before,
+  .bb-slot.is-dying .bb-death::after {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}
+
+.bb-slot{ position: relative; }
 .bb-fx-anchor{
 position:absolute;
 inset:0;
@@ -194,4 +302,83 @@ z-index: 21;
 .bb-attack-lunge{ animation: none !important;
 } /* Reduced motion: keep safe */
 @media (prefers-reduced-motion: reduce){ .bb-slot, .bb-slot *{ animation: none !important; transition: none !important; }
+}
+
+/* --- iOS Telegram WebView stabilization ---
+   On iOS WebView, slot-level transform animations sometimes "fight" with JS-driven
+   fixed/translate3d detaching and can look like random spinning/vibration.
+   We keep flashes/overlays, but disable slot-level transform animations on iOS.
+*/
+@supports (-webkit-touch-callout: none) {
+  /* Disable slot transform animations (move/shake/lunge/recoil/collapse) */
+  .bb-slot.is-spawn,
+  .bb-slot.is-damage,
+  .bb-slot.is-attack-from,
+  .bb-slot.is-attack-to,
+  .bb-slot.is-dying {
+    animation: none !important;
+  }
+}
+
+/* --- iOS Telegram WebView stabilization ---
+   Keep visual feedback, but avoid slot-level transform animations that can look like
+   random rotation/vibration when combined with JS-driven detach-lunge.
+*/
+@supports (-webkit-touch-callout: none) {
+  /* Kill transform animations on the slot itself */
+  .bb-slot.is-spawn,
+  .bb-slot.is-damage,
+  .bb-slot.is-attack-from,
+  .bb-slot.is-attack-to,
+  .bb-slot.is-dying {
+    animation: none !important;
+  }
+
+  /* Keep hit flash, but ensure it doesn't scale/transform the whole slot */
+  .bb-slot.is-damage::after {
+    animation: bb_hit_flash 180ms var(--bb-ease-out) both;
+  }
+
+  /* Keep dying halo overlay only */
+  .bb-slot.is-dying .bb-death::after {
+    animation: bb_halo 520ms var(--bb-ease-out) both;
+  }
+}
+
+/* --- iOS Telegram WebView stabilization ---
+   Keep visual feedback, but avoid slot-level transform animations that can look like
+   random rotation/vibration when combined with JS-driven detach-lunge.
+*/
+@supports (-webkit-touch-callout: none) {
+  /* Disable transform animations on the slot itself */
+  .bb-slot.is-spawn,
+  .bb-slot.is-damage,
+  .bb-slot.is-attack-from,
+  .bb-slot.is-attack-to,
+  .bb-slot.is-dying {
+    animation: none !important;
+    will-change: auto;
+  }
+
+  /* Keep hit flash overlay (no transform, just opacity) */
+  .bb-slot.is-damage::after {
+    animation: bb_hit_flash 160ms var(--bb-ease-out) both !important;
+  }
+
+  /* Keep death halo overlay */
+  .bb-slot.is-dying .bb-death::after {
+    animation: bb_halo 520ms var(--bb-ease-out) both !important;
+  }
+}
+
+@supports (-webkit-touch-callout: none) {
+  .bb-slot.is-spawn,
+  .bb-slot.is-damage,
+  .bb-slot.is-attack-from,
+  .bb-slot.is-attack-to,
+  .bb-slot.is-dying {
+    animation: none !important;
+    transform: none !important;
+    will-change: auto !important;
+  }
 }
