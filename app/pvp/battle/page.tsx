@@ -24,10 +24,10 @@ function bbDbgEnabled() {
     if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
     if (ls === "1" || ss === "1") return true;
 
-    // Default ON for now (so you always see it in Telegram). Remove later when animation is stable.
-    return true;
+    // Default OFF. Enable only via window.__bbdbg=1 or storage "bbdbg"="1".
+    return false;
   } catch {
-    return true;
+    return false;
   }
 }
 function bbDbgSet(msg: string) {
@@ -547,154 +547,134 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   // =========================================================
   // REAL ATTACK LUNGE (during battle timeline)
-  // TG iOS WebView can be flaky with transform, so we animate
-  // the CardRoot (data-bb-slot element) via top/left.
+  // Telegram WebView (iOS/Windows) can drop layout-relative movement.
+  // Final approach: DETACH original CardRoot -> move as fixed in body overlay -> RETURN.
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
-    // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
+    // debug tick
     try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
 
-    const fromCard = unitElByIdRef.current[fromId];
-    const toCard = unitElByIdRef.current[toId];
-    const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
-    const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
-    if (!attackerRoot || !targetRoot) {
-      bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}
-foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
-      return;
-    }
-    if (attackerRoot === targetRoot) return;
-
-    // Cancel WAAPI animations if any, so transform/transition is deterministic.
-    attackerRoot.getAnimations?.().forEach((anim) => anim.cancel());
-
-    // Create (or reuse) a top-level fixed overlay layer to avoid Telegram WebView layout/stacking issues.
-    const getOverlay = (): HTMLDivElement => {
-      const id = 'bb-anim-layer';
-      let el = document.getElementById(id) as HTMLDivElement | null;
-      if (!el) {
-        el = document.createElement('div');
-        el.id = id;
-        el.style.position = 'fixed';
-        el.style.left = '0px';
-        el.style.top = '0px';
-        el.style.right = '0px';
-        el.style.bottom = '0px';
-        el.style.pointerEvents = 'none';
-        el.style.zIndex = '2147483647';
-        // Prevent iOS Safari from creating a new stacking context that can swallow fixed children
-        el.style.transform = 'translateZ(0)';
-        document.body.appendChild(el);
-      }
-      return el;
-    };
-
-    const ar = attackerRoot.getBoundingClientRect();
-    const br = targetRoot.getBoundingClientRect();
-    const ax = ar.left + ar.width / 2;
-    const ay = ar.top + ar.height / 2;
-    const bx = br.left + br.width / 2;
-    const by = br.top + br.height / 2;
-
-    const dx = (bx - ax) * 0.78;
-    const dy = (by - ay) * 0.78;
-
-    const ease = 'cubic-bezier(.18,.9,.22,1)';
-    const outMs = 220;
-    const backMs = 200;
-
-    // Save inline styles for full restore.
-    const prev = {
-      position: attackerRoot.style.position,
-      left: attackerRoot.style.left,
-      top: attackerRoot.style.top,
-      right: attackerRoot.style.right,
-      bottom: attackerRoot.style.bottom,
-      width: attackerRoot.style.width,
-      height: attackerRoot.style.height,
-      transform: attackerRoot.style.transform,
-      transition: attackerRoot.style.transition,
-      zIndex: attackerRoot.style.zIndex,
-      willChange: attackerRoot.style.willChange,
-      pointerEvents: attackerRoot.style.pointerEvents,
-    };
-
-    const restoreStyles = () => {
-      attackerRoot.style.position = prev.position;
-      attackerRoot.style.left = prev.left;
-      attackerRoot.style.top = prev.top;
-      attackerRoot.style.right = prev.right;
-      attackerRoot.style.bottom = prev.bottom;
-      attackerRoot.style.width = prev.width;
-      attackerRoot.style.height = prev.height;
-      attackerRoot.style.transform = prev.transform;
-      attackerRoot.style.transition = prev.transition;
-      attackerRoot.style.zIndex = prev.zIndex;
-      attackerRoot.style.willChange = prev.willChange;
-      attackerRoot.style.pointerEvents = prev.pointerEvents;
-    };
-
-    // Re-parent (detach) the *same DOM node* into overlay, with a placeholder so we can return it.
-    const parent = attackerRoot.parentNode;
-    const nextSibling = attackerRoot.nextSibling;
-    const placeholder = document.createComment('bb-lunge-placeholder');
     try {
-      parent?.insertBefore(placeholder, attackerRoot);
-      getOverlay().appendChild(attackerRoot);
-    } catch {
-      // If reparent fails, do nothing.
-    }
+      const fromCard = unitElByIdRef.current[fromId];
+      const toCard = unitElByIdRef.current[toId];
+      const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
+      const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
+      if (!attackerRoot || !targetRoot) {
+        bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}\nfoundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
+        return;
+      }
+      if (attackerRoot === targetRoot) return;
 
-    // DETACH: fixed at the exact current screen rect.
-    attackerRoot.style.position = 'fixed';
-    attackerRoot.style.left = `${ar.left}px`;
-    attackerRoot.style.top = `${ar.top}px`;
-    attackerRoot.style.right = 'auto';
-    attackerRoot.style.bottom = 'auto';
-    attackerRoot.style.width = `${ar.width}px`;
-    attackerRoot.style.height = `${ar.height}px`;
-    attackerRoot.style.zIndex = '2147483647';
-    attackerRoot.style.pointerEvents = 'none';
-    attackerRoot.style.willChange = 'transform';
-    attackerRoot.style.transition = 'none';
-    attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+      const a = attackerRoot.getBoundingClientRect();
+      const b = targetRoot.getBoundingClientRect();
+      const ax = a.left + a.width / 2;
+      const ay = a.top + a.height / 2;
+      const bx = b.left + b.width / 2;
+      const by = b.top + b.height / 2;
 
-    try { targetRoot.classList.add('is-attack-to'); } catch {}
+      const dx = (bx - ax) * 0.78;
+      const dy = (by - ay) * 0.78;
 
-    // LUNGE: animate only transform.
-    requestAnimationFrame(() => {
+      const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '');
+      const isIOS = /iP(hone|ad|od)/.test(ua);
+
+      const ease = 'cubic-bezier(.18,.9,.22,1)';
+      const outMs = isIOS ? 360 : 260;
+      const backMs = isIOS ? 300 : 220;
+
+      const moveEl = attackerRoot;
+      moveEl.getAnimations?.().forEach((anim) => anim.cancel());
+
+      // Create (or reuse) a top-level overlay so TG cannot clip or collapse motion.
+      const overlayId = 'bb-attack-overlay-layer';
+      let overlay = document.getElementById(overlayId) as HTMLDivElement | null;
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = overlayId;
+        overlay.style.position = 'fixed';
+        overlay.style.left = '0';
+        overlay.style.top = '0';
+        overlay.style.width = '100vw';
+        overlay.style.height = '100vh';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.zIndex = '999998';
+        overlay.style.transform = 'translateZ(0)';
+        overlay.style.willChange = 'transform';
+        document.body.appendChild(overlay);
+      }
+
+      // Save DOM position and inline styles
+      const parent = moveEl.parentNode;
+      const nextSibling = moveEl.nextSibling;
+
+      const prev = {
+        position: moveEl.style.position,
+        left: moveEl.style.left,
+        top: moveEl.style.top,
+        transform: moveEl.style.transform,
+        transition: moveEl.style.transition,
+        zIndex: moveEl.style.zIndex,
+        willChange: moveEl.style.willChange,
+        pointerEvents: moveEl.style.pointerEvents,
+        animation: (moveEl.style as any).animation || '',
+      } as any;
+
+      // DETACH into overlay (same DOM node, not a clone)
+      try {
+        if (parent) overlay!.appendChild(moveEl);
+      } catch {}
+
+      // FIXED at current position
+      moveEl.style.position = 'fixed';
+      moveEl.style.left = `${a.left}px`;
+      moveEl.style.top = `${a.top}px`;
+      moveEl.style.transform = 'translate3d(0,0,0)';
+      moveEl.style.transition = 'none';
+      moveEl.style.willChange = 'transform';
+      moveEl.style.zIndex = '999999';
+      moveEl.style.pointerEvents = 'none';
+      // Prevent any leftover CSS animation from fighting transform on iOS
+      (moveEl.style as any).animation = 'none';
+
+      // Some iOS WebViews need two frames before the first transition applies.
       requestAnimationFrame(() => {
-        attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
-        attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
-        try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
-        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
-
-        window.setTimeout(() => {
-          attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
-          attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+        requestAnimationFrame(() => {
+          moveEl.style.transition = `transform ${outMs}ms ${ease}`;
+          moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+          bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
           window.setTimeout(() => {
-            try { targetRoot.classList.remove('is-attack-to'); } catch {}
+            moveEl.style.transition = `transform ${backMs}ms ${ease}`;
+            moveEl.style.transform = 'translate3d(0,0,0)';
 
-            // RETURN: put the node back where it was, then restore styles.
-            try {
-              if (placeholder.parentNode) {
-                placeholder.parentNode.insertBefore(attackerRoot, placeholder);
-                placeholder.parentNode.removeChild(placeholder);
-              } else if (parent) {
-                // fallback
-                if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
-                else parent.appendChild(attackerRoot);
-              }
-            } catch {}
+            window.setTimeout(() => {
+              try {
+                // RESTORE DOM position
+                if (parent) {
+                  if (nextSibling && nextSibling.parentNode === parent) parent.insertBefore(moveEl, nextSibling);
+                  else parent.appendChild(moveEl);
+                }
+                // RESTORE inline styles
+                moveEl.style.position = prev.position;
+                moveEl.style.left = prev.left;
+                moveEl.style.top = prev.top;
+                moveEl.style.transform = prev.transform;
+                moveEl.style.transition = prev.transition;
+                moveEl.style.zIndex = prev.zIndex;
+                moveEl.style.willChange = prev.willChange;
+                moveEl.style.pointerEvents = prev.pointerEvents;
+                (moveEl.style as any).animation = prev.animation;
 
-            restoreStyles();
-          }, backMs + 80);
-        }, outMs + 80);
+                // Safety: ensure we don't leave motion residue on iOS
+                moveEl.getAnimations?.().forEach((anim) => anim.cancel());
+              } catch {}
+            }, backMs + 60);
+          }, outMs + 80);
+        });
       });
-    });
+    } catch {}
   }, []);
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
@@ -752,7 +732,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
-    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for ATTACK events...'); }
+    bbDbgSet('DBG READY — waiting for ATTACK events...');
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
