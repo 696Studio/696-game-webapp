@@ -1,5 +1,4 @@
-﻿// TEMP-GIT-TEST
-"use client";
+﻿"use client";
 // @ts-nocheck
 
 import React, {Suspense, useEffect, useMemo, useRef, useState, useCallback} from "react";
@@ -212,15 +211,15 @@ function fmtTime(sec: number) {
 
 function safeSliceId(id?: string | null) {
   const s = String(id ?? "");
-  return s.length > 10 ? `${s.slice(0, 8)}вЂ¦` : s || "вЂ”";
+  return s.length > 10 ? `${s.slice(0, 8)}…` : s || "—";
 }
 
 function rarityRu(r: string) {
   const rr = String(r || "").toLowerCase();
-  if (rr === "legendary") return "Р›Р•Р“Р•РќР”РђР РќРђРЇ";
-  if (rr === "epic") return "Р­РџРР§Р•РЎРљРђРЇ";
-  if (rr === "rare") return "Р Р•Р”РљРђРЇ";
-  return "РћР‘Р«Р§РќРђРЇ";
+  if (rr === "legendary") return "ЛЕГЕНДАРНАЯ";
+  if (rr === "epic") return "ЭПИЧЕСКАЯ";
+  if (rr === "rare") return "РЕДКАЯ";
+  return "ОБЫЧНАЯ";
 }
 
 function rarityFxClass(r: string) {
@@ -339,7 +338,7 @@ function resolveCardArtUrl(raw?: string | null) {
 }
 
 /**
- * вњ… BOARD COORDS FIX (background-size: cover)
+ * ✅ BOARD COORDS FIX (background-size: cover)
  * IMPORTANT: BOARD_IMG_W/H MUST MATCH your real /public/arena/board.png size.
  * If they are wrong, everything will be shifted.
  */
@@ -413,25 +412,6 @@ function BattleInner() {
   // Debug flags (safe in Telegram: just read query params).
   const fxdebug = sp.get("fxdebug") === "1";
   const layoutdebug = sp.get("layoutdebug") === "1" || fxdebug;
-
-  // iOS Telegram WebView is extremely sensitive to competing transforms (3D flip + CSS shakes + our detach-lunge).
-  // We keep detection conservative and SSR-safe.
-  const isIosWebView = useMemo(() => {
-    if (typeof navigator === "undefined") return false;
-    const ua = navigator.userAgent || "";
-    const isiOS = /iPad|iPhone|iPod/i.test(ua) || (/(Macintosh)/i.test(ua) && (navigator as any).maxTouchPoints > 1);
-    return !!isiOS;
-  }, []);
-
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const root = document.documentElement;
-    if (isIosWebView) root.classList.add("bb-ios");
-    else root.classList.remove("bb-ios");
-    return () => {
-      root.classList.remove("bb-ios");
-    };
-  }, [isIosWebView]);
 
   // Local toggle (does not affect layout): lets you enable debug overlay without URL params.
   const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
@@ -563,11 +543,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     console.log("[layoutdebug] click:", { nx, ny, x, y });
   };
 
-  // Map unit instanceId -> DOM nodes.
-  // IMPORTANT: for detach-lunge we must move the whole CardRoot (motion layer), not just .bb-card,
-  // otherwise iOS can show a "ghost/clone" feel (anchor stays in the slot).
-  const unitRootByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
-  const unitSlotByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
 
   // =========================================================
   // REAL ATTACK LUNGE (during battle timeline)
@@ -576,109 +552,117 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
 
-  const lungeByInstanceIds = useCallback(
-    (fromId: string, toId: string) => {
-      // debug tick
-      try {
-        (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1;
-      } catch {}
+  const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
 
-      try {
-        const attackerRoot = unitRootByIdRef.current[fromId];
-        const targetRoot = unitRootByIdRef.current[toId];
-        const attackerSlot = unitSlotByIdRef.current[fromId];
-        const targetSlot = unitSlotByIdRef.current[toId];
+    // Detach → Fixed → Lunge → Return (original DOM node, no clone)
+    try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
 
-        if (!attackerRoot || !targetRoot) {
-          bbDbgSet(
-            `#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}\nfoundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`
-          );
-          return;
-        }
-        if (attackerRoot === targetRoot) return;
+    const fromElRaw = unitElByIdRef.current[fromId] as HTMLElement | undefined;
+    const toElRaw = unitElByIdRef.current[toId] as HTMLElement | undefined;
 
-        const ar = attackerRoot.getBoundingClientRect();
-        const br = targetRoot.getBoundingClientRect();
-        const ax = ar.left + ar.width / 2;
-        const ay = ar.top + ar.height / 2;
-        const bx = br.left + br.width / 2;
-        const by = br.top + br.height / 2;
+    // Prefer the real card root, not the slot/container
+    const attackerEl = (fromElRaw ? ((fromElRaw.closest?.('.bb-card') as HTMLElement | null) || fromElRaw) : null);
+    const targetEl = (toElRaw ? ((toElRaw.closest?.('.bb-card') as HTMLElement | null) || toElRaw) : null);
 
-        // Slightly dampen travel so it doesn't overshoot on small boards.
-        const travel = isIosWebView ? 0.92 : 0.86;
-        const dx = (bx - ax) * travel;
-        const dy = (by - ay) * travel;
+    if (!attackerEl || !targetEl) {
+      bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}\nfoundAttacker=${!!attackerEl} foundTarget=${!!targetEl}`);
+      return;
+    }
+    if (attackerEl === targetEl) return;
 
-        const ease = "cubic-bezier(.18,.9,.22,1)";
-        const outMs = isIosWebView ? 360 : 260;
-        const backMs = isIosWebView ? 320 : 220;
+    // Compute delta between centers
+    const ar = attackerEl.getBoundingClientRect();
+    const br = targetEl.getBoundingClientRect();
+    const ax = ar.left + ar.width / 2;
+    const ay = ar.top + ar.height / 2;
+    const bx = br.left + br.width / 2;
+    const by = br.top + br.height / 2;
 
-        // Cancel any running WAAPI animations on this node.
-        (attackerRoot as any).getAnimations?.()?.forEach((anim: any) => anim.cancel());
+    // Slightly damp so it doesn't fully overlap
+    const dx = (bx - ax) * 0.78;
+    const dy = (by - ay) * 0.78;
 
-        // Snapshot inline styles we will mutate.
-        const prev = {
-          position: attackerRoot.style.position,
-          left: attackerRoot.style.left,
-          top: attackerRoot.style.top,
-          transform: attackerRoot.style.transform,
-          transition: attackerRoot.style.transition,
-          zIndex: attackerRoot.style.zIndex,
-          willChange: attackerRoot.style.willChange,
-          pointerEvents: attackerRoot.style.pointerEvents,
-        };
+    const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const easeOut = 'cubic-bezier(.18,.9,.22,1)';
+    const easeBack = 'cubic-bezier(.2,.8,.2,1)';
+    const outMs = isIOS ? 340 : 260;
+    const backMs = isIOS ? 260 : 220;
 
-        // Add per-slot recoil classes (CSS-based, safe) and auto-clear.
-        if (targetSlot) {
-          targetSlot.classList.add("is-attack-to");
-          window.setTimeout(() => targetSlot.classList.remove("is-attack-to"), Math.max(outMs, backMs) + 120);
-        }
-        if (attackerSlot) {
-          attackerSlot.classList.add("is-attack-from");
-          window.setTimeout(() => attackerSlot.classList.remove("is-attack-from"), Math.max(outMs, backMs) + 120);
-        }
+    // Cancel any WAAPI on the same node (Safari can keep stale animations)
+    try { attackerEl.getAnimations?.().forEach((a) => a.cancel()); } catch {}
 
-        // DETACH -> FIXED
-        attackerRoot.style.position = "fixed";
-        attackerRoot.style.left = `${ar.left}px`;
-        attackerRoot.style.top = `${ar.top}px`;
-        attackerRoot.style.zIndex = "999999";
-        attackerRoot.style.willChange = "transform";
-        attackerRoot.style.pointerEvents = "none";
-        attackerRoot.style.transition = "none";
-        attackerRoot.style.transform = "translate3d(0px, 0px, 0px)";
+    // Save inline styles (MUST restore)
+    const prev = {
+      position: attackerEl.style.position,
+      left: attackerEl.style.left,
+      top: attackerEl.style.top,
+      width: attackerEl.style.width,
+      height: attackerEl.style.height,
+      transform: attackerEl.style.transform,
+      transition: attackerEl.style.transition,
+      zIndex: attackerEl.style.zIndex,
+      willChange: attackerEl.style.willChange,
+      pointerEvents: attackerEl.style.pointerEvents,
+      margin: attackerEl.style.margin,
+      transformOrigin: attackerEl.style.transformOrigin,
+    };
 
-        // Force style flush so iOS doesn't skip the first transition.
-        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-        attackerRoot.offsetHeight;
+    // DETACH: fixed at current screen position
+    attackerEl.style.position = 'fixed';
+    attackerEl.style.left = `${ar.left}px`;
+    attackerEl.style.top = `${ar.top}px`;
+    attackerEl.style.width = `${ar.width}px`;
+    attackerEl.style.height = `${ar.height}px`;
+    attackerEl.style.margin = '0';
+    attackerEl.style.transformOrigin = '50% 50%';
+    attackerEl.style.transform = 'translate3d(0,0,0)';
+    attackerEl.style.transition = 'none';
+    attackerEl.style.zIndex = '999999';
+    attackerEl.style.willChange = 'transform';
+    attackerEl.style.pointerEvents = 'none';
 
-        requestAnimationFrame(() => {
-          attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
-          attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
-          bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
+    // Force style flush so next transition always runs
+    void attackerEl.offsetHeight;
 
-          window.setTimeout(() => {
-            attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
-            attackerRoot.style.transform = "translate3d(0px, 0px, 0px)";
+    // Optional recoil marker (visual-only, no movement)
+    try { (targetEl.closest?.('[data-bb-slot]') as HTMLElement | null)?.classList.add('is-attack-to'); } catch {}
 
-            window.setTimeout(() => {
-              try {
-                attackerRoot.style.position = prev.position;
-                attackerRoot.style.left = prev.left;
-                attackerRoot.style.top = prev.top;
-                attackerRoot.style.transform = prev.transform;
-                attackerRoot.style.transition = prev.transition;
-                attackerRoot.style.zIndex = prev.zIndex;
-                attackerRoot.style.willChange = prev.willChange;
-                attackerRoot.style.pointerEvents = prev.pointerEvents;
-              } catch {}
-            }, backMs + 80);
-          }, outMs + 40);
-        });
-      } catch {}
-    },
-    [isIosWebView]
-  );
+    const cleanup = () => {
+      // Restore exactly what was before
+      attackerEl.style.position = prev.position;
+      attackerEl.style.left = prev.left;
+      attackerEl.style.top = prev.top;
+      attackerEl.style.width = prev.width;
+      attackerEl.style.height = prev.height;
+      attackerEl.style.margin = prev.margin;
+      attackerEl.style.transformOrigin = prev.transformOrigin;
+      attackerEl.style.transform = prev.transform;
+      attackerEl.style.transition = prev.transition;
+      attackerEl.style.zIndex = prev.zIndex;
+      attackerEl.style.willChange = prev.willChange;
+      attackerEl.style.pointerEvents = prev.pointerEvents;
+
+      try { (targetEl.closest?.('[data-bb-slot]') as HTMLElement | null)?.classList.remove('is-attack-to'); } catch {}
+    };
+
+    // LUNGE OUT
+    requestAnimationFrame(() => {
+      attackerEl.style.transition = `transform ${outMs}ms ${easeOut}`;
+      attackerEl.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+
+      // RETURN BACK
+      window.setTimeout(() => {
+        attackerEl.style.transition = `transform ${backMs}ms ${easeBack}`;
+        attackerEl.style.transform = 'translate3d(0,0,0)';
+
+        window.setTimeout(() => {
+          cleanup();
+        }, backMs + 40);
+      }, outMs + 20);
+
+      bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}  dx=${Math.round(dx)} dy=${Math.round(dy)}  ios=${isIOS}`);
+    });
+}, []);
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
@@ -705,7 +689,7 @@ const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
     if (!arenaEl) return;
 
     const arenaRect = arenaEl.getBoundingClientRect();
-    const targetEl = unitRootByIdRef.current[instanceId];
+    const targetEl = unitElByIdRef.current[instanceId];
     const r = targetEl?.getBoundingClientRect();
     if (!r) return;
 
@@ -735,7 +719,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
-    bbDbgSet('DBG READY вЂ” waiting for ATTACK events...');
+    bbDbgSet('DBG READY — waiting for ATTACK events...');
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
@@ -830,13 +814,13 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return () => window.cancelAnimationFrame(id);
   }, [layoutTick]);
 
-  // вњ… FIX: laneRects hook MUST be above any early returns (hooks order)
+  // ✅ FIX: laneRects hook MUST be above any early returns (hooks order)
   const laneRects = useMemo(() => {
     if (!arenaBox) return null;
 
     const enemy = coverMapRect(
       0.08,
-      0.14, // в¬‡ РІРµСЂС…РЅСЋСЋ Р§РЈРўР¬ РЅРёР¶Рµ
+      0.14, // ⬇ верхнюю ЧУТЬ ниже
       0.92,
       0.28,
       arenaBox.w,
@@ -847,7 +831,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     
     const you = coverMapRect(
       0.08,
-      0.38, // в¬†в¬†в¬† РЅРёР¶РЅСЋСЋ РЎРР›Р¬РќРћ РІС‹С€Рµ
+      0.38, // ⬆⬆⬆ нижнюю СИЛЬНО выше
       0.92,
       0.52,
       arenaBox.w,
@@ -1080,7 +1064,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           u.alive = false;
           u.hp = 0;
           u.dyingAt = e.t ?? Date.now();
-          // вљ пёЏ removal happens AFTER animation
+          // ⚠️ removal happens AFTER animation
           continue;
         }
       } else if (e.type === "score") {
@@ -1222,9 +1206,9 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [phase, roundWinner, roundN, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
-    if (!match) return "вЂ¦";
-    if (!match.winner_user_id) return "РќРёС‡СЊСЏ";
-    return "Р•СЃС‚СЊ РїРѕР±РµРґРёС‚РµР»СЊ";
+    if (!match) return "…";
+    if (!match.winner_user_id) return "Ничья";
+    return "Есть победитель";
   }, [match]);
 
   const revealed = phase === "reveal" || phase === "score" || phase === "end";
@@ -1485,7 +1469,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   function getCenterInArena(instanceId: string) {
     const arenaEl = arenaRef.current;
-    const el = unitRootByIdRef.current[instanceId];
+    const el = unitElByIdRef.current[instanceId];
     if (!arenaEl || !el) return null;
 
     const aRect = arenaEl.getBoundingClientRect();
@@ -1553,8 +1537,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 }) {
   const isBottom = where === "bottom";
 
-  // вњ… Bottom HUD targets (arena pixel coords in BOARD image space)
-  // Bottom is already perfect вЂ” do not touch these.
+  // ✅ Bottom HUD targets (arena pixel coords in BOARD image space)
+  // Bottom is already perfect — do not touch these.
   const BOTTOM_AVATAR_Y = 765; // avatar ring center
   const BOTTOM_HP_Y = 644;     // TeamHP row
   const BOTTOM_NAME_Y = 678;   // nickname baseline
@@ -1582,7 +1566,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   const hpPct = clamp((hp / Math.max(1, hpMax)) * 100, 0, 100);
 
-  // вњ… TOP: mirror bottom anchors around the arena height.
+  // ✅ TOP: mirror bottom anchors around the arena height.
   // This makes top match bottom perfectly, and bottom stays untouched.
   const TOP_AVATAR_Y = arenaBox.h - BOTTOM_AVATAR_Y - 6;
   const TOP_HP_Y = arenaBox.h - BOTTOM_HP_Y;
@@ -1643,7 +1627,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         </div>
 
         <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-          {score == null ? "вЂ”" : score}
+          {score == null ? "—" : score}
         </div>
       </div>
     </>
@@ -1806,21 +1790,8 @@ const hpPct = useMemo(() => {
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
     return (
-      <div
-        ref={(el) => {
-          const id = renderUnit?.instanceId;
-          if (!id) return;
-          unitSlotByIdRef.current[id] = el;
-        }}
-        className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}
-        data-unit-id={renderUnit?.instanceId}
-      >
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
         <div
-          ref={(el) => {
-            const id = renderUnit?.instanceId;
-            if (!id) return;
-            unitRootByIdRef.current[id] = el;
-          }}
           data-bb-slot={slotKey}
           className="bb-motion-layer bb-card-root"
           data-fx-motion="1"
@@ -1831,6 +1802,9 @@ const hpPct = useMemo(() => {
         {isDyingUi ? <div className="bb-death" /> : null}
       </div>
       <div
+        ref={(el) => {
+          if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
+        }}
         data-unit-id={renderUnit?.instanceId}
         className={[
           "bb-card",
@@ -1932,12 +1906,12 @@ const hpPct = useMemo(() => {
       {renderUnit && (
         <div className="bb-hud" aria-hidden="true">
           <span className="bb-hud-item">
-            <span className="bb-hud-icon" role="img" aria-label="Attack">вљ”</span>
+            <span className="bb-hud-icon" role="img" aria-label="Attack">⚔</span>
             <span className="bb-hud-num">{power ?? 0}</span>
           </span>
           <span className="bb-hud-sep" />
           <span className="bb-hud-item">
-            <span className="bb-hud-icon hp" role="img" aria-label="HP">вќ¤</span>
+            <span className="bb-hud-icon hp" role="img" aria-label="HP">❤</span>
             <span className="bb-hud-num">{unit?.hp ?? 0}</span>
           </span>
         </div>
@@ -2138,9 +2112,9 @@ const hpPct = useMemo(() => {
           <div style={{ fontWeight: 800, marginBottom: 4 }}>Layout Debug</div>
           {debugCover ? (
             <>
-              <div>arenaW/arenaH: {debugCover.arenaW}Г—{debugCover.arenaH}</div>
+              <div>arenaW/arenaH: {debugCover.arenaW}×{debugCover.arenaH}</div>
               <div>
-                drawnW/drawnH: {Math.round(debugCover.drawnW)}Г—{Math.round(debugCover.drawnH)}
+                drawnW/drawnH: {Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
               </div>
               <div>
                 offsetX/Y: {Math.round(debugCover.offsetX)},{Math.round(debugCover.offsetY)}
@@ -2149,11 +2123,11 @@ const hpPct = useMemo(() => {
               <div>scale: {debugCover.scale.toFixed(4)}</div>
 )}
               <div style={{ marginTop: 6, opacity: 0.9 }}>
-                Tap arena в†’ nx/ny: {dbgClick ? `${dbgClick.nx.toFixed(4)} / ${dbgClick.ny.toFixed(4)}` : "вЂ”"}
+                Tap arena → nx/ny: {dbgClick ? `${dbgClick.nx.toFixed(4)} / ${dbgClick.ny.toFixed(4)}` : "—"}
               </div>
             </>
           ) : (
-            <div style={{ opacity: 0.85 }}>debugCover: вЂ”</div>
+            <div style={{ opacity: 0.85 }}>debugCover: —</div>
           )}
         </div>
       ) : null}
@@ -2183,10 +2157,10 @@ const hpPct = useMemo(() => {
           {debugCover ? (
             <>
               <div>
-                arenaW/arenaH: {debugCover.arenaW}Г—{debugCover.arenaH}
+                arenaW/arenaH: {debugCover.arenaW}×{debugCover.arenaH}
               </div>
               <div>
-                drawnW/drawnH: {Math.round(debugCover.drawnW)}Г—{Math.round(debugCover.drawnH)}
+                drawnW/drawnH: {Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
               </div>
               <div>scale: {debugCover.scale.toFixed(4)}</div>
               <div>
@@ -2197,7 +2171,7 @@ const hpPct = useMemo(() => {
             <div style={{ opacity: 0.8 }}>arena box: not ready</div>
           )}
           <div style={{ marginTop: 6, opacity: 0.9 }}>
-            Tap on arena в†’ you&#39;ll get nx/ny.
+            Tap on arena → you&#39;ll get nx/ny.
           </div>
           {dbgClick ? (
             <div style={{ marginTop: 6 }}>
@@ -2216,8 +2190,8 @@ const hpPct = useMemo(() => {
 
 
         <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-lg font-semibold mb-2">РћС‚РєСЂРѕР№ РІ Telegram</div>
-          <div className="text-sm ui-subtle">Р­С‚Р° СЃС‚СЂР°РЅРёС†Р° СЂР°Р±РѕС‚Р°РµС‚ С‚РѕР»СЊРєРѕ РІРЅСѓС‚СЂРё Telegram WebApp.</div>
+          <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
+          <div className="text-sm ui-subtle">Эта страница работает только внутри Telegram WebApp.</div>
         </div>
       </main>
     );
@@ -2272,8 +2246,8 @@ const hpPct = useMemo(() => {
 )}
 
         <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-sm font-semibold">Р—Р°РіСЂСѓР·РєР°вЂ¦</div>
-          <div className="mt-2 text-sm ui-subtle">РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ СЃРµСЃСЃРёРё.</div>
+          <div className="text-sm font-semibold">Загрузка…</div>
+          <div className="mt-2 text-sm ui-subtle">Синхронизация сессии.</div>
           <div className="mt-4 ui-progress">
             <div className="w-1/3 opacity-70 animate-pulse" />
           </div>
@@ -2331,8 +2305,8 @@ const hpPct = useMemo(() => {
 )}
 
         <div className="w-full max-w-md ui-card p-5">
-          <div className="text-lg font-semibold">{timedOut ? "РўР°Р№РјР°СѓС‚" : "РћС€РёР±РєР° СЃРµСЃСЃРёРё"}</div>
-          <div className="mt-2 text-sm ui-subtle">РќР°Р¶РјРё Re-sync Рё РїРѕРїСЂРѕР±СѓР№ СЃРЅРѕРІР°.</div>
+          <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
+          <div className="mt-2 text-sm ui-subtle">Нажми Re-sync и попробуй снова.</div>
           <button onClick={() => refreshSession?.()} className="mt-5 ui-btn ui-btn-primary w-full" type="button">
             Re-sync
           </button>
@@ -2390,10 +2364,10 @@ const hpPct = useMemo(() => {
 )}
 
         <div className="w-full max-w-md ui-card p-5">
-          <div className="text-lg font-semibold">РћС€РёР±РєР°</div>
+          <div className="text-lg font-semibold">Ошибка</div>
           <div className="mt-2 text-sm ui-subtle">{errText}</div>
           <button onClick={() => router.back()} className="mt-5 ui-btn ui-btn-ghost w-full" type="button">
-            РќР°Р·Р°Рґ
+            Назад
           </button>
         </div>
       </main>
@@ -2449,9 +2423,9 @@ const hpPct = useMemo(() => {
 )}
 
         <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-sm font-semibold">Р—Р°РіСЂСѓР¶Р°СЋ РјР°С‚С‡вЂ¦</div>
+          <div className="text-sm font-semibold">Загружаю матч…</div>
           <div className="mt-2 text-sm ui-subtle">
-            MatchId: <span className="font-semibold">{matchId.slice(0, 8)}вЂ¦</span>
+            MatchId: <span className="font-semibold">{matchId.slice(0, 8)}…</span>
           </div>
           <div className="mt-4 ui-progress">
             <div className="w-1/3 opacity-70 animate-pulse" />
@@ -2681,7 +2655,7 @@ const hpPct = useMemo(() => {
 
         .hud-actions { display: flex; gap: 4px; align-items: center; }
 
-        /* вњ… IMPORTANT: no padding here, because background covers the full box */
+        /* ✅ IMPORTANT: no padding here, because background covers the full box */
         .arena {
           position: relative;
           padding: 0;
@@ -2699,7 +2673,7 @@ const hpPct = useMemo(() => {
           background-repeat: no-repeat;
           filter: saturate(1.02) contrast(1.04);
           opacity: 1;
-          /* рџљ« no transform scale here, otherwise coverMap won't match */
+          /* 🚫 no transform scale here, otherwise coverMap won't match */
         }
         .arena::after {
           content: "";
@@ -2835,7 +2809,7 @@ const hpPct = useMemo(() => {
 /* Fortnite-style XP bar (safe) */
 .map-xp {
   --xp: 0%;                 /* set 0%..100% from inline style */
-  --xpHue: 120;             /* 120=green в†’ 0=red (set from inline style) */
+  --xpHue: 120;             /* 120=green → 0=red (set from inline style) */
   --pad: 7px;               /* knob radius (14px / 2) */
 
   position: relative;
@@ -2905,7 +2879,7 @@ const hpPct = useMemo(() => {
     0 2px 8px rgba(0,0,0,0.45);
 }
 
-        /* вњ… Make it SMALL and in the left corner, not overlapping enemy avatar */
+        /* ✅ Make it SMALL and in the left corner, not overlapping enemy avatar */
         .corner-info {
           position: absolute;
           left: 10px;
@@ -2989,7 +2963,7 @@ const hpPct = useMemo(() => {
           min-height: 720px;
         }
 
-        /* вњ… Row is now centered inside lane rect (top/left/width/height via inline styles) */
+        /* ✅ Row is now centered inside lane rect (top/left/width/height via inline styles) */
         .row {
           border-radius: 0;
           border: 0;
@@ -3385,11 +3359,11 @@ const hpPct = useMemo(() => {
           <div style={{ marginTop: 6, opacity: 0.9 }}>
             {dbgClick
               ? `click nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)} (x=${Math.round(dbgClick.x)} y=${Math.round(dbgClick.y)})`
-              : "click: вЂ”"}
+              : "click: —"}
           </div>
           {debugCover && (
             <div style={{ marginTop: 8, opacity: 0.9 }}>
-              arena {Math.round(debugCover.arenaW)}Г—{Math.round(debugCover.arenaH)} scale {debugCover.scale.toFixed(3)}
+              arena {Math.round(debugCover.arenaW)}×{Math.round(debugCover.arenaH)} scale {debugCover.scale.toFixed(3)}
             </div>
           )}
         </div>
@@ -3401,7 +3375,7 @@ const hpPct = useMemo(() => {
             <div className="hud-left">
               <div className="hud-title">BATTLE</div>
               <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">
-                РџРѕР»Рµ Р±РѕСЏ вЂў {fmtTime(t)} / {fmtTime(durationSec)}
+                Поле боя • {fmtTime(t)} / {fmtTime(durationSec)}
               </div>
 
               <div
@@ -3436,13 +3410,13 @@ const hpPct = useMemo(() => {
               <div className="hud-sub">
                 <span className="hud-pill">{phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}</span>
                 <span className="hud-pill">
-                  Р Р°СѓРЅРґ{" "}
+                  Раунд{" "}
                   <b className="tabular-nums">
                     {roundN}/{roundCount}
                   </b>
                 </span>
                 <span className="hud-pill">
-                  Match <b className="tabular-nums">{String(match.id).slice(0, 8)}вЂ¦</b>
+                  Match <b className="tabular-nums">{String(match.id).slice(0, 8)}…</b>
                 </span>
                 <span className="hud-pill">
                   tl <b className="tabular-nums">{timeline.length}</b>
@@ -3455,7 +3429,7 @@ const hpPct = useMemo(() => {
 
             <div className="hud-actions">
               <button onClick={() => setPlaying((p) => !p)} className="ui-btn ui-btn-ghost" type="button">
-                {playing ? "РџР°СѓР·Р°" : "в–¶"}
+                {playing ? "Пауза" : "▶"}
               </button>
               <button
                 onClick={() => {
@@ -3465,10 +3439,10 @@ const hpPct = useMemo(() => {
                 className="ui-btn ui-btn-ghost"
                 type="button"
               >
-                в†є
+                ↺
               </button>
               <button onClick={() => router.push("/pvp")} className="ui-btn ui-btn-ghost" type="button">
-                РќР°Р·Р°Рґ
+                Назад
               </button>
             </div>
           </div>
@@ -3497,7 +3471,7 @@ const hpPct = useMemo(() => {
               {"layoutdebug: tap arena to read nx/ny\n" +
                 (dbgClick
                   ? `click nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)} (x=${Math.round(dbgClick.x)} y=${Math.round(dbgClick.y)})`
-                  : "click: вЂ”")}
+                  : "click: —")}
             </div>
           )}
 
@@ -3598,8 +3572,8 @@ const hpPct = useMemo(() => {
                   whiteSpace: "pre",
                 }}
               >
-                {`arena ${Math.round(debugCover.arenaW)}Г—${Math.round(debugCover.arenaH)}\n` +
-                  `drawn ${Math.round(debugCover.drawnW)}Г—${Math.round(debugCover.drawnH)}\n` +
+                {`arena ${Math.round(debugCover.arenaW)}×${Math.round(debugCover.arenaH)}\n` +
+                  `drawn ${Math.round(debugCover.drawnW)}×${Math.round(debugCover.drawnH)}\n` +
                   `off ${Math.round(debugCover.offsetX)},${Math.round(debugCover.offsetY)}  scale ${debugCover.scale.toFixed(3)}`}
               </div>
             </div>
@@ -3642,7 +3616,7 @@ const hpPct = useMemo(() => {
                   <br />
                   offX:{Math.round(debugCover.offsetX)} offY:{Math.round(debugCover.offsetY)}
                   <br />
-                  drawn:{Math.round(debugCover.drawnW)}Г—{Math.round(debugCover.drawnH)}
+                  drawn:{Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
                 </div>
                 <div style={{ marginTop: 6 }}>
                   <b>TOP</b> x:{Math.round(debugCover.topX)} y:{Math.round(debugCover.topY)}
@@ -3672,13 +3646,13 @@ const hpPct = useMemo(() => {
 
           <div className="corner-info">
             <div className="h1">
-              Р РђРЈРќР”{" "}
+              РАУНД{" "}
               <b className="tabular-nums">
                 {roundN}/{roundCount}
               </b>
             </div>
             <div className="line">
-              РџРѕР±РµРґРёС‚РµР»СЊ: <b>{!roundWinner ? "вЂ”" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</b>
+              Победитель: <b>{!roundWinner ? "—" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</b>
             </div>
           </div>
 
@@ -3775,25 +3749,25 @@ const hpPct = useMemo(() => {
                   zIndex: 6,
                 }}
               >
-                <div className="ui-subtitle">Р РµР·СѓР»СЊС‚Р°С‚ РјР°С‚С‡Р°</div>
+                <div className="ui-subtitle">Результат матча</div>
                 <div className="mt-2 text-sm ui-subtle">{finalWinnerLabel}</div>
 
                 <div className="mt-4 ui-grid sm:grid-cols-3">
                   {(rounds ?? []).slice(0, 10).map((r: any, idx: number) => (
                     <div key={idx} className="ui-card p-4">
-                      <div className="ui-subtitle">Р Р°СѓРЅРґ {idx + 1}</div>
+                      <div className="ui-subtitle">Раунд {idx + 1}</div>
                       <div className="mt-2 text-[12px] ui-subtle">
-                        P1: {r?.p1?.total ?? "вЂ”"} вЂў P2: {r?.p2?.total ?? "вЂ”"}
+                        P1: {r?.p1?.total ?? "—"} • P2: {r?.p2?.total ?? "—"}
                       </div>
                       <div className="mt-2 text-[11px] ui-subtle">
-                        РџРѕР±РµРґРёС‚РµР»СЊ: <span className="font-semibold">{r?.winner ?? "вЂ”"}</span>
+                        Победитель: <span className="font-semibold">{r?.winner ?? "—"}</span>
                       </div>
                     </div>
                   ))}
                 </div>
 
                 <button onClick={() => router.push("/pvp")} className="mt-5 ui-btn ui-btn-primary w-full" type="button">
-                  РћРє
+                  Ок
                 </button>
               </div>
             )}
@@ -3818,8 +3792,8 @@ export default function BattlePage() {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-sm font-semibold">Р—Р°РіСЂСѓР·РєР°вЂ¦</div>
-          <div className="mt-2 text-sm ui-subtle">РћС‚РєСЂС‹РІР°СЋ РїРѕР»Рµ Р±РѕСЏ.</div>
+          <div className="text-sm font-semibold">Загрузка…</div>
+          <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
           <div className="mt-4 ui-progress">
             <div className="w-1/3 opacity-70 animate-pulse" />
           </div>
@@ -3833,8 +3807,8 @@ export default function BattlePage() {
       fallback={
         <main className="min-h-screen flex items-center justify-center px-4 pb-24">
           <div className="w-full max-w-md ui-card p-5 text-center">
-            <div className="text-sm font-semibold">Р—Р°РіСЂСѓР·РєР°вЂ¦</div>
-            <div className="mt-2 text-sm ui-subtle">РћС‚РєСЂС‹РІР°СЋ РїРѕР»Рµ Р±РѕСЏ.</div>
+            <div className="text-sm font-semibold">Загрузка…</div>
+            <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
             <div className="mt-4 ui-progress">
               <div className="w-1/3 opacity-70 animate-pulse" />
             </div>

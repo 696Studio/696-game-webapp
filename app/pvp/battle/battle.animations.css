@@ -1,5 +1,4 @@
-﻿/* TEMP-GIT-TEST */
-:root{
+﻿:root{
     
   --bb-ease-out: cubic-bezier(.18,.9,.22,1);
   --bb-ease-inout: cubic-bezier(.2,.0,.2,1);
@@ -273,7 +272,7 @@ display: none !important;
 }
 
 /* =========================================================
- FINAL DEAD STATE вЂ” SKELETON OVERLAY (STABLE)
+ FINAL DEAD STATE — SKELETON OVERLAY (STABLE)
  Uses existing .is-dead flag. Does NOT affect death animation.
  Asset: /public/fx/dead_skeleton.png
  ========================================================= */
@@ -310,7 +309,7 @@ z-index: 21;
 }
 
 /* =========================================================
- ATTACK FX вЂ” VARIANT A (CSS + DOM)
+ ATTACK FX — VARIANT A (CSS + DOM)
  Cards lunge towards target and return.
  Controlled by BattleFxLayer.tsx
  ========================================================= */
@@ -346,7 +345,7 @@ z-index: 21;
 
 
 /* =========================================================
- ATTACK FX вЂ” LUNGE TO TARGET (STEP 2)
+ ATTACK FX — LUNGE TO TARGET (STEP 2)
  Uses vectors from BattleFxLayer (--atk-dx / --atk-dy)
  Card flies to target, touches, returns back
  ========================================================= */
@@ -410,7 +409,7 @@ z-index: 21;
 
 
 /* =========================================================
- FINAL ATTACK LUNGE вЂ” MOTION LAYER (NO CONFLICTS)
+ FINAL ATTACK LUNGE — MOTION LAYER (NO CONFLICTS)
  ========================================================= */
 
 .bb-motion-layer{
@@ -457,7 +456,7 @@ z-index: 21;
 }
 
 /* =========================================================
- PORTAL FX вЂ” CARD CLONE LUNGE
+ PORTAL FX — CARD CLONE LUNGE
  Used by BattleFxLayer.portal.tsx
  ========================================================= */
 
@@ -477,7 +476,7 @@ z-index: 21;
 
 
 /* =========================================================
- STEP B OVERRIDES v2 вЂ” NO TRANSFORM ANIMS ON SLOT / NO CSS LUNGE
+ STEP B OVERRIDES v2 — NO TRANSFORM ANIMS ON SLOT / NO CSS LUNGE
  IMPORTANT:
  - We DO NOT force transform:none on .bb-slot, because JS-lunge needs to set inline transform.
  - We only disable CSS animations that write transform.
@@ -524,21 +523,3 @@ z-index: 21;
     transition: none !important;
   }
 }
-
-/* =========================================================
-   iOS Telegram WebView overrides
-   - Reduce transform composition glitches (random "spin" / disappear)
-   - Keep behavior consistent with JS detach-lunge
-   ========================================================= */
-html.bb-ios .bb-card-inner{
-  transform-style: flat !important;
-}
-html.bb-ios .bb-motion-layer{
-  transform: translate3d(0,0,0);
-}
-html.bb-ios .bb-card,
-html.bb-ios .bb-face{
-  -webkit-transform: translate3d(0,0,0);
-  transform: translate3d(0,0,0);
-}
-
