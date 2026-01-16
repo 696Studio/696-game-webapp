@@ -553,101 +553,151 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
-  try {
+    // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
+    try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
+
     const fromCard = unitElByIdRef.current[fromId];
     const toCard = unitElByIdRef.current[toId];
-
     const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
-
-    if (!attackerRoot || !targetRoot) return;
+    if (!attackerRoot || !targetRoot) {
+      bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}
+foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
+      return;
+    }
     if (attackerRoot === targetRoot) return;
+
+    // Cancel WAAPI animations if any, so transform/transition is deterministic.
+    attackerRoot.getAnimations?.().forEach((anim) => anim.cancel());
+
+    // Create (or reuse) a top-level fixed overlay layer to avoid Telegram WebView layout/stacking issues.
+    const getOverlay = (): HTMLDivElement => {
+      const id = 'bb-anim-layer';
+      let el = document.getElementById(id) as HTMLDivElement | null;
+      if (!el) {
+        el = document.createElement('div');
+        el.id = id;
+        el.style.position = 'fixed';
+        el.style.left = '0px';
+        el.style.top = '0px';
+        el.style.right = '0px';
+        el.style.bottom = '0px';
+        el.style.pointerEvents = 'none';
+        el.style.zIndex = '2147483647';
+        // Prevent iOS Safari from creating a new stacking context that can swallow fixed children
+        el.style.transform = 'translateZ(0)';
+        document.body.appendChild(el);
+      }
+      return el;
+    };
 
     const ar = attackerRoot.getBoundingClientRect();
     const br = targetRoot.getBoundingClientRect();
-
     const ax = ar.left + ar.width / 2;
     const ay = ar.top + ar.height / 2;
     const bx = br.left + br.width / 2;
     const by = br.top + br.height / 2;
 
-    const dx = (bx - ax) * 0.90;
-    const dy = (by - ay) * 0.90;
+    const dx = (bx - ax) * 0.78;
+    const dy = (by - ay) * 0.78;
 
     const ease = 'cubic-bezier(.18,.9,.22,1)';
-    const outMs = 260;
-    const backMs = 220;
+    const outMs = 220;
+    const backMs = 200;
 
-    const moveEl = attackerRoot;
-    moveEl.getAnimations?.().forEach((anim) => anim.cancel());
-
-    // Save inline styles
+    // Save inline styles for full restore.
     const prev = {
-      position: moveEl.style.position,
-      left: moveEl.style.left,
-      top: moveEl.style.top,
-      width: moveEl.style.width,
-      height: moveEl.style.height,
-      margin: moveEl.style.margin,
-      transform: moveEl.style.transform,
-      transition: moveEl.style.transition,
-      zIndex: moveEl.style.zIndex,
-      willChange: moveEl.style.willChange,
-      pointerEvents: moveEl.style.pointerEvents,
+      position: attackerRoot.style.position,
+      left: attackerRoot.style.left,
+      top: attackerRoot.style.top,
+      right: attackerRoot.style.right,
+      bottom: attackerRoot.style.bottom,
+      width: attackerRoot.style.width,
+      height: attackerRoot.style.height,
+      transform: attackerRoot.style.transform,
+      transition: attackerRoot.style.transition,
+      zIndex: attackerRoot.style.zIndex,
+      willChange: attackerRoot.style.willChange,
+      pointerEvents: attackerRoot.style.pointerEvents,
     };
 
-    // DETACH -> fixed at same screen position
-    moveEl.style.position = 'fixed';
-    moveEl.style.left = `${ar.left}px`;
-    moveEl.style.top = `${ar.top}px`;
-    moveEl.style.width = `${ar.width}px`;
-    moveEl.style.height = `${ar.height}px`;
-    moveEl.style.margin = '0';
-    moveEl.style.zIndex = '999999';
-    moveEl.style.willChange = 'transform';
-    moveEl.style.pointerEvents = 'none';
-    moveEl.style.transition = 'none';
-    moveEl.style.transform = 'translate3d(0,0,0)';
+    const restoreStyles = () => {
+      attackerRoot.style.position = prev.position;
+      attackerRoot.style.left = prev.left;
+      attackerRoot.style.top = prev.top;
+      attackerRoot.style.right = prev.right;
+      attackerRoot.style.bottom = prev.bottom;
+      attackerRoot.style.width = prev.width;
+      attackerRoot.style.height = prev.height;
+      attackerRoot.style.transform = prev.transform;
+      attackerRoot.style.transition = prev.transition;
+      attackerRoot.style.zIndex = prev.zIndex;
+      attackerRoot.style.willChange = prev.willChange;
+      attackerRoot.style.pointerEvents = prev.pointerEvents;
+    };
 
-    // force layout
-    void moveEl.offsetHeight;
+    // Re-parent (detach) the *same DOM node* into overlay, with a placeholder so we can return it.
+    const parent = attackerRoot.parentNode;
+    const nextSibling = attackerRoot.nextSibling;
+    const placeholder = document.createComment('bb-lunge-placeholder');
+    try {
+      parent?.insertBefore(placeholder, attackerRoot);
+      getOverlay().appendChild(attackerRoot);
+    } catch {
+      // If reparent fails, do nothing.
+    }
 
-    targetRoot.classList.add('is-attack-to');
+    // DETACH: fixed at the exact current screen rect.
+    attackerRoot.style.position = 'fixed';
+    attackerRoot.style.left = `${ar.left}px`;
+    attackerRoot.style.top = `${ar.top}px`;
+    attackerRoot.style.right = 'auto';
+    attackerRoot.style.bottom = 'auto';
+    attackerRoot.style.width = `${ar.width}px`;
+    attackerRoot.style.height = `${ar.height}px`;
+    attackerRoot.style.zIndex = '2147483647';
+    attackerRoot.style.pointerEvents = 'none';
+    attackerRoot.style.willChange = 'transform';
+    attackerRoot.style.transition = 'none';
+    attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
 
-    // LUNGE
+    try { targetRoot.classList.add('is-attack-to'); } catch {}
+
+    // LUNGE: animate only transform.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        moveEl.style.transition = `transform ${outMs}ms ${ease}`;
-        moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.04)`;
+        attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
+        attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+        try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
+        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
         window.setTimeout(() => {
-          // RETURN
-          moveEl.style.transition = `transform ${backMs}ms ${ease}`;
-          moveEl.style.transform = 'translate3d(0,0,0)';
+          attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
+          attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
 
           window.setTimeout(() => {
-            try {
-              targetRoot.classList.remove('is-attack-to');
+            try { targetRoot.classList.remove('is-attack-to'); } catch {}
 
-              // restore styles
-              moveEl.style.position = prev.position;
-              moveEl.style.left = prev.left;
-              moveEl.style.top = prev.top;
-              moveEl.style.width = prev.width;
-              moveEl.style.height = prev.height;
-              moveEl.style.margin = prev.margin;
-              moveEl.style.transform = prev.transform;
-              moveEl.style.transition = prev.transition;
-              moveEl.style.zIndex = prev.zIndex;
-              moveEl.style.willChange = prev.willChange;
-              moveEl.style.pointerEvents = prev.pointerEvents;
+            // RETURN: put the node back where it was, then restore styles.
+            try {
+              if (placeholder.parentNode) {
+                placeholder.parentNode.insertBefore(attackerRoot, placeholder);
+                placeholder.parentNode.removeChild(placeholder);
+              } else if (parent) {
+                // fallback
+                if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
+                else parent.appendChild(attackerRoot);
+              }
             } catch {}
-          }, backMs + 60);
+
+            restoreStyles();
+          }, backMs + 80);
         }, outMs + 80);
       });
     });
-  } catch {}
-}, []);const lastInstBySlotRef = useRef<Record<string, string>>({});
+  }, []);
+
+  const lastInstBySlotRef = useRef<Record<string, string>>({});
 
   // =========================================================
   // FX MANAGER (GUARANTEED): death bursts are rendered in an
@@ -702,7 +752,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
-    bbDbgSet('DBG READY — waiting for ATTACK events...');
+    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for ATTACK events...'); }
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
@@ -1333,36 +1383,39 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   }, [timeline, t]);
 
   const recentAttacks = useMemo(() => {
-    const windowSec = 0.22;
-    const fromT = Math.max(0, t - windowSec);
+    // Find the last (up to 2) attack events that already happened (e.t <= t).
+    // IMPORTANT: Do NOT rely on a tiny time window here — in Telegram WebView the playback tick
+    // can jump and we'd miss the attack entirely ("no animation anywhere").
     const arr: AttackFx[] = [];
+    const tl: any[] = (timeline as any[]) || [];
+    for (let i = tl.length - 1; i >= 0 && arr.length < 2; i--) {
+      const e: any = tl[i];
+      if (!e || e.type !== 'attack') continue;
+      const et = Number(e.t ?? 0);
+      if (!(et <= t)) continue;
 
-    for (const e of timeline) {
-      if (e.t < fromT) continue;
-      if (e.t > t) break;
-      if (e.type !== "attack") continue;
-
-      const fromRef = readUnitRefFromEvent(e as any, "from") || readUnitRefFromEvent(e as any, "unit");
-      const toRef = readUnitRefFromEvent(e as any, "to") || readUnitRefFromEvent(e as any, "target");
+      const fromRef = readUnitRefFromEvent(e as any, 'from') || readUnitRefFromEvent(e as any, 'unit');
+      const toRef = readUnitRefFromEvent(e as any, 'to') || readUnitRefFromEvent(e as any, 'target');
       const fromId = String(
         (fromRef as any)?.instanceId ??
           (e as any)?.from?.instanceId ??
           (e as any)?.fromId ??
           (e as any)?.attackerId ??
-          "",
+          '',
       );
       const toId = String(
         (toRef as any)?.instanceId ??
           (e as any)?.to?.instanceId ??
           (e as any)?.toId ??
           (e as any)?.targetId ??
-          "",
+          '',
       );
       if (!fromId || !toId) continue;
 
-      arr.push({ t: (e as any).t, fromId, toId });
+      arr.push({ t: et, fromId, toId });
     }
-    return arr.slice(-2);
+    // Keep chronological order (oldest -> newest) since we scanned backwards.
+    return arr.reverse();
   }, [timeline, t]);
 
   // Trigger one lunge per new attack event (no TEST button).
