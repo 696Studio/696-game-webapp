@@ -547,14 +547,14 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   // =========================================================
   // REAL ATTACK LUNGE (during battle timeline)
-  // TG iOS WebView can be flaky with transform, so we animate
-  // the CardRoot (data-bb-slot element) via top/left.
+  // FINAL: Detach (fixed) -> lunge via transform -> return -> restore.
+  // This avoids Telegram WebView/layout flakiness when animating inside slots.
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
-      // debug tick
-      try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
+    // debug tick (kept, but no new UI added)
+    try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
 
     try {
       const fromCard = unitElByIdRef.current[fromId];
@@ -567,67 +567,92 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       }
       if (attackerRoot === targetRoot) return;
 
-      const a = attackerRoot.getBoundingClientRect();
-      const b = targetRoot.getBoundingClientRect();
-      const ax = a.left + a.width / 2;
-      const ay = a.top + a.height / 2;
-      const bx = b.left + b.width / 2;
-      const by = b.top + b.height / 2;
+      // Cancel WAAPI animations if any, so transform/transition is deterministic.
+      attackerRoot.getAnimations?.().forEach((anim) => anim.cancel());
+
+      const ar = attackerRoot.getBoundingClientRect();
+      const br = targetRoot.getBoundingClientRect();
+      const ax = ar.left + ar.width / 2;
+      const ay = ar.top + ar.height / 2;
+      const bx = br.left + br.width / 2;
+      const by = br.top + br.height / 2;
 
       const dx = (bx - ax) * 0.78;
       const dy = (by - ay) * 0.78;
 
       const ease = 'cubic-bezier(.18,.9,.22,1)';
-      const outMs = 260;   // slower so it's visible
-      const backMs = 220;
+      const outMs = 220;
+      const backMs = 200;
 
-      const moveEl = attackerRoot;
-      moveEl.getAnimations?.().forEach((anim) => anim.cancel());
+      // Save current inline styles (full restore).
+      const prev = {
+        position: attackerRoot.style.position,
+        left: attackerRoot.style.left,
+        top: attackerRoot.style.top,
+        transform: attackerRoot.style.transform,
+        transition: attackerRoot.style.transition,
+        zIndex: attackerRoot.style.zIndex,
+        willChange: attackerRoot.style.willChange,
+        pointerEvents: attackerRoot.style.pointerEvents,
+        width: attackerRoot.style.width,
+        height: attackerRoot.style.height,
+      };
 
-      // Keep previous inline styles so we don't permanently mutate layout
-      const prevPos = moveEl.style.position;
-      const prevWill = moveEl.style.willChange;
-      const prevZ = moveEl.style.zIndex;
-      const prevTrans = moveEl.style.transition;
-      const prevLeft = moveEl.style.left;
-      const prevTop = moveEl.style.top;
+      const restore = () => {
+        try {
+          attackerRoot.style.position = prev.position;
+          attackerRoot.style.left = prev.left;
+          attackerRoot.style.top = prev.top;
+          attackerRoot.style.transform = prev.transform;
+          attackerRoot.style.transition = prev.transition;
+          attackerRoot.style.zIndex = prev.zIndex;
+          attackerRoot.style.willChange = prev.willChange;
+          attackerRoot.style.pointerEvents = prev.pointerEvents;
+          attackerRoot.style.width = prev.width;
+          attackerRoot.style.height = prev.height;
+        } catch {}
+      };
 
-      moveEl.style.setProperty('position', 'relative', 'important');
-      moveEl.style.setProperty('will-change', 'top,left', 'important');
-      moveEl.style.setProperty('z-index', '99999', 'important');
-      moveEl.style.setProperty('transition', `top ${outMs}ms ${ease}, left ${outMs}ms ${ease}`, 'important');
-
-      // Start from 0,0 so transition actually runs (avoid auto->px snap)
-      moveEl.style.setProperty('left', '0px', 'important');
-      moveEl.style.setProperty('top', '0px', 'important');
-      void moveEl.offsetHeight;
+      // DETACH -> FIXED (place exactly where it is right now)
+      attackerRoot.style.position = 'fixed';
+      attackerRoot.style.left = `${ar.left}px`;
+      attackerRoot.style.top = `${ar.top}px`;
+      attackerRoot.style.width = `${ar.width}px`;
+      attackerRoot.style.height = `${ar.height}px`;
+      attackerRoot.style.zIndex = '999999';
+      attackerRoot.style.pointerEvents = 'none';
+      attackerRoot.style.willChange = 'transform';
+      attackerRoot.style.transition = 'none';
+      attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
 
       targetRoot.classList.add('is-attack-to');
 
+      // Force style apply, then animate out.
       requestAnimationFrame(() => {
-        moveEl.style.setProperty('left', `${dx}px`, 'important');
-        moveEl.style.setProperty('top', `${dy}px`, 'important');
-        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
-
-        window.setTimeout(() => {
-          moveEl.style.setProperty('transition', `top ${backMs}ms ${ease}, left ${backMs}ms ${ease}`, 'important');
-          moveEl.style.setProperty('left', '0px', 'important');
-          moveEl.style.setProperty('top', '0px', 'important');
+        requestAnimationFrame(() => {
+          attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
+          attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+          bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
           window.setTimeout(() => {
-            try {
-              targetRoot.classList.remove('is-attack-to');
-              moveEl.style.position = prevPos;
-              moveEl.style.willChange = prevWill;
-              moveEl.style.zIndex = prevZ;
-              moveEl.style.transition = prevTrans;
-              moveEl.style.left = prevLeft;
-              moveEl.style.top = prevTop;
-            } catch {}
-          }, backMs + 60);
-        }, outMs + 80);
+            attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
+            attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+
+            window.setTimeout(() => {
+              try { targetRoot.classList.remove('is-attack-to'); } catch {}
+              restore();
+            }, backMs + 70);
+          }, outMs + 70);
+        });
       });
-    } catch {}
+    } catch {
+      // Make sure we don't leave a card "stuck" in fixed mode.
+      try {
+        const fromCard = unitElByIdRef.current[fromId];
+        const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
+        attackerRoot?.style && (attackerRoot.style.position = '');
+      } catch {}
+    }
   }, []);
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
