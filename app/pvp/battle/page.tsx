@@ -1,3 +1,4 @@
+﻿// TEMP-GIT-TEST
 "use client";
 // @ts-nocheck
 
@@ -211,15 +212,15 @@ function fmtTime(sec: number) {
 
 function safeSliceId(id?: string | null) {
   const s = String(id ?? "");
-  return s.length > 10 ? `${s.slice(0, 8)}…` : s || "—";
+  return s.length > 10 ? `${s.slice(0, 8)}вЂ¦` : s || "вЂ”";
 }
 
 function rarityRu(r: string) {
   const rr = String(r || "").toLowerCase();
-  if (rr === "legendary") return "ЛЕГЕНДАРНАЯ";
-  if (rr === "epic") return "ЭПИЧЕСКАЯ";
-  if (rr === "rare") return "РЕДКАЯ";
-  return "ОБЫЧНАЯ";
+  if (rr === "legendary") return "Р›Р•Р“Р•РќР”РђР РќРђРЇ";
+  if (rr === "epic") return "Р­РџРР§Р•РЎРљРђРЇ";
+  if (rr === "rare") return "Р Р•Р”РљРђРЇ";
+  return "РћР‘Р«Р§РќРђРЇ";
 }
 
 function rarityFxClass(r: string) {
@@ -338,7 +339,7 @@ function resolveCardArtUrl(raw?: string | null) {
 }
 
 /**
- * ✅ BOARD COORDS FIX (background-size: cover)
+ * вњ… BOARD COORDS FIX (background-size: cover)
  * IMPORTANT: BOARD_IMG_W/H MUST MATCH your real /public/arena/board.png size.
  * If they are wrong, everything will be shifted.
  */
@@ -734,7 +735,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
-    bbDbgSet('DBG READY — waiting for ATTACK events...');
+    bbDbgSet('DBG READY вЂ” waiting for ATTACK events...');
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
@@ -829,13 +830,13 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return () => window.cancelAnimationFrame(id);
   }, [layoutTick]);
 
-  // ✅ FIX: laneRects hook MUST be above any early returns (hooks order)
+  // вњ… FIX: laneRects hook MUST be above any early returns (hooks order)
   const laneRects = useMemo(() => {
     if (!arenaBox) return null;
 
     const enemy = coverMapRect(
       0.08,
-      0.14, // ⬇ верхнюю ЧУТЬ ниже
+      0.14, // в¬‡ РІРµСЂС…РЅСЋСЋ Р§РЈРўР¬ РЅРёР¶Рµ
       0.92,
       0.28,
       arenaBox.w,
@@ -846,7 +847,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     
     const you = coverMapRect(
       0.08,
-      0.38, // ⬆⬆⬆ нижнюю СИЛЬНО выше
+      0.38, // в¬†в¬†в¬† РЅРёР¶РЅСЋСЋ РЎРР›Р¬РќРћ РІС‹С€Рµ
       0.92,
       0.52,
       arenaBox.w,
@@ -1079,7 +1080,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           u.alive = false;
           u.hp = 0;
           u.dyingAt = e.t ?? Date.now();
-          // ⚠️ removal happens AFTER animation
+          // вљ пёЏ removal happens AFTER animation
           continue;
         }
       } else if (e.type === "score") {
@@ -1221,9 +1222,9 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [phase, roundWinner, roundN, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
-    if (!match) return "…";
-    if (!match.winner_user_id) return "Ничья";
-    return "Есть победитель";
+    if (!match) return "вЂ¦";
+    if (!match.winner_user_id) return "РќРёС‡СЊСЏ";
+    return "Р•СЃС‚СЊ РїРѕР±РµРґРёС‚РµР»СЊ";
   }, [match]);
 
   const revealed = phase === "reveal" || phase === "score" || phase === "end";
@@ -1552,8 +1553,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 }) {
   const isBottom = where === "bottom";
 
-  // ✅ Bottom HUD targets (arena pixel coords in BOARD image space)
-  // Bottom is already perfect — do not touch these.
+  // вњ… Bottom HUD targets (arena pixel coords in BOARD image space)
+  // Bottom is already perfect вЂ” do not touch these.
   const BOTTOM_AVATAR_Y = 765; // avatar ring center
   const BOTTOM_HP_Y = 644;     // TeamHP row
   const BOTTOM_NAME_Y = 678;   // nickname baseline
@@ -1581,7 +1582,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   const hpPct = clamp((hp / Math.max(1, hpMax)) * 100, 0, 100);
 
-  // ✅ TOP: mirror bottom anchors around the arena height.
+  // вњ… TOP: mirror bottom anchors around the arena height.
   // This makes top match bottom perfectly, and bottom stays untouched.
   const TOP_AVATAR_Y = arenaBox.h - BOTTOM_AVATAR_Y - 6;
   const TOP_HP_Y = arenaBox.h - BOTTOM_HP_Y;
@@ -1642,7 +1643,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
         </div>
 
         <div className={["map-pill map-pill--score", isHit ? "is-hit" : ""].join(" ")}>
-          {score == null ? "—" : score}
+          {score == null ? "вЂ”" : score}
         </div>
       </div>
     </>
@@ -1931,12 +1932,12 @@ const hpPct = useMemo(() => {
       {renderUnit && (
         <div className="bb-hud" aria-hidden="true">
           <span className="bb-hud-item">
-            <span className="bb-hud-icon" role="img" aria-label="Attack">⚔</span>
+            <span className="bb-hud-icon" role="img" aria-label="Attack">вљ”</span>
             <span className="bb-hud-num">{power ?? 0}</span>
           </span>
           <span className="bb-hud-sep" />
           <span className="bb-hud-item">
-            <span className="bb-hud-icon hp" role="img" aria-label="HP">❤</span>
+            <span className="bb-hud-icon hp" role="img" aria-label="HP">вќ¤</span>
             <span className="bb-hud-num">{unit?.hp ?? 0}</span>
           </span>
         </div>
@@ -2137,9 +2138,9 @@ const hpPct = useMemo(() => {
           <div style={{ fontWeight: 800, marginBottom: 4 }}>Layout Debug</div>
           {debugCover ? (
             <>
-              <div>arenaW/arenaH: {debugCover.arenaW}×{debugCover.arenaH}</div>
+              <div>arenaW/arenaH: {debugCover.arenaW}Г—{debugCover.arenaH}</div>
               <div>
-                drawnW/drawnH: {Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
+                drawnW/drawnH: {Math.round(debugCover.drawnW)}Г—{Math.round(debugCover.drawnH)}
               </div>
               <div>
                 offsetX/Y: {Math.round(debugCover.offsetX)},{Math.round(debugCover.offsetY)}
@@ -2148,11 +2149,11 @@ const hpPct = useMemo(() => {
               <div>scale: {debugCover.scale.toFixed(4)}</div>
 )}
               <div style={{ marginTop: 6, opacity: 0.9 }}>
-                Tap arena → nx/ny: {dbgClick ? `${dbgClick.nx.toFixed(4)} / ${dbgClick.ny.toFixed(4)}` : "—"}
+                Tap arena в†’ nx/ny: {dbgClick ? `${dbgClick.nx.toFixed(4)} / ${dbgClick.ny.toFixed(4)}` : "вЂ”"}
               </div>
             </>
           ) : (
-            <div style={{ opacity: 0.85 }}>debugCover: —</div>
+            <div style={{ opacity: 0.85 }}>debugCover: вЂ”</div>
           )}
         </div>
       ) : null}
@@ -2182,10 +2183,10 @@ const hpPct = useMemo(() => {
           {debugCover ? (
             <>
               <div>
-                arenaW/arenaH: {debugCover.arenaW}×{debugCover.arenaH}
+                arenaW/arenaH: {debugCover.arenaW}Г—{debugCover.arenaH}
               </div>
               <div>
-                drawnW/drawnH: {Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
+                drawnW/drawnH: {Math.round(debugCover.drawnW)}Г—{Math.round(debugCover.drawnH)}
               </div>
               <div>scale: {debugCover.scale.toFixed(4)}</div>
               <div>
@@ -2196,7 +2197,7 @@ const hpPct = useMemo(() => {
             <div style={{ opacity: 0.8 }}>arena box: not ready</div>
           )}
           <div style={{ marginTop: 6, opacity: 0.9 }}>
-            Tap on arena → you&#39;ll get nx/ny.
+            Tap on arena в†’ you&#39;ll get nx/ny.
           </div>
           {dbgClick ? (
             <div style={{ marginTop: 6 }}>
@@ -2215,8 +2216,8 @@ const hpPct = useMemo(() => {
 
 
         <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-lg font-semibold mb-2">Открой в Telegram</div>
-          <div className="text-sm ui-subtle">Эта страница работает только внутри Telegram WebApp.</div>
+          <div className="text-lg font-semibold mb-2">РћС‚РєСЂРѕР№ РІ Telegram</div>
+          <div className="text-sm ui-subtle">Р­С‚Р° СЃС‚СЂР°РЅРёС†Р° СЂР°Р±РѕС‚Р°РµС‚ С‚РѕР»СЊРєРѕ РІРЅСѓС‚СЂРё Telegram WebApp.</div>
         </div>
       </main>
     );
@@ -2271,8 +2272,8 @@ const hpPct = useMemo(() => {
 )}
 
         <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-sm font-semibold">Загрузка…</div>
-          <div className="mt-2 text-sm ui-subtle">Синхронизация сессии.</div>
+          <div className="text-sm font-semibold">Р—Р°РіСЂСѓР·РєР°вЂ¦</div>
+          <div className="mt-2 text-sm ui-subtle">РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ СЃРµСЃСЃРёРё.</div>
           <div className="mt-4 ui-progress">
             <div className="w-1/3 opacity-70 animate-pulse" />
           </div>
@@ -2330,8 +2331,8 @@ const hpPct = useMemo(() => {
 )}
 
         <div className="w-full max-w-md ui-card p-5">
-          <div className="text-lg font-semibold">{timedOut ? "Таймаут" : "Ошибка сессии"}</div>
-          <div className="mt-2 text-sm ui-subtle">Нажми Re-sync и попробуй снова.</div>
+          <div className="text-lg font-semibold">{timedOut ? "РўР°Р№РјР°СѓС‚" : "РћС€РёР±РєР° СЃРµСЃСЃРёРё"}</div>
+          <div className="mt-2 text-sm ui-subtle">РќР°Р¶РјРё Re-sync Рё РїРѕРїСЂРѕР±СѓР№ СЃРЅРѕРІР°.</div>
           <button onClick={() => refreshSession?.()} className="mt-5 ui-btn ui-btn-primary w-full" type="button">
             Re-sync
           </button>
@@ -2389,10 +2390,10 @@ const hpPct = useMemo(() => {
 )}
 
         <div className="w-full max-w-md ui-card p-5">
-          <div className="text-lg font-semibold">Ошибка</div>
+          <div className="text-lg font-semibold">РћС€РёР±РєР°</div>
           <div className="mt-2 text-sm ui-subtle">{errText}</div>
           <button onClick={() => router.back()} className="mt-5 ui-btn ui-btn-ghost w-full" type="button">
-            Назад
+            РќР°Р·Р°Рґ
           </button>
         </div>
       </main>
@@ -2448,9 +2449,9 @@ const hpPct = useMemo(() => {
 )}
 
         <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-sm font-semibold">Загружаю матч…</div>
+          <div className="text-sm font-semibold">Р—Р°РіСЂСѓР¶Р°СЋ РјР°С‚С‡вЂ¦</div>
           <div className="mt-2 text-sm ui-subtle">
-            MatchId: <span className="font-semibold">{matchId.slice(0, 8)}…</span>
+            MatchId: <span className="font-semibold">{matchId.slice(0, 8)}вЂ¦</span>
           </div>
           <div className="mt-4 ui-progress">
             <div className="w-1/3 opacity-70 animate-pulse" />
@@ -2680,7 +2681,7 @@ const hpPct = useMemo(() => {
 
         .hud-actions { display: flex; gap: 4px; align-items: center; }
 
-        /* ✅ IMPORTANT: no padding here, because background covers the full box */
+        /* вњ… IMPORTANT: no padding here, because background covers the full box */
         .arena {
           position: relative;
           padding: 0;
@@ -2698,7 +2699,7 @@ const hpPct = useMemo(() => {
           background-repeat: no-repeat;
           filter: saturate(1.02) contrast(1.04);
           opacity: 1;
-          /* 🚫 no transform scale here, otherwise coverMap won't match */
+          /* рџљ« no transform scale here, otherwise coverMap won't match */
         }
         .arena::after {
           content: "";
@@ -2834,7 +2835,7 @@ const hpPct = useMemo(() => {
 /* Fortnite-style XP bar (safe) */
 .map-xp {
   --xp: 0%;                 /* set 0%..100% from inline style */
-  --xpHue: 120;             /* 120=green → 0=red (set from inline style) */
+  --xpHue: 120;             /* 120=green в†’ 0=red (set from inline style) */
   --pad: 7px;               /* knob radius (14px / 2) */
 
   position: relative;
@@ -2904,7 +2905,7 @@ const hpPct = useMemo(() => {
     0 2px 8px rgba(0,0,0,0.45);
 }
 
-        /* ✅ Make it SMALL and in the left corner, not overlapping enemy avatar */
+        /* вњ… Make it SMALL and in the left corner, not overlapping enemy avatar */
         .corner-info {
           position: absolute;
           left: 10px;
@@ -2988,7 +2989,7 @@ const hpPct = useMemo(() => {
           min-height: 720px;
         }
 
-        /* ✅ Row is now centered inside lane rect (top/left/width/height via inline styles) */
+        /* вњ… Row is now centered inside lane rect (top/left/width/height via inline styles) */
         .row {
           border-radius: 0;
           border: 0;
@@ -3384,11 +3385,11 @@ const hpPct = useMemo(() => {
           <div style={{ marginTop: 6, opacity: 0.9 }}>
             {dbgClick
               ? `click nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)} (x=${Math.round(dbgClick.x)} y=${Math.round(dbgClick.y)})`
-              : "click: —"}
+              : "click: вЂ”"}
           </div>
           {debugCover && (
             <div style={{ marginTop: 8, opacity: 0.9 }}>
-              arena {Math.round(debugCover.arenaW)}×{Math.round(debugCover.arenaH)} scale {debugCover.scale.toFixed(3)}
+              arena {Math.round(debugCover.arenaW)}Г—{Math.round(debugCover.arenaH)} scale {debugCover.scale.toFixed(3)}
             </div>
           )}
         </div>
@@ -3400,7 +3401,7 @@ const hpPct = useMemo(() => {
             <div className="hud-left">
               <div className="hud-title">BATTLE</div>
               <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">
-                Поле боя • {fmtTime(t)} / {fmtTime(durationSec)}
+                РџРѕР»Рµ Р±РѕСЏ вЂў {fmtTime(t)} / {fmtTime(durationSec)}
               </div>
 
               <div
@@ -3435,13 +3436,13 @@ const hpPct = useMemo(() => {
               <div className="hud-sub">
                 <span className="hud-pill">{phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}</span>
                 <span className="hud-pill">
-                  Раунд{" "}
+                  Р Р°СѓРЅРґ{" "}
                   <b className="tabular-nums">
                     {roundN}/{roundCount}
                   </b>
                 </span>
                 <span className="hud-pill">
-                  Match <b className="tabular-nums">{String(match.id).slice(0, 8)}…</b>
+                  Match <b className="tabular-nums">{String(match.id).slice(0, 8)}вЂ¦</b>
                 </span>
                 <span className="hud-pill">
                   tl <b className="tabular-nums">{timeline.length}</b>
@@ -3454,7 +3455,7 @@ const hpPct = useMemo(() => {
 
             <div className="hud-actions">
               <button onClick={() => setPlaying((p) => !p)} className="ui-btn ui-btn-ghost" type="button">
-                {playing ? "Пауза" : "▶"}
+                {playing ? "РџР°СѓР·Р°" : "в–¶"}
               </button>
               <button
                 onClick={() => {
@@ -3464,10 +3465,10 @@ const hpPct = useMemo(() => {
                 className="ui-btn ui-btn-ghost"
                 type="button"
               >
-                ↺
+                в†є
               </button>
               <button onClick={() => router.push("/pvp")} className="ui-btn ui-btn-ghost" type="button">
-                Назад
+                РќР°Р·Р°Рґ
               </button>
             </div>
           </div>
@@ -3496,7 +3497,7 @@ const hpPct = useMemo(() => {
               {"layoutdebug: tap arena to read nx/ny\n" +
                 (dbgClick
                   ? `click nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)} (x=${Math.round(dbgClick.x)} y=${Math.round(dbgClick.y)})`
-                  : "click: —")}
+                  : "click: вЂ”")}
             </div>
           )}
 
@@ -3597,8 +3598,8 @@ const hpPct = useMemo(() => {
                   whiteSpace: "pre",
                 }}
               >
-                {`arena ${Math.round(debugCover.arenaW)}×${Math.round(debugCover.arenaH)}\n` +
-                  `drawn ${Math.round(debugCover.drawnW)}×${Math.round(debugCover.drawnH)}\n` +
+                {`arena ${Math.round(debugCover.arenaW)}Г—${Math.round(debugCover.arenaH)}\n` +
+                  `drawn ${Math.round(debugCover.drawnW)}Г—${Math.round(debugCover.drawnH)}\n` +
                   `off ${Math.round(debugCover.offsetX)},${Math.round(debugCover.offsetY)}  scale ${debugCover.scale.toFixed(3)}`}
               </div>
             </div>
@@ -3641,7 +3642,7 @@ const hpPct = useMemo(() => {
                   <br />
                   offX:{Math.round(debugCover.offsetX)} offY:{Math.round(debugCover.offsetY)}
                   <br />
-                  drawn:{Math.round(debugCover.drawnW)}×{Math.round(debugCover.drawnH)}
+                  drawn:{Math.round(debugCover.drawnW)}Г—{Math.round(debugCover.drawnH)}
                 </div>
                 <div style={{ marginTop: 6 }}>
                   <b>TOP</b> x:{Math.round(debugCover.topX)} y:{Math.round(debugCover.topY)}
@@ -3671,13 +3672,13 @@ const hpPct = useMemo(() => {
 
           <div className="corner-info">
             <div className="h1">
-              РАУНД{" "}
+              Р РђРЈРќР”{" "}
               <b className="tabular-nums">
                 {roundN}/{roundCount}
               </b>
             </div>
             <div className="line">
-              Победитель: <b>{!roundWinner ? "—" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</b>
+              РџРѕР±РµРґРёС‚РµР»СЊ: <b>{!roundWinner ? "вЂ”" : roundWinner === "draw" ? "DRAW" : roundWinner === youSide ? "YOU" : "ENEMY"}</b>
             </div>
           </div>
 
@@ -3774,25 +3775,25 @@ const hpPct = useMemo(() => {
                   zIndex: 6,
                 }}
               >
-                <div className="ui-subtitle">Результат матча</div>
+                <div className="ui-subtitle">Р РµР·СѓР»СЊС‚Р°С‚ РјР°С‚С‡Р°</div>
                 <div className="mt-2 text-sm ui-subtle">{finalWinnerLabel}</div>
 
                 <div className="mt-4 ui-grid sm:grid-cols-3">
                   {(rounds ?? []).slice(0, 10).map((r: any, idx: number) => (
                     <div key={idx} className="ui-card p-4">
-                      <div className="ui-subtitle">Раунд {idx + 1}</div>
+                      <div className="ui-subtitle">Р Р°СѓРЅРґ {idx + 1}</div>
                       <div className="mt-2 text-[12px] ui-subtle">
-                        P1: {r?.p1?.total ?? "—"} • P2: {r?.p2?.total ?? "—"}
+                        P1: {r?.p1?.total ?? "вЂ”"} вЂў P2: {r?.p2?.total ?? "вЂ”"}
                       </div>
                       <div className="mt-2 text-[11px] ui-subtle">
-                        Победитель: <span className="font-semibold">{r?.winner ?? "—"}</span>
+                        РџРѕР±РµРґРёС‚РµР»СЊ: <span className="font-semibold">{r?.winner ?? "вЂ”"}</span>
                       </div>
                     </div>
                   ))}
                 </div>
 
                 <button onClick={() => router.push("/pvp")} className="mt-5 ui-btn ui-btn-primary w-full" type="button">
-                  Ок
+                  РћРє
                 </button>
               </div>
             )}
@@ -3817,8 +3818,8 @@ export default function BattlePage() {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
         <div className="w-full max-w-md ui-card p-5 text-center">
-          <div className="text-sm font-semibold">Загрузка…</div>
-          <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
+          <div className="text-sm font-semibold">Р—Р°РіСЂСѓР·РєР°вЂ¦</div>
+          <div className="mt-2 text-sm ui-subtle">РћС‚РєСЂС‹РІР°СЋ РїРѕР»Рµ Р±РѕСЏ.</div>
           <div className="mt-4 ui-progress">
             <div className="w-1/3 opacity-70 animate-pulse" />
           </div>
@@ -3832,8 +3833,8 @@ export default function BattlePage() {
       fallback={
         <main className="min-h-screen flex items-center justify-center px-4 pb-24">
           <div className="w-full max-w-md ui-card p-5 text-center">
-            <div className="text-sm font-semibold">Загрузка…</div>
-            <div className="mt-2 text-sm ui-subtle">Открываю поле боя.</div>
+            <div className="text-sm font-semibold">Р—Р°РіСЂСѓР·РєР°вЂ¦</div>
+            <div className="mt-2 text-sm ui-subtle">РћС‚РєСЂС‹РІР°СЋ РїРѕР»Рµ Р±РѕСЏ.</div>
             <div className="mt-4 ui-progress">
               <div className="w-1/3 opacity-70 animate-pulse" />
             </div>
