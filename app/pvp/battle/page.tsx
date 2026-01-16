@@ -553,118 +553,101 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
+  try {
+    const fromCard = unitElByIdRef.current[fromId];
+    const toCard = unitElByIdRef.current[toId];
 
-    // Detach → Fixed → Lunge → Return (original DOM node, no clone)
-    try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
+    const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
+    const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
 
-    const fromElRaw = unitElByIdRef.current[fromId] as HTMLElement | undefined;
-    const toElRaw = unitElByIdRef.current[toId] as HTMLElement | undefined;
+    if (!attackerRoot || !targetRoot) return;
+    if (attackerRoot === targetRoot) return;
 
-    // Prefer the real card root, not the slot/container
-    const attackerEl = (fromElRaw ? ((fromElRaw.closest?.('.bb-card') as HTMLElement | null) || fromElRaw) : null);
-    const targetEl = (toElRaw ? ((toElRaw.closest?.('.bb-card') as HTMLElement | null) || toElRaw) : null);
+    const ar = attackerRoot.getBoundingClientRect();
+    const br = targetRoot.getBoundingClientRect();
 
-    if (!attackerEl || !targetEl) {
-      bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}\nfoundAttacker=${!!attackerEl} foundTarget=${!!targetEl}`);
-      return;
-    }
-    if (attackerEl === targetEl) return;
-
-    // Compute delta between centers
-    const ar = attackerEl.getBoundingClientRect();
-    const br = targetEl.getBoundingClientRect();
     const ax = ar.left + ar.width / 2;
     const ay = ar.top + ar.height / 2;
     const bx = br.left + br.width / 2;
     const by = br.top + br.height / 2;
 
-    // Slightly damp so it doesn't fully overlap
-    const dx = (bx - ax) * 0.78;
-    const dy = (by - ay) * 0.78;
+    const dx = (bx - ax) * 0.90;
+    const dy = (by - ay) * 0.90;
 
-    const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const easeOut = 'cubic-bezier(.18,.9,.22,1)';
-    const easeBack = 'cubic-bezier(.2,.8,.2,1)';
-    const outMs = isIOS ? 340 : 260;
-    const backMs = isIOS ? 260 : 220;
+    const ease = 'cubic-bezier(.18,.9,.22,1)';
+    const outMs = 260;
+    const backMs = 220;
 
-    // Cancel any WAAPI on the same node (Safari can keep stale animations)
-    try { attackerEl.getAnimations?.().forEach((a) => a.cancel()); } catch {}
+    const moveEl = attackerRoot;
+    moveEl.getAnimations?.().forEach((anim) => anim.cancel());
 
-    // Save inline styles (MUST restore)
+    // Save inline styles
     const prev = {
-      position: attackerEl.style.position,
-      left: attackerEl.style.left,
-      top: attackerEl.style.top,
-      width: attackerEl.style.width,
-      height: attackerEl.style.height,
-      transform: attackerEl.style.transform,
-      transition: attackerEl.style.transition,
-      zIndex: attackerEl.style.zIndex,
-      willChange: attackerEl.style.willChange,
-      pointerEvents: attackerEl.style.pointerEvents,
-      margin: attackerEl.style.margin,
-      transformOrigin: attackerEl.style.transformOrigin,
+      position: moveEl.style.position,
+      left: moveEl.style.left,
+      top: moveEl.style.top,
+      width: moveEl.style.width,
+      height: moveEl.style.height,
+      margin: moveEl.style.margin,
+      transform: moveEl.style.transform,
+      transition: moveEl.style.transition,
+      zIndex: moveEl.style.zIndex,
+      willChange: moveEl.style.willChange,
+      pointerEvents: moveEl.style.pointerEvents,
     };
 
-    // DETACH: fixed at current screen position
-    attackerEl.style.position = 'fixed';
-    attackerEl.style.left = `${ar.left}px`;
-    attackerEl.style.top = `${ar.top}px`;
-    attackerEl.style.width = `${ar.width}px`;
-    attackerEl.style.height = `${ar.height}px`;
-    attackerEl.style.margin = '0';
-    attackerEl.style.transformOrigin = '50% 50%';
-    attackerEl.style.transform = 'translate3d(0,0,0)';
-    attackerEl.style.transition = 'none';
-    attackerEl.style.zIndex = '999999';
-    attackerEl.style.willChange = 'transform';
-    attackerEl.style.pointerEvents = 'none';
+    // DETACH -> fixed at same screen position
+    moveEl.style.position = 'fixed';
+    moveEl.style.left = `${ar.left}px`;
+    moveEl.style.top = `${ar.top}px`;
+    moveEl.style.width = `${ar.width}px`;
+    moveEl.style.height = `${ar.height}px`;
+    moveEl.style.margin = '0';
+    moveEl.style.zIndex = '999999';
+    moveEl.style.willChange = 'transform';
+    moveEl.style.pointerEvents = 'none';
+    moveEl.style.transition = 'none';
+    moveEl.style.transform = 'translate3d(0,0,0)';
 
-    // Force style flush so next transition always runs
-    void attackerEl.offsetHeight;
+    // force layout
+    void moveEl.offsetHeight;
 
-    // Optional recoil marker (visual-only, no movement)
-    try { (targetEl.closest?.('[data-bb-slot]') as HTMLElement | null)?.classList.add('is-attack-to'); } catch {}
+    targetRoot.classList.add('is-attack-to');
 
-    const cleanup = () => {
-      // Restore exactly what was before
-      attackerEl.style.position = prev.position;
-      attackerEl.style.left = prev.left;
-      attackerEl.style.top = prev.top;
-      attackerEl.style.width = prev.width;
-      attackerEl.style.height = prev.height;
-      attackerEl.style.margin = prev.margin;
-      attackerEl.style.transformOrigin = prev.transformOrigin;
-      attackerEl.style.transform = prev.transform;
-      attackerEl.style.transition = prev.transition;
-      attackerEl.style.zIndex = prev.zIndex;
-      attackerEl.style.willChange = prev.willChange;
-      attackerEl.style.pointerEvents = prev.pointerEvents;
-
-      try { (targetEl.closest?.('[data-bb-slot]') as HTMLElement | null)?.classList.remove('is-attack-to'); } catch {}
-    };
-
-    // LUNGE OUT
+    // LUNGE
     requestAnimationFrame(() => {
-      attackerEl.style.transition = `transform ${outMs}ms ${easeOut}`;
-      attackerEl.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
-
-      // RETURN BACK
-      window.setTimeout(() => {
-        attackerEl.style.transition = `transform ${backMs}ms ${easeBack}`;
-        attackerEl.style.transform = 'translate3d(0,0,0)';
+      requestAnimationFrame(() => {
+        moveEl.style.transition = `transform ${outMs}ms ${ease}`;
+        moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.04)`;
 
         window.setTimeout(() => {
-          cleanup();
-        }, backMs + 40);
-      }, outMs + 20);
+          // RETURN
+          moveEl.style.transition = `transform ${backMs}ms ${ease}`;
+          moveEl.style.transform = 'translate3d(0,0,0)';
 
-      bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}  dx=${Math.round(dx)} dy=${Math.round(dy)}  ios=${isIOS}`);
+          window.setTimeout(() => {
+            try {
+              targetRoot.classList.remove('is-attack-to');
+
+              // restore styles
+              moveEl.style.position = prev.position;
+              moveEl.style.left = prev.left;
+              moveEl.style.top = prev.top;
+              moveEl.style.width = prev.width;
+              moveEl.style.height = prev.height;
+              moveEl.style.margin = prev.margin;
+              moveEl.style.transform = prev.transform;
+              moveEl.style.transition = prev.transition;
+              moveEl.style.zIndex = prev.zIndex;
+              moveEl.style.willChange = prev.willChange;
+              moveEl.style.pointerEvents = prev.pointerEvents;
+            } catch {}
+          }, backMs + 60);
+        }, outMs + 80);
+      });
     });
-}, []);
-
-  const lastInstBySlotRef = useRef<Record<string, string>>({});
+  } catch {}
+}, []);const lastInstBySlotRef = useRef<Record<string, string>>({});
 
   // =========================================================
   // FX MANAGER (GUARANTEED): death bursts are rendered in an
