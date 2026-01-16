@@ -10,30 +10,7 @@ import CardArt from "../../components/CardArt";
 import BattleFxLayer from './BattleFxLayer';
 
 
-// ===== BB_LUNGE_DEBUG (STEP C) =====
-let __bbLungeTick = 0;
-function bbSetDebug(msg: string) {
-  const id = "bb-lunge-debug";
-  let el = document.getElementById(id);
-  if (!el) {
-    el = document.createElement("div");
-    el.id = id;
-    el.style.position = "fixed";
-    el.style.left = "12px";
-    el.style.bottom = "12px";
-    el.style.zIndex = "999999";
-    el.style.padding = "8px 10px";
-    el.style.font = "12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial";
-    el.style.background = "rgba(0,0,0,0.72)";
-    el.style.color = "white";
-    el.style.borderRadius = "10px";
-    el.style.pointerEvents = "none";
-    el.style.maxWidth = "70vw";
-    document.body.appendChild(el);
-  }
-  el.textContent = msg;
-}
-
+// ===== BB_LUNGE_GLOBAL (STEP C) =====
 function bbFindFirstOccupied(prefix: "p1" | "p2"): string | null {
   const card = document.querySelector(`[data-bb-slot^="${prefix}:"] .bb-card.has-unit`) as HTMLElement | null;
   if (card) {
@@ -44,38 +21,20 @@ function bbFindFirstOccupied(prefix: "p1" | "p2"): string | null {
   return any ? any.getAttribute("data-bb-slot") : null;
 }
 
-function bbTestLunge(attackerSlot: string, targetSlot: string) {
-  __bbLungeTick += 1;
-
+function bbLunge(attackerSlot: string, targetSlot: string) {
   const a = document.querySelector(`[data-bb-slot="${attackerSlot}"]`) as HTMLElement | null;
   const b = document.querySelector(`[data-bb-slot="${targetSlot}"]`) as HTMLElement | null;
-
-  if (!a || !b) {
-    bbSetDebug(`#${__bbLungeTick} missing a/b: a=${!!a} b=${!!b}  ${attackerSlot} -> ${targetSlot}`);
-    return;
-  }
+  if (!a || !b) return;
 
   const ar = a.getBoundingClientRect();
   const br = b.getBoundingClientRect();
   const dx = (br.left + br.width / 2) - (ar.left + ar.width / 2);
   const dy = (br.top + br.height / 2) - (ar.top + ar.height / 2);
 
-  bbSetDebug(`#${__bbLungeTick} ${attackerSlot} -> ${targetSlot}  dx=${dx.toFixed(1)} dy=${dy.toFixed(1)}`);
-
-  // Hard-cancel CSS animation on slot during lunge (does not block inline transform)
-  const prevAnim = a.style.animation;
-  a.style.animation = "none";
-
-  // Visible highlight (background flash) even if outline is suppressed
-  const prevBg = a.style.background;
-  const prevBgB = b.style.background;
-  a.style.background = "rgba(0,180,255,0.12)";
-  b.style.background = "rgba(0,255,120,0.12)";
-
-  // Cancel any in-flight animations on attacker to avoid stacking
+  // Cancel in-flight animations to avoid stacking
   a.getAnimations?.().forEach((anim) => anim.cancel());
 
-  // Use WAAPI
+  // WAAPI lunge (owns transform only on attacker)
   a.animate(
     [
       { transform: "translate3d(0,0,0) scale(1)" },
@@ -84,12 +43,6 @@ function bbTestLunge(attackerSlot: string, targetSlot: string) {
     ],
     { duration: 420, easing: "cubic-bezier(.18,.9,.22,1)" }
   );
-
-  window.setTimeout(() => {
-    a.style.animation = prevAnim;
-    a.style.background = prevBg;
-    b.style.background = prevBgB;
-  }, 520);
 }
 
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (leave only TEST)
@@ -3315,7 +3268,7 @@ const hpPct = useMemo(() => {
       {/* TEST ATTACK (always visible) */}
       <button
         type="button"
-        onClick={testAttackLunge}
+        onClick={() => (window as any).bbTestLunge?.()}
         style={{
           position: "fixed",
           top: 10,
@@ -3780,6 +3733,16 @@ const hpPct = useMemo(() => {
 }
 
 export default function BattlePage() {
+  // Attach lunge helper for Telegram WebView debugging
+  useEffect(() => {
+    (window as any).bbTestLunge = () => {
+      const a = bbFindFirstOccupied("p1") || "p1:0";
+      const b = bbFindFirstOccupied("p2") || "p2:0";
+      bbLunge(a, b);
+    };
+    return () => { try { delete (window as any).bbTestLunge; } catch {} };
+  }, []);
+
   // IMPORTANT: Fix React hydration crash (#418) in Telegram WebView.
   // Even though this file is a Client Component, Next.js still pre-renders it on the server.
   // Any client-only differences (viewport/theme, timers, DOM measurements, etc.) can cause
