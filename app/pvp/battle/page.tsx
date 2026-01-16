@@ -24,8 +24,8 @@ function bbDbgEnabled() {
     if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
     if (ls === "1" || ss === "1") return true;
 
-    // Default ON for now (so you always see it in Telegram). Remove later when animation is stable.
-    return true;
+    // Default OFF (enable only when you need it).
+    return false;
   } catch {
     return true;
   }
@@ -553,14 +553,18 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
-    // debug tick
-    try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
+    // (FINAL) Detach → Fixed Overlay → Lunge → Return → Restore (ORIGINAL DOM)
+    // TG WebView (iOS/Windows) is unreliable for transforms inside slot layout.
+    // We temporarily re-parent the *same* CardRoot into document.body and animate it as a fixed layer.
 
     try {
+      try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
+
       const fromCard = unitElByIdRef.current[fromId];
       const toCard = unitElByIdRef.current[toId];
       const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
       const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
+
       if (!attackerRoot || !targetRoot) {
         bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}
 foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
@@ -568,48 +572,27 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       }
       if (attackerRoot === targetRoot) return;
 
-      // Compute delta between centers
-      const ar = attackerRoot.getBoundingClientRect();
-      const br = targetRoot.getBoundingClientRect();
-      const ax = ar.left + ar.width / 2;
-      const ay = ar.top + ar.height / 2;
-      const bx = br.left + br.width / 2;
-      const by = br.top + br.height / 2;
+      const a = attackerRoot.getBoundingClientRect();
+      const b = targetRoot.getBoundingClientRect();
+      const ax = a.left + a.width / 2;
+      const ay = a.top + a.height / 2;
+      const bx = b.left + b.width / 2;
+      const by = b.top + b.height / 2;
 
       const dx = (bx - ax) * 0.78;
       const dy = (by - ay) * 0.78;
 
-      // iOS TG WebView tuning
+      // iOS TG feels faster; bump timings a bit (still OK on desktop)
       const ease = 'cubic-bezier(.18,.9,.22,1)';
-      const outMs = 300;
+      const outMs = 320;
       const backMs = 260;
 
-      const moveEl = attackerRoot as HTMLElement;
+      const moveEl = attackerRoot;
 
-      // Cancel WAAPI animations (if any)
-      try { (moveEl as any).getAnimations?.().forEach((a: any) => a.cancel()); } catch {}
+      // Cancel WAAPI animations if any
+      moveEl.getAnimations?.().forEach((anim) => anim.cancel());
 
-      // Create (or reuse) overlay attached to <body>
-      const ensureOverlay = () => {
-        const id = 'bb-detach-overlay';
-        let ov = document.getElementById(id) as HTMLDivElement | null;
-        if (!ov) {
-          ov = document.createElement('div');
-          ov.id = id;
-          ov.style.position = 'fixed';
-          ov.style.left = '0px';
-          ov.style.top = '0px';
-          ov.style.width = '100vw';
-          ov.style.height = '100vh';
-          ov.style.pointerEvents = 'none';
-          ov.style.zIndex = '2147483000';
-          ov.style.contain = 'layout style paint';
-          document.body.appendChild(ov);
-        }
-        return ov;
-      };
-
-      // Save current inline styles (must restore)
+      // Save inline styles we might touch
       const prev = {
         position: moveEl.style.position,
         left: moveEl.style.left,
@@ -621,36 +604,47 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
         zIndex: moveEl.style.zIndex,
         willChange: moveEl.style.willChange,
         pointerEvents: moveEl.style.pointerEvents,
-        animation: moveEl.style.animation,
+        animation: (moveEl.style as any).animation || '',
       };
 
-      // Placeholder to return element to the same spot in DOM
-      const parent = moveEl.parentNode as Node | null;
-      if (!parent) return;
-      const placeholder = document.createComment('bb-detach');
-      parent.insertBefore(placeholder, moveEl);
+      // Some iOS “spins” come from CSS keyframes competing with our transform.
+      // Disable CSS animation on attacker root during flight.
+      const prevAnimProp = (moveEl.style as any).animation;
 
-      const overlay = ensureOverlay();
-      overlay.appendChild(moveEl);
+      // Keep layout slot size: insert placeholder where the element was.
+      const ph = document.createElement('div');
+      ph.setAttribute('data-bb-ph', '1');
+      ph.style.width = `${a.width}px`;
+      ph.style.height = `${a.height}px`;
+      ph.style.pointerEvents = 'none';
+      ph.style.visibility = 'hidden';
 
-      // Detach -> fixed in exact screen position
+      const parent = moveEl.parentNode;
+      const next = moveEl.nextSibling;
+      if (parent) parent.insertBefore(ph, next);
+
+      // Re-parent SAME DOM node into body
+      document.body.appendChild(moveEl);
+
+      // Detach → fixed at current viewport coords
       moveEl.style.position = 'fixed';
-      moveEl.style.left = ar.left + 'px';
-      moveEl.style.top = ar.top + 'px';
-      moveEl.style.width = ar.width + 'px';
-      moveEl.style.height = ar.height + 'px';
-      moveEl.style.zIndex = '2147483600';
+      moveEl.style.left = `${a.left}px`;
+      moveEl.style.top = `${a.top}px`;
+      moveEl.style.width = `${a.width}px`;
+      moveEl.style.height = `${a.height}px`;
+      moveEl.style.margin = '0';
+      moveEl.style.transform = 'translate3d(0px, 0px, 0px)';
+      moveEl.style.zIndex = '999999';
       moveEl.style.willChange = 'transform';
       moveEl.style.pointerEvents = 'none';
+      (moveEl.style as any).animation = 'none';
 
-      // Prevent any CSS keyframes from fighting transforms during lunge
-      moveEl.style.animation = 'none';
-      moveEl.style.transition = 'none';
-      moveEl.style.transform = 'translate3d(0px,0px,0px)';
+      targetRoot.classList.add('is-attack-to');
 
-      try { targetRoot.classList.add('is-attack-to'); } catch {}
+      // Force layout flush so TG iOS doesn't skip the first transition
+      void moveEl.offsetHeight;
 
-      // iOS TG: 2 rAF before applying transition+transform improves reliability
+      // Two RAFs = noticeably more stable in iOS WebView
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           moveEl.style.transition = `transform ${outMs}ms ${ease}`;
@@ -659,32 +653,34 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
           window.setTimeout(() => {
             moveEl.style.transition = `transform ${backMs}ms ${ease}`;
-            moveEl.style.transform = 'translate3d(0px,0px,0px)';
+            moveEl.style.transform = 'translate3d(0px, 0px, 0px)';
 
             window.setTimeout(() => {
-              try { targetRoot.classList.remove('is-attack-to'); } catch {}
-
-              // Reattach back into original DOM place
               try {
-                const phParent = placeholder.parentNode;
-                if (phParent) {
-                  phParent.insertBefore(moveEl, placeholder);
-                  phParent.removeChild(placeholder);
-                }
-              } catch {}
+                targetRoot.classList.remove('is-attack-to');
 
-              // Restore inline styles exactly
-              moveEl.style.position = prev.position;
-              moveEl.style.left = prev.left;
-              moveEl.style.top = prev.top;
-              moveEl.style.width = prev.width;
-              moveEl.style.height = prev.height;
-              moveEl.style.transform = prev.transform;
-              moveEl.style.transition = prev.transition;
-              moveEl.style.zIndex = prev.zIndex;
-              moveEl.style.willChange = prev.willChange;
-              moveEl.style.pointerEvents = prev.pointerEvents;
-              moveEl.style.animation = prev.animation;
+                // Move back into original place
+                if (parent) {
+                  if (next) parent.insertBefore(moveEl, next);
+                  else parent.appendChild(moveEl);
+                }
+
+                // Remove placeholder
+                try { ph.remove(); } catch {}
+
+                // Restore inline styles (exact)
+                moveEl.style.position = prev.position;
+                moveEl.style.left = prev.left;
+                moveEl.style.top = prev.top;
+                moveEl.style.width = prev.width;
+                moveEl.style.height = prev.height;
+                moveEl.style.transform = prev.transform;
+                moveEl.style.transition = prev.transition;
+                moveEl.style.zIndex = prev.zIndex;
+                moveEl.style.willChange = prev.willChange;
+                moveEl.style.pointerEvents = prev.pointerEvents;
+                (moveEl.style as any).animation = prevAnimProp || prev.animation || '';
+              } catch {}
             }, backMs + 70);
           }, outMs + 90);
         });
