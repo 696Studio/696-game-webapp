@@ -1253,7 +1253,25 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return "Есть победитель";
   }, [match]);
 
-  const revealed = phase === "reveal" || phase === "score" || phase === "end";
+  // Platform hint (client-only): Telegram iOS WebView has some paint/phase quirks.
+  // Keep this guard SSR-safe.
+  const ios = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    const isIOS = /iPad|iPhone|iPod/.test(ua);
+    const isIPadOS13Plus =
+      !isIOS &&
+      ua.includes("Mac") &&
+      typeof document !== "undefined" &&
+      // iPadOS reports as Mac but has touch.
+      "ontouchend" in document;
+    return isIOS || isIPadOS13Plus;
+  }, []);
+
+  // iOS Telegram WebView can fail to advance `phase` fast enough at battle start,
+  // keeping cards on the legacy back-face. Our CardArt overrides make that back-face
+  // visually minimal, which looks like "no cards". Force reveal on iOS.
+  const revealed = ios || phase === "reveal" || phase === "score" || phase === "end";
   const scored = phase === "score" || phase === "end";
 
   const p1Slots = useMemo(
