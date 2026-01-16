@@ -9,6 +9,41 @@ import CardArt from "../../components/CardArt";
 
 import BattleFxLayer from './BattleFxLayer';
 
+
+// ===== BB_ATTACK_DEBUG_OVERLAY =====
+function bbDbgEnabled() {
+  try {
+    if (process.env.NODE_ENV !== "production") return true;
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("bbdbg") === "1";
+  } catch {
+    return false;
+  }
+}
+function bbDbgSet(msg: string) {
+  if (!bbDbgEnabled()) return;
+  const id = "bb-attack-debug";
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement("div");
+    el.id = id;
+    el.style.position = "fixed";
+    el.style.left = "12px";
+    el.style.top = "12px";
+    el.style.zIndex = "999999";
+    el.style.padding = "10px 12px";
+    el.style.font = "12px/1.25 system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    el.style.background = "rgba(0,0,0,0.72)";
+    el.style.color = "white";
+    el.style.borderRadius = "12px";
+    el.style.pointerEvents = "none";
+    el.style.maxWidth = "92vw";
+    el.style.whiteSpace = "pre-wrap";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+}
+
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
 
 type MatchRow = {
@@ -508,12 +543,18 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
+      // debug tick
+      try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
+
     try {
       const fromCard = unitElByIdRef.current[fromId];
       const toCard = unitElByIdRef.current[toId];
       const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
       const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
-      if (!attackerRoot || !targetRoot) return;
+      if (!attackerRoot || !targetRoot) {
+        bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}\nfoundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
+        return;
+      }
       if (attackerRoot === targetRoot) return;
 
       const a = attackerRoot.getBoundingClientRect();
@@ -556,6 +597,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       requestAnimationFrame(() => {
         moveEl.style.setProperty('left', `${dx}px`, 'important');
         moveEl.style.setProperty('top', `${dy}px`, 'important');
+        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
         window.setTimeout(() => {
           moveEl.style.setProperty('transition', `top ${backMs}ms ${ease}, left ${backMs}ms ${ease}`, 'important');
