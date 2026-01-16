@@ -539,5 +539,6 @@ html.bb-ios .bb-motion-layer{
 html.bb-ios .bb-card,
 html.bb-ios .bb-face{
   -webkit-transform: translate3d(0,0,0);
+  transform: translate3d(0,0,0);
 }
 
