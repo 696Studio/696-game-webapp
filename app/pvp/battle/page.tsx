@@ -34,15 +34,27 @@ function bbLunge(attackerSlot: string, targetSlot: string) {
   // Cancel in-flight animations to avoid stacking
   a.getAnimations?.().forEach((anim) => anim.cancel());
 
-  // WAAPI lunge (owns transform only on attacker)
-  a.animate(
-    [
-      { transform: "translate3d(0,0,0) scale(1)" },
-      { transform: `translate3d(${dx}px, ${dy}px, 0) scale(1.06)` },
-      { transform: "translate3d(0,0,0) scale(1)" },
-    ],
-    { duration: 420, easing: "cubic-bezier(.18,.9,.22,1)" }
-  );
+  // Force transform even if some stylesheet uses !important
+  const ease = "cubic-bezier(.18,.9,.22,1)";
+  const outMs = 180;
+  const backMs = 160;
+
+  // Go out
+  a.style.setProperty("will-change", "transform");
+  a.style.setProperty("transition", `transform ${outMs}ms ${ease}`, "important");
+  a.style.setProperty("transform", `translate3d(${dx}px, ${dy}px, 0) scale(1.06)`, "important");
+
+  // Return
+  window.setTimeout(() => {
+    a.style.setProperty("transition", `transform ${backMs}ms ${ease}`, "important");
+    a.style.setProperty("transform", "translate3d(0,0,0) scale(1)", "important");
+
+    window.setTimeout(() => {
+      a.style.removeProperty("transition");
+      a.style.removeProperty("transform");
+      a.style.removeProperty("will-change");
+    }, backMs + 30);
+  }, outMs + 30);
 }
 
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (leave only TEST)
