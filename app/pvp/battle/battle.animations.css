@@ -48,9 +48,7 @@ transform-style: preserve-3d;
 }
 
 @keyframes bb_card_death_to_back{
-  0%   { transform: translate3d(0,0,0) rotateY(0deg) scale(1); }
-  18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
-  100% { transform: translate3d(0,0,0) rotateY(180deg) scale(1); }
+18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
 }
 
 .bb-card.is-dead{
@@ -109,7 +107,7 @@ to   { background-position: 100% 50%; opacity: 0; }
   animation: bb_hit_shake 140ms var(--bb-hit-ease) both;
 }
 @keyframes bb_hit_shake{
-25%  { transform: translate3d(-2px,0,0) scale(.995); }
+25%  { transform: translate3d(-2px,0,0) rotate(-0.6deg) scale(.995); }
 }
 
 .bb-slot.is-damage::after{
@@ -237,9 +235,7 @@ to{ transform: translateX(-75%); }
 }
 
 @keyframes bb_card_death_to_back__final{
-  0%   { transform: translate3d(0,0,0) rotateY(0deg) scale(1); }
-  18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
-  100% { transform: translate3d(0,0,0) rotateY(180deg) scale(1); }
+18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
 }
 
 @keyframes bb_card_vanish__final{
