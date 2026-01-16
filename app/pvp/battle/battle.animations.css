@@ -473,3 +473,57 @@ z-index: 21;
     transform: translate3d(0,0,0) scale(1);
   }
 }
+
+
+/* =========================================================
+ STEP B OVERRIDES — NO TRANSFORM ANIMS ON SLOT / NO CSS LUNGE
+ Purpose:
+ - Prevent "vibration" by ensuring .bb-slot (CardRoot) is never driven by CSS transform animations.
+ - Disable all CSS-based attack lunges (slot/card/motion-layer). JS-lunge will own movement.
+ ========================================================= */
+
+/* CardRoot must be transform-clean */
+.bb-slot{
+  will-change: opacity !important;
+  transform: none !important;
+}
+
+/* Disable any slot-level movement states (they can keep visuals via ::after/filter) */
+.bb-slot.is-spawn,
+.bb-slot.is-damage,
+.bb-slot.is-attack-from,
+.bb-slot.is-attack-to,
+.bb-slot.is-dying{
+  animation: none !important;
+  transform: none !important;
+}
+
+/* Keep damage flash (no movement) */
+.bb-slot.is-damage::after{
+  animation: bb_hit_flash 160ms var(--bb-ease-out) both !important;
+}
+
+/* Disable CSS lunges/recoils until JS-lunge is implemented */
+.bb-card.is-attacking,
+.bb-motion-layer.is-attacking,
+.bb-card.is-attack-target{
+  animation: none !important;
+  transform: none !important;
+}
+
+/* Also disable legacy helper attack classes if present */
+.bb-attack-left,
+.bb-attack-right,
+.bb-attack-fx,
+.bb-attack-lunge{
+  animation: none !important;
+  transform: none !important;
+}
+
+/* Reduced motion: keep safe */
+@media (prefers-reduced-motion: reduce){
+  .bb-slot, .bb-slot *{
+    animation: none !important;
+    transition: none !important;
+  }
+}
