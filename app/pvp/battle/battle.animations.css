@@ -1,9 +1,22 @@
-:root{ --bb-ease-out: cubic-bezier(.18,.9,.22,1); --bb-ease-inout: cubic-bezier(.2,.0,.2,1); --bb-hit-ease: cubic-bezier(.2,.8,.2,1); --bb-fx-tint-hue: 195deg; --bb-fx-tint-sat: 1.6; --bb-fx-tint-bright: 1.05; --bb-fx-shadow: 0 0 14px rgba(120, 220, 255, .35);
-} .bb-card-inner{ position: relative; transform-style: preserve-3d; }
+:root{
+    
+  --bb-ease-out: cubic-bezier(.18,.9,.22,1);
+  --bb-ease-inout: cubic-bezier(.2,.0,.2,1);
+  --bb-hit-ease: cubic-bezier(.2,.8,.2,1);
+
+  
+  --bb-fx-tint-hue: 195deg;   
+  --bb-fx-tint-sat: 1.6;
+  --bb-fx-tint-bright: 1.05;
+  --bb-fx-shadow: 0 0 14px rgba(120, 220, 255, .35);
+}
+
+.bb-card-inner{ position: relative; transform-style: preserve-3d; }
 .bb-face{ backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 .bb-face.bb-back{
 transform: rotateY(180deg);
-background: radial-gradient(circle at 30% 20%, rgba(255,255,255,.08), rgba(0,0,0,0) 55%), linear-gradient(135deg, rgba(20,20,25,.98), rgba(5,5,8,.98));
+background: radial-gradient(circle at 30% 20%, rgba(255,255,255,.08), rgba(0,0,0,0) 55%),
+            linear-gradient(135deg, rgba(20,20,25,.98), rgba(5,5,8,.98));
 border: 1px solid rgba(255,255,255,.08);
 }
 .bb-face.bb-back .bb-mark{
@@ -15,23 +28,39 @@ font-weight: 800;
 letter-spacing: .12em;
 opacity: .55;
 text-shadow: 0 6px 20px rgba(0,0,0,.65);
-} .bb-slot.is-dying .bb-card{
+}
+
+.bb-slot.is-dying .bb-card{
 animation: bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both;
 transform-style: preserve-3d;
-} .bb-slot.is-dying.is-vanish .bb-card,
+}
+
+.bb-slot.is-dying.is-vanish .bb-card,
 .bb-slot.is-vanish .bb-card{
-animation: bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both, bb_card_vanish 260ms cubic-bezier(.2,.9,.2,1) forwards;
+animation:
+  bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both,
+  bb_card_vanish 260ms cubic-bezier(.2,.9,.2,1) forwards;
 animation-delay: 0ms, 520ms;
 transform-style: preserve-3d;
-} @keyframes bb_card_vanish{
-} @keyframes bb_card_death_to_back{
-18% { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
-} .bb-card.is-dead{
+}
+
+@keyframes bb_card_vanish{
+}
+
+@keyframes bb_card_death_to_back{
+18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
+}
+
+.bb-card.is-dead{
 opacity: 1 !important;
 }
 .bb-card.is-dead .bb-card-inner{
 transform: rotateY(180deg) !important;
-} .bb-slot{ position: relative; overflow: visible; } .bb-fx-burst--death .bb-fx-burst__atlas{
+}
+
+.bb-slot{ position: relative; overflow: visible; }
+
+.bb-fx-burst--death .bb-fx-burst__atlas{
 width: 100%;
 height: 100%;
 background-image: none;
@@ -41,162 +70,477 @@ background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%;
 will-change: background-position, opacity;
 image-rendering: auto;
 animation: bb-death-atlas-3 520ms linear forwards;
-} .bb-fx-burst--death .bb-fx-burst__img{
+}
+
+.bb-fx-burst--death .bb-fx-burst__img{
 animation: none !important;
-} @keyframes bb-death-atlas-3{ 0%, 32.9% { background-position: calc(-2px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-33%, 65.9% { background-position: calc(-66px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+}
+
+@keyframes bb-death-atlas-3{
+
+0%, 32.9%  { background-position: calc(-2px   * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
+33%, 65.9% { background-position: calc(-66px  * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
 66%, 92.9% { background-position: calc(-130px * var(--bb-strip-scale, 2)) 50%; opacity: 1; }
-} @keyframes bb_death_sprite{
+}
+
+@keyframes bb_death_sprite{
 from { background-position: 0 50%; opacity: 1; }
-to { background-position: 100% 50%; opacity: 0; }
-} .bb-fx{ z-index: 12 !important; } .bb-slot{ will-change: transform, opacity; transform-origin: 50% 70%;
-} .bb-slot.is-spawn{ animation: bb_spawn 420ms var(--bb-ease-out) both; filter: saturate(1.02);
+to   { background-position: 100% 50%; opacity: 0; }
+}
+
+.bb-fx{ z-index: 12 !important; }
+
+.bb-slot{
+  will-change: transform, opacity;
+  transform-origin: 50% 70%;
+}
+
+.bb-slot.is-spawn{
+  animation: bb_spawn 420ms var(--bb-ease-out) both;
+  filter: saturate(1.02);
 }
 @keyframes bb_spawn{
-55% { opacity: 1; transform: translate3d(0,-2px,0) scale(1.02); }
-} .bb-slot.is-damage{ animation: bb_hit_shake 140ms var(--bb-hit-ease) both;
+55%  { opacity: 1; transform: translate3d(0,-2px,0) scale(1.02); }
+}
+
+.bb-slot.is-damage{
+  animation: bb_hit_shake 140ms var(--bb-hit-ease) both;
 }
 @keyframes bb_hit_shake{
-25% { transform: translate3d(-2px,0,0) scale(.995); }
-} .bb-slot.is-damage::after{ content:""; position:absolute; inset:-6px; border-radius: 14px; pointer-events:none; background: radial-gradient(closest-side, rgba(255,80,80,.35), rgba(255,80,80,0) 70%); mix-blend-mode: screen; opacity:0; animation: bb_hit_flash 160ms var(--bb-ease-out) both;
+25%  { transform: translate3d(-2px,0,0) rotate(-0.6deg) scale(.995); }
+}
+
+.bb-slot.is-damage::after{
+  content:"";
+  position:absolute;
+  inset:-6px;
+  border-radius: 14px;
+  pointer-events:none;
+  background: radial-gradient(closest-side, rgba(255,80,80,.35), rgba(255,80,80,0) 70%);
+  mix-blend-mode: screen;
+  opacity:0;
+  animation: bb_hit_flash 160ms var(--bb-ease-out) both;
 }
 @keyframes bb_hit_flash{
 45%{ opacity:1; transform: scale(1.02); }
-} .bb-slot.is-attack-from{ animation: bb_attack_lunge 240ms var(--bb-ease-out) both;
+}
+
+.bb-slot.is-attack-from{
+  animation: bb_attack_lunge 240ms var(--bb-ease-out) both;
 }
 @keyframes bb_attack_lunge{
-55% { transform: translate3d(0,-10px,0) scale(1.03); } } .bb-slot.is-attack-to{ animation: bb_attack_recoil 220ms var(--bb-ease-out) both;
+55%  { transform: translate3d(0,-10px,0) scale(1.03); } 
+}
+
+.bb-slot.is-attack-to{
+  animation: bb_attack_recoil 220ms var(--bb-ease-out) both;
 }
 @keyframes bb_attack_recoil{
-45% { transform: translate3d(0,6px,0) scale(.99); }
-} .bb-slot.is-dying{ animation: bb_death_collapse 680ms var(--bb-ease-inout) both; filter: saturate(.35) brightness(.92) contrast(1.05);
-} @keyframes bb_death_collapse{
-18% { opacity:1; transform: translate3d(0,0,0) scale(1.01); } } .bb-slot.is-dying .bb-death::after{ content:""; position:absolute; inset:0; background: radial-gradient(circle at 50% 50%, rgba(120,220,255,.26), rgba(120,220,255,0) 65%); mix-blend-mode: screen; opacity:0; animation: bb_halo 520ms var(--bb-ease-out) both; pointer-events:none;
-} @keyframes bb_sprite8{ from { background-position: 0% 50%; } to { background-position: 100% 50%; }
+45%  { transform: translate3d(0,6px,0) scale(.99); }
+}
+
+.bb-slot.is-dying{
+  animation: bb_death_collapse 680ms var(--bb-ease-inout) both;
+  filter: saturate(.35) brightness(.92) contrast(1.05);
+}
+
+@keyframes bb_death_collapse{
+18%  { opacity:1; transform: translate3d(0,0,0) rotate(-1.2deg) scale(1.01); } 
+}
+
+.bb-slot.is-dying .bb-death::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background: radial-gradient(circle at 50% 50%, rgba(120,220,255,.26), rgba(120,220,255,0) 65%);
+  mix-blend-mode: screen;
+  opacity:0;
+  animation: bb_halo 520ms var(--bb-ease-out) both;
+  pointer-events:none;
+}
+
+@keyframes bb_sprite8{
+  from { background-position:   0% 50%; }
+  to   { background-position: 100% 50%; }
 }
 @keyframes bb_halo{
 25%{ opacity:.75; transform: scale(1.02); }
-} @media (prefers-reduced-motion: reduce){ .bb-slot.is-spawn, .bb-slot.is-damage, .bb-slot.is-attack-from, .bb-slot.is-attack-to, .bb-slot.is-dying{ animation: none !important; } .bb-slot.is-damage::after, .bb-slot.is-dying::before, .bb-slot.is-dying .bb-death::before, .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
-} .bb-slot{ position: relative; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .bb-slot.is-spawn,
+  .bb-slot.is-damage,
+  .bb-slot.is-attack-from,
+  .bb-slot.is-attack-to,
+  .bb-slot.is-dying{ animation: none !important; }
+  .bb-slot.is-damage::after,
+  .bb-slot.is-dying::before,
+  .bb-slot.is-dying .bb-death::before,
+  .bb-slot.is-dying .bb-death::after{ animation: none !important; opacity: 0 !important; }
+}
+
+.bb-slot{ position: relative; }
 .bb-fx-anchor{
 position:absolute;
 inset:0;
 z-index: 80;
 pointer-events:none;
 overflow: visible;
-} .bb-slot.is-dying .bb-card{
+}
+
+.bb-slot.is-dying .bb-card{
 animation: bbDeathPunch 240ms ease-out;
-} @keyframes bbDeathPunch{
+}
+
+@keyframes bbDeathPunch{
 60%{ transform: translateZ(0) scale(1.06); }
-} @keyframes bbDeathSprite{
+}
+
+@keyframes bbDeathSprite{
 from{ background-position: 0% 50%; opacity:1; }
 to{ background-position: 100% 50%; opacity:0; }
-} .bb-fx-burst{
+}
+
+.bb-fx-burst{
 position: absolute;
 transform: translate(-50%, -50%);
 overflow: hidden;
-pointer-events: none; image-rendering: auto;
+pointer-events: none;
+
+image-rendering: auto;
 will-change: transform, opacity;
-} .bb-fx-burst__img{
+}
+
+.bb-fx-burst__img{
 height: 100%;
 width: 400%;
 max-width: none;
 display: block;
 transform: translateX(0);
 will-change: transform;
-} .bb-fx-burst--death .bb-fx-burst__img{
+}
+
+.bb-fx-burst--death .bb-fx-burst__img{
 animation: bb-strip-move 520ms steps(4) forwards;
-} @keyframes bb-strip-move{
-from{ transform: translateX(0); } to{ transform: translateX(-75%); }
-} @keyframes bb-death-pop{
+}
+
+@keyframes bb-strip-move{
+from{ transform: translateX(0); }
+
+to{ transform: translateX(-75%); }
+}
+
+@keyframes bb-death-pop{
 8%{ opacity: 1; }
-} @keyframes bb_card_death_to_back__final{
-18% { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
-} @keyframes bb_card_vanish__final{
-} .bb-slot.is-dying .bb-card{
+}
+
+@keyframes bb_card_death_to_back__final{
+18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
+}
+
+@keyframes bb_card_vanish__final{
+}
+
+.bb-slot.is-dying .bb-card{
 animation: bb_card_death_to_back__final 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both !important;
 transform-style: preserve-3d;
-} .bb-slot.is-dying.is-vanish .bb-card,
+}
+
+.bb-slot.is-dying.is-vanish .bb-card,
 .bb-slot.is-vanish .bb-card{
-animation: bb_card_death_to_back__final 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both, bb_card_vanish__final 260ms cubic-bezier(.2,.9,.2,1) forwards !important;
+animation:
+  bb_card_death_to_back__final 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both,
+  bb_card_vanish__final 260ms cubic-bezier(.2,.9,.2,1) forwards !important;
 animation-delay: 0ms, 520ms;
 transform-style: preserve-3d;
-} .bb-card.is-dead{
+}
+
+.bb-card.is-dead{
 opacity: 1 !important;
 filter: none !important;
-} .bb-card.has-unit.is-dead{opacity:1 !important; filter:none !important;} .bb-slot.is-hidden {
+}
+
+.bb-card.has-unit.is-dead{opacity:1 !important; filter:none !important;}
+
+.bb-slot.is-hidden {
 opacity: 0 !important;
 visibility: hidden !important;
 pointer-events: none !important;
 }
 .bb-slot.is-hidden .bb-card {
 display: none !important;
-} /* ========================================================= FINAL DEAD STATE — SKELETON OVERLAY (STABLE) Uses existing .is-dead flag. Does NOT affect death animation. Asset: /public/fx/dead_skeleton.png ========================================================= */ .bb-card.is-dead{
+}
+
+/* =========================================================
+ FINAL DEAD STATE — SKELETON OVERLAY (STABLE)
+ Uses existing .is-dead flag. Does NOT affect death animation.
+ Asset: /public/fx/dead_skeleton.png
+ ========================================================= */
+
+.bb-card.is-dead{
 opacity: 1 !important;
 filter: none !important;
 pointer-events: none;
 position: relative;
-} .bb-card.is-dead::after{
+}
+
+.bb-card.is-dead::after{
 content: "";
 position: absolute;
 inset: 0;
 background: rgba(0,0,0,.55);
 z-index: 20;
-} .bb-card.is-dead::before{
+}
+
+.bb-card.is-dead::before{
 content: "";
 position: absolute;
 inset: 0;
 background: url("/fx/dead_skeleton.png") center / 60% no-repeat;
 opacity: .95;
 z-index: 21;
-} /* Ensure skeleton appears only AFTER death animation */
+}
+
+
+/* Ensure skeleton appears only AFTER death animation */
 .bb-slot.is-dying .bb-card.is-dead::before,
-.bb-slot.is-dying .bb-card.is-dead::after{ opacity:0;
-} /* ========================================================= ATTACK FX — VARIANT A (CSS + DOM) Cards lunge towards target and return. Controlled by BattleFxLayer.tsx ========================================================= */ /* helper injected by FX layer */
-.bb-attack-fx{ position:absolute; inset:0; pointer-events:none;
-} .bb-attack-left{ animation: bb_attack_move_right 420ms var(--bb-ease-out) both;
-} .bb-attack-right{ animation: bb_attack_move_left 420ms var(--bb-ease-out) both;
-} @keyframes bb_attack_move_right{ 0% { transform: translate3d(0,0,0); } 40% { transform: translate3d(36px,-6px,0); } 65% { transform: translate3d(28px,-2px,0) scale(1.02); } 100% { transform: translate3d(0,0,0); }
-} @keyframes bb_attack_move_left{ 0% { transform: translate3d(0,0,0); } 40% { transform: translate3d(-36px,-6px,0); } 65% { transform: translate3d(-28px,-2px,0) scale(1.02); } 100% { transform: translate3d(0,0,0); }
-} /* ========================================================= ATTACK FX — LUNGE TO TARGET (STEP 2) Uses vectors from BattleFxLayer (--atk-dx / --atk-dy) Card flies to target, touches, returns back ========================================================= */ /* FX marker injected by BattleFxLayer */
-.bb-attack-lunge{ position:absolute; inset:0; pointer-events:none;
-} /* Attacking card motion */
-.bb-card{ --atk-dx: 0px; --atk-dy: 0px;
-} .bb-card.is-attacking{ animation: bb_card_lunge_to_target 420ms var(--bb-ease-out) both; z-index: 60; will-change: transform;
-} @keyframes bb_card_lunge_to_target{ 0%{ transform: translate3d(0,0,0) scale(1); } 45%{ transform: translate3d( calc(var(--atk-dx) * 1.0), calc(var(--atk-dy) * 1.0), 0) scale(1.05); } 55%{ transform: translate3d( calc(var(--atk-dx) * 1.08), calc(var(--atk-dy) * 1.08), 0) scale(1.03); } 100%{ transform: translate3d(0,0,0) scale(1); }
-} /* Impact feedback on target */
-.bb-card.is-attack-target{ animation: bb_attack_target_hit 220ms var(--bb-hit-ease) both;
-} @keyframes bb_attack_target_hit{ 35%{ transform: translate3d(0,6px,0) scale(0.985); }
-} /* ========================================================= FINAL ATTACK LUNGE — MOTION LAYER (NO CONFLICTS) ========================================================= */ .bb-motion-layer{ --atk-dx: 0px; --atk-dy: 0px; will-change: transform;
-} .bb-motion-layer.is-attacking{ animation: bb_motion_lunge_to_target 420ms cubic-bezier(.18,.9,.22,1) both; z-index: 60;
-} @keyframes bb_motion_lunge_to_target{ 0%{ transform: translate3d(0,0,0) scale(1); } 45%{ transform: translate3d( var(--atk-dx), var(--atk-dy), 0) scale(1.06); } 60%{ transform: translate3d( calc(var(--atk-dx) * 1.08), calc(var(--atk-dy) * 1.08), 0) scale(1.03); } 100%{ transform: translate3d(0,0,0) scale(1); }
-} /* Impact on target */
-.bb-card.is-attack-target{ animation: bb_attack_target_hit 220ms var(--bb-hit-ease) both;
-} /* ========================================================= PORTAL FX — CARD CLONE LUNGE Used by BattleFxLayer.portal.tsx ========================================================= */ @keyframes bb_fx_lunge { 0% { transform: translate3d(0,0,0) scale(1); } 55% { transform: translate3d(var(--fx-dx), var(--fx-dy), 0) scale(1.06); } 100% { transform: translate3d(0,0,0) scale(1); }
-} /* ========================================================= STEP B OVERRIDES v2 — NO TRANSFORM ANIMS ON SLOT / NO CSS LUNGE IMPORTANT: - We DO NOT force transform:none on .bb-slot, because JS-lunge needs to set inline transform. - We only disable CSS animations that write transform. ========================================================= */ /* CardRoot must NOT be animated by CSS (but JS may set transform inline) */
-.bb-slot{ will-change: opacity !important;
-} /* Disable slot-level movement states (keep visuals via ::after/filter) */
+.bb-slot.is-dying .bb-card.is-dead::after{
+  opacity:0;
+}
+
+/* =========================================================
+ ATTACK FX — VARIANT A (CSS + DOM)
+ Cards lunge towards target and return.
+ Controlled by BattleFxLayer.tsx
+ ========================================================= */
+
+/* helper injected by FX layer */
+.bb-attack-fx{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+}
+
+.bb-attack-left{
+  animation: bb_attack_move_right 420ms var(--bb-ease-out) both;
+}
+
+.bb-attack-right{
+  animation: bb_attack_move_left 420ms var(--bb-ease-out) both;
+}
+
+@keyframes bb_attack_move_right{
+  0%   { transform: translate3d(0,0,0); }
+  40%  { transform: translate3d(36px,-6px,0) rotate(1.2deg); }
+  65%  { transform: translate3d(28px,-2px,0) scale(1.02); }
+  100% { transform: translate3d(0,0,0); }
+}
+
+@keyframes bb_attack_move_left{
+  0%   { transform: translate3d(0,0,0); }
+  40%  { transform: translate3d(-36px,-6px,0) rotate(-1.2deg); }
+  65%  { transform: translate3d(-28px,-2px,0) scale(1.02); }
+  100% { transform: translate3d(0,0,0); }
+}
+
+
+/* =========================================================
+ ATTACK FX — LUNGE TO TARGET (STEP 2)
+ Uses vectors from BattleFxLayer (--atk-dx / --atk-dy)
+ Card flies to target, touches, returns back
+ ========================================================= */
+
+/* FX marker injected by BattleFxLayer */
+.bb-attack-lunge{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+}
+
+/* Attacking card motion */
+.bb-card{
+  --atk-dx: 0px;
+  --atk-dy: 0px;
+}
+
+.bb-card.is-attacking{
+  animation: bb_card_lunge_to_target 420ms var(--bb-ease-out) both;
+  z-index: 60;
+  will-change: transform;
+}
+
+@keyframes bb_card_lunge_to_target{
+  0%{
+    transform: translate3d(0,0,0) scale(1);
+  }
+  45%{
+    transform:
+      translate3d(
+        calc(var(--atk-dx) * 1.0),
+        calc(var(--atk-dy) * 1.0),
+        0
+      )
+      scale(1.05);
+  }
+  55%{
+    transform:
+      translate3d(
+        calc(var(--atk-dx) * 1.08),
+        calc(var(--atk-dy) * 1.08),
+        0
+      )
+      scale(1.03);
+  }
+  100%{
+    transform: translate3d(0,0,0) scale(1);
+  }
+}
+
+/* Impact feedback on target */
+.bb-card.is-attack-target{
+  animation: bb_attack_target_hit 220ms var(--bb-hit-ease) both;
+}
+
+@keyframes bb_attack_target_hit{
+  35%{
+    transform: translate3d(0,6px,0) scale(0.985);
+  }
+}
+
+
+/* =========================================================
+ FINAL ATTACK LUNGE — MOTION LAYER (NO CONFLICTS)
+ ========================================================= */
+
+.bb-motion-layer{
+  --atk-dx: 0px;
+  --atk-dy: 0px;
+  will-change: transform;
+}
+
+.bb-motion-layer.is-attacking{
+  animation: bb_motion_lunge_to_target 420ms cubic-bezier(.18,.9,.22,1) both;
+  z-index: 60;
+}
+
+@keyframes bb_motion_lunge_to_target{
+  0%{
+    transform: translate3d(0,0,0) scale(1);
+  }
+  45%{
+    transform:
+      translate3d(
+        var(--atk-dx),
+        var(--atk-dy),
+        0
+      )
+      scale(1.06);
+  }
+  60%{
+    transform:
+      translate3d(
+        calc(var(--atk-dx) * 1.08),
+        calc(var(--atk-dy) * 1.08),
+        0
+      )
+      scale(1.03);
+  }
+  100%{
+    transform: translate3d(0,0,0) scale(1);
+  }
+}
+
+/* Impact on target */
+.bb-card.is-attack-target{
+  animation: bb_attack_target_hit 220ms var(--bb-hit-ease) both;
+}
+
+/* =========================================================
+ PORTAL FX — CARD CLONE LUNGE
+ Used by BattleFxLayer.portal.tsx
+ ========================================================= */
+
+@keyframes bb_fx_lunge {
+  0% {
+    transform: translate3d(0,0,0) scale(1);
+  }
+  55% {
+    transform:
+      translate3d(var(--fx-dx), var(--fx-dy), 0)
+      scale(1.06);
+  }
+  100% {
+    transform: translate3d(0,0,0) scale(1);
+  }
+}
+
+
+/* =========================================================
+ STEP B OVERRIDES v2 — NO TRANSFORM ANIMS ON SLOT / NO CSS LUNGE
+ IMPORTANT:
+ - We DO NOT force transform:none on .bb-slot, because JS-lunge needs to set inline transform.
+ - We only disable CSS animations that write transform.
+ ========================================================= */
+
+/* CardRoot must NOT be animated by CSS (but JS may set transform inline) */
+.bb-slot{
+  will-change: opacity !important;
+}
+
+/* Disable slot-level movement states (keep visuals via ::after/filter) */
 .bb-slot.is-spawn,
 .bb-slot.is-damage,
 .bb-slot.is-attack-from,
 .bb-slot.is-attack-to,
-.bb-slot.is-dying{ animation: none !important;
-} /* Keep damage flash (no movement) */
-.bb-slot.is-damage::after{ animation: bb_hit_flash 160ms var(--bb-ease-out) both !important;
-} /* Disable CSS lunges/recoils until JS-lunge is stable */
+.bb-slot.is-dying{
+  animation: none !important;
+}
+
+/* Keep damage flash (no movement) */
+.bb-slot.is-damage::after{
+  animation: bb_hit_flash 160ms var(--bb-ease-out) both !important;
+}
+
+/* Disable CSS lunges/recoils until JS-lunge is stable */
 .bb-card.is-attacking,
 .bb-motion-layer.is-attacking,
-.bb-card.is-attack-target{ animation: none !important;
-} /* Legacy helper attack classes if present */
+.bb-card.is-attack-target{
+  animation: none !important;
+}
+
+/* Legacy helper attack classes if present */
 .bb-attack-left,
 .bb-attack-right,
 .bb-attack-fx,
-.bb-attack-lunge{ animation: none !important;
-} /* Reduced motion: keep safe */
-@media (prefers-reduced-motion: reduce){ .bb-slot, .bb-slot *{ animation: none !important; transition: none !important; }
+.bb-attack-lunge{
+  animation: none !important;
 }
 
-/* iOS Telegram WebView: flatten 3D on alive cards to prevent random spin/jitter */
-.bb-ios .bb-card:not(.is-dead) .bb-card-inner{ transform-style: flat !important; -webkit-transform-style: flat !important; animation: none !important; }
-.bb-ios .bb-card:not(.is-dead) .bb-face.bb-back{ display: none !important; }
-.bb-ios .bb-card:not(.is-dead) .bb-face{ backface-visibility: hidden !important; -webkit-backface-visibility: hidden !important; }
+/* Reduced motion: keep safe */
+@media (prefers-reduced-motion: reduce){
+  .bb-slot, .bb-slot *{
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* =========================================================
+ iOS Telegram WebView paint fix
+ Symptom: on iOS WebView, alive cards can fail to paint (blank)
+ until some later transform happens. Force GPU compositing on the
+ card 3D stack so the front face renders immediately.
+ ========================================================= */
+
+@supports (-webkit-touch-callout: none) {
+  .bb-card-inner,
+  .bb-face {
+    -webkit-transform: translate3d(0,0,0);
+    transform: translate3d(0,0,0);
+  }
+
+  /* If the back face is hidden, guarantee the inner isn't accidentally flipped */
+  .bb-card:not(.is-dead) .bb-card-inner {
+    -webkit-transform: translate3d(0,0,0) rotateY(0deg);
+    transform: translate3d(0,0,0) rotateY(0deg);
+  }
+}
