@@ -10,65 +10,87 @@ import CardArt from "../../components/CardArt";
 import BattleFxLayer from './BattleFxLayer';
 
 
-// ===== JS LUNGE (STEP C) =====
-// Moves ONLY CardRoot ([data-bb-slot]) towards target and back.
-// Uses Web Animations API to avoid transform conflicts.
+// ===== BB_LUNGE_DEBUG (STEP C) =====
+let __bbLungeTick = 0;
+function bbSetDebug(msg: string) {
+  const id = "bb-lunge-debug";
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement("div");
+    el.id = id;
+    el.style.position = "fixed";
+    el.style.left = "12px";
+    el.style.bottom = "12px";
+    el.style.zIndex = "999999";
+    el.style.padding = "8px 10px";
+    el.style.font = "12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    el.style.background = "rgba(0,0,0,0.72)";
+    el.style.color = "white";
+    el.style.borderRadius = "10px";
+    el.style.pointerEvents = "none";
+    el.style.maxWidth = "70vw";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+}
+
 function bbFindFirstOccupied(prefix: "p1" | "p2"): string | null {
-  // Prefer a slot that has a unit rendered inside .bb-card.has-unit
   const card = document.querySelector(`[data-bb-slot^="${prefix}:"] .bb-card.has-unit`) as HTMLElement | null;
   if (card) {
     const root = card.closest("[data-bb-slot]") as HTMLElement | null;
     if (root) return root.getAttribute("data-bb-slot");
   }
-  // Fallback: any slot element
   const any = document.querySelector(`[data-bb-slot^="${prefix}:"]`) as HTMLElement | null;
   return any ? any.getAttribute("data-bb-slot") : null;
 }
 
 function bbTestLunge(attackerSlot: string, targetSlot: string) {
+  __bbLungeTick += 1;
+
   const a = document.querySelector(`[data-bb-slot="${attackerSlot}"]`) as HTMLElement | null;
   const b = document.querySelector(`[data-bb-slot="${targetSlot}"]`) as HTMLElement | null;
+
   if (!a || !b) {
-    console.warn("[bbTestLunge] missing slots", { attackerSlot, targetSlot, a: !!a, b: !!b });
+    bbSetDebug(`#${__bbLungeTick} missing a/b: a=${!!a} b=${!!b}  ${attackerSlot} -> ${targetSlot}`);
     return;
   }
 
   const ar = a.getBoundingClientRect();
   const br = b.getBoundingClientRect();
-
   const dx = (br.left + br.width / 2) - (ar.left + ar.width / 2);
   const dy = (br.top + br.height / 2) - (ar.top + ar.height / 2);
 
-  console.log("[bbTestLunge]", { attackerSlot, targetSlot, dx, dy, ar, br });
+  bbSetDebug(`#${__bbLungeTick} ${attackerSlot} -> ${targetSlot}  dx=${dx.toFixed(1)} dy=${dy.toFixed(1)}`);
 
-  // Visual debug outlines (temporary)
-  const prevA = a.style.outline;
-  const prevB = b.style.outline;
-  a.style.outline = "2px solid rgba(0,180,255,0.95)";
-  b.style.outline = "2px solid rgba(0,255,120,0.95)";
-  window.setTimeout(() => {
-    a.style.outline = prevA;
-    b.style.outline = prevB;
-  }, 520);
+  // Hard-cancel CSS animation on slot during lunge (does not block inline transform)
+  const prevAnim = a.style.animation;
+  a.style.animation = "none";
+
+  // Visible highlight (background flash) even if outline is suppressed
+  const prevBg = a.style.background;
+  const prevBgB = b.style.background;
+  a.style.background = "rgba(0,180,255,0.12)";
+  b.style.background = "rgba(0,255,120,0.12)";
 
   // Cancel any in-flight animations on attacker to avoid stacking
   a.getAnimations?.().forEach((anim) => anim.cancel());
 
-  // Web Animations API (transform only on attacker)
+  // Use WAAPI
   a.animate(
     [
       { transform: "translate3d(0,0,0) scale(1)" },
       { transform: `translate3d(${dx}px, ${dy}px, 0) scale(1.06)` },
       { transform: "translate3d(0,0,0) scale(1)" },
     ],
-    {
-      duration: 420,
-      easing: "cubic-bezier(.18,.9,.22,1)",
-      fill: "none",
-    }
+    { duration: 420, easing: "cubic-bezier(.18,.9,.22,1)" }
   );
-}
 
+  window.setTimeout(() => {
+    a.style.animation = prevAnim;
+    a.style.background = prevBg;
+    b.style.background = prevBgB;
+  }, 520);
+}
 
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (leave only TEST)
 
@@ -1748,14 +1770,14 @@ const hpPct = useMemo(() => {
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
     return (
-      <div
-        data-bb-slot={slotKey}
-        className={["bb-slot", "bb-motion-layer", "bb-card-root", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}
-        data-unit-id={renderUnit?.instanceId}
-        data-fx-motion="1"
-        style={{ willChange: "transform" }}
-      >
-<div className="bb-fx-anchor">
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+        <div
+          data-bb-slot={slotKey}
+          className="bb-motion-layer bb-card-root"
+          data-fx-motion="1"
+          style={{ willChange: "transform" }}
+        >
+      <div className="bb-fx-anchor">
         
         {isDyingUi ? <div className="bb-death" /> : null}
       </div>
@@ -1875,6 +1897,7 @@ const hpPct = useMemo(() => {
         </div>
       )}
 
+      </div>
 
       <style jsx>{`
         .bb-hud {
@@ -3605,21 +3628,7 @@ const hpPct = useMemo(() => {
 
               <div className="dbg-cross" style={{ left: debugCover.topX, top: debugCover.topY }} />
               <div className="dbg-cross" style={{ left: debugCover.botX, top: debugCover.botY }} />
-            
-{process.env.NODE_ENV !== "production" && (
-  <button
-    onClick={() => {
-      const a = bbFindFirstOccupied("p1") || "p1:0";
-      const b = bbFindFirstOccupied("p2") || "p2:0";
-      bbTestLunge(a, b);
-    }}
-    style={{ position: "fixed", bottom: 16, right: 16, zIndex: 9999 }}
-  >
-    TEST LUNGE
-  </button>
-)}
-
-</>
+            </>
           )}
           <svg className="atk-overlay" width="100%" height="100%">
             <defs>
