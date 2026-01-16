@@ -13,11 +13,21 @@ import BattleFxLayer from './BattleFxLayer';
 // ===== BB_ATTACK_DEBUG_OVERLAY =====
 function bbDbgEnabled() {
   try {
-    if (process.env.NODE_ENV !== "production") return true;
     if (typeof window === "undefined") return false;
-    return new URLSearchParams(window.location.search).get("bbdbg") === "1";
+    // Toggle options (no URL needed):
+    // 1) window.__bbdbg = 1
+    // 2) localStorage.setItem("bbdbg","1")
+    // 3) sessionStorage.setItem("bbdbg","1")
+    const w = window as any;
+    const ls = (() => { try { return window.localStorage?.getItem("bbdbg"); } catch { return null; } })();
+    const ss = (() => { try { return window.sessionStorage?.getItem("bbdbg"); } catch { return null; } })();
+    if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
+    if (ls === "1" || ss === "1") return true;
+
+    // Default ON for now (so you always see it in Telegram). Remove later when animation is stable.
+    return true;
   } catch {
-    return false;
+    return true;
   }
 }
 function bbDbgSet(msg: string) {
@@ -675,6 +685,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
+    bbDbgSet('DBG READY — waiting for ATTACK events...');
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
