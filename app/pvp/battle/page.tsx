@@ -56,6 +56,21 @@ function bbDbgSet(msg: string) {
 
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
 
+// iOS Telegram WebView can exaggerate CSS transform-based FX (shake/flip),
+// especially on frequently-damaged units. We keep the visual FX elements
+// (flash/float text), but gate the transform-heavy CSS classes on iOS.
+function isIosWebView() {
+  try {
+    if (typeof navigator === "undefined") return false;
+    const ua = String(navigator.userAgent || "");
+    const isIOS = /iPad|iPhone|iPod/.test(ua);
+    // Telegram iOS uses WKWebView; this check is enough for our purposes.
+    return isIOS;
+  } catch {
+    return false;
+  }
+}
+
 type MatchRow = {
   id: string;
   mode: string | null;
@@ -1684,6 +1699,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
   slotKey?: string;
   delayMs: number;
 }) {
+    const ios = useMemo(() => isIosWebView(), []);
     const id = card?.id || fallbackId || "";
 
     const title = (card?.name && String(card.name).trim()) || safeSliceId(id);
@@ -1785,14 +1801,19 @@ const hpPct = useMemo(() => {
       return clamp((activeUnit.shield / maxHp) * 100, 0, 100);
     }, [activeUnit?.instanceId, activeUnit?.shield, activeUnit?.maxHp]);
 
+    // NOTE: iOS WebView can exaggerate "shake" / 3D effects when these classes linger.
+    // We only treat the latest fx as "active" for a short window.
     const atk = useMemo(() => {
       if (!renderUnit || !attackFx || attackFx.length === 0) return null;
       const last = attackFx[attackFx.length - 1];
+      // `t` is the battle timeline time (seconds). `last.t` is the event time.
+      // Keep the visual class for a brief moment only.
+      if (typeof last?.t === "number" && typeof t === "number" && t - last.t > 0.16) return null;
       const isFrom = last.fromId === renderUnit.instanceId;
       const isTo = last.toId === renderUnit.instanceId;
       if (!isFrom && !isTo) return null;
       return { ...last, isFrom, isTo };
-    }, [renderUnit?.instanceId, attackFx]);
+    }, [renderUnit?.instanceId, attackFx, t]);
 
     const spawned = useMemo(() => {
       if (!renderUnit || !spawnFx || spawnFx.length === 0) return null;
@@ -1801,8 +1822,11 @@ const hpPct = useMemo(() => {
 
     const dmg = useMemo(() => {
       if (!renderUnit || !damageFx || damageFx.length === 0) return null;
-      return damageFx[damageFx.length - 1];
-    }, [renderUnit?.instanceId, damageFx]);
+      const last = damageFx[damageFx.length - 1];
+      // Same idea as attack: keep active very briefly to avoid iOS "vibration" artifacts.
+      if (typeof last?.t === "number" && typeof t === "number" && t - last.t > 0.14) return null;
+      return last;
+    }, [renderUnit?.instanceId, damageFx, t]);
 
     const tags = useMemo(() => {
       if (!activeUnit) return [];
@@ -1838,7 +1862,8 @@ const hpPct = useMemo(() => {
           isDead ? "is-dead" : "",
           isActive ? "is-active" : "",
           spawned ? "is-spawn" : "",
-          dmg ? "is-damage" : "",
+          // On iOS, avoid transform-heavy shake/flip classes; keep flash/float FX below.
+          dmg && !ios ? "is-damage" : "",
           isDying ? "is-dying" : "",
         ].join(" ")}
         style={{ animationDelay: `${delayMs}ms` }}
