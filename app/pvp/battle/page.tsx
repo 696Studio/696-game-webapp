@@ -12,10 +12,26 @@ import BattleFxLayer from './BattleFxLayer';
 
 // ===== JS LUNGE (STEP C) =====
 // Moves ONLY CardRoot ([data-bb-slot]) towards target and back.
+// Uses Web Animations API to avoid transform conflicts.
+function bbFindFirstOccupied(prefix: "p1" | "p2"): string | null {
+  // Prefer a slot that has a unit rendered inside .bb-card.has-unit
+  const card = document.querySelector(`[data-bb-slot^="${prefix}:"] .bb-card.has-unit`) as HTMLElement | null;
+  if (card) {
+    const root = card.closest("[data-bb-slot]") as HTMLElement | null;
+    if (root) return root.getAttribute("data-bb-slot");
+  }
+  // Fallback: any slot element
+  const any = document.querySelector(`[data-bb-slot^="${prefix}:"]`) as HTMLElement | null;
+  return any ? any.getAttribute("data-bb-slot") : null;
+}
+
 function bbTestLunge(attackerSlot: string, targetSlot: string) {
   const a = document.querySelector(`[data-bb-slot="${attackerSlot}"]`) as HTMLElement | null;
   const b = document.querySelector(`[data-bb-slot="${targetSlot}"]`) as HTMLElement | null;
-  if (!a || !b) return;
+  if (!a || !b) {
+    console.warn("[bbTestLunge] missing slots", { attackerSlot, targetSlot, a: !!a, b: !!b });
+    return;
+  }
 
   const ar = a.getBoundingClientRect();
   const br = b.getBoundingClientRect();
@@ -23,16 +39,36 @@ function bbTestLunge(attackerSlot: string, targetSlot: string) {
   const dx = (br.left + br.width / 2) - (ar.left + ar.width / 2);
   const dy = (br.top + br.height / 2) - (ar.top + ar.height / 2);
 
-  a.style.willChange = "transform";
-  a.style.transition = "transform 220ms cubic-bezier(.18,.9,.22,1)";
-  a.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.06)`;
+  console.log("[bbTestLunge]", { attackerSlot, targetSlot, dx, dy, ar, br });
 
+  // Visual debug outlines (temporary)
+  const prevA = a.style.outline;
+  const prevB = b.style.outline;
+  a.style.outline = "2px solid rgba(0,180,255,0.95)";
+  b.style.outline = "2px solid rgba(0,255,120,0.95)";
   window.setTimeout(() => {
-    a.style.transform = "";
-    a.style.transition = "";
-    a.style.willChange = "";
-  }, 240);
+    a.style.outline = prevA;
+    b.style.outline = prevB;
+  }, 520);
+
+  // Cancel any in-flight animations on attacker to avoid stacking
+  a.getAnimations?.().forEach((anim) => anim.cancel());
+
+  // Web Animations API (transform only on attacker)
+  a.animate(
+    [
+      { transform: "translate3d(0,0,0) scale(1)" },
+      { transform: `translate3d(${dx}px, ${dy}px, 0) scale(1.06)` },
+      { transform: "translate3d(0,0,0) scale(1)" },
+    ],
+    {
+      duration: 420,
+      easing: "cubic-bezier(.18,.9,.22,1)",
+      fill: "none",
+    }
+  );
 }
+
 
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (leave only TEST)
 
@@ -3572,7 +3608,11 @@ const hpPct = useMemo(() => {
             
 {process.env.NODE_ENV !== "production" && (
   <button
-    onClick={() => bbTestLunge("p1:0", "p2:0")}
+    onClick={() => {
+      const a = bbFindFirstOccupied("p1") || "p1:0";
+      const b = bbFindFirstOccupied("p2") || "p2:0";
+      bbTestLunge(a, b);
+    }}
     style={{ position: "fixed", bottom: 16, right: 16, zIndex: 9999 }}
   >
     TEST LUNGE
