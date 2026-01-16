@@ -594,12 +594,13 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       const bx = b.left + b.width / 2;
       const by = b.top + b.height / 2;
 
-      const dx = (bx - ax) * 0.78;
-      const dy = (by - ay) * 0.78;
+      const dx = (bx - ax) * 0.95;
+      const dy = (by - ay) * 0.95;
 
       // iOS TG feels faster; bump timings a bit (still OK on desktop)
       const ease = 'cubic-bezier(.18,.9,.22,1)';
-      const outMs = 320;
+      const outMs = 320;// tuned for iOS
+      const scaleUp = 1.06;
       const backMs = 260;
 
       const moveEl = attackerRoot;
@@ -619,6 +620,7 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
         zIndex: moveEl.style.zIndex,
         willChange: moveEl.style.willChange,
         pointerEvents: moveEl.style.pointerEvents,
+        margin: moveEl.style.margin,
         animation: (moveEl.style as any).animation || '',
       };
 
@@ -648,7 +650,7 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       moveEl.style.width = `${a.width}px`;
       moveEl.style.height = `${a.height}px`;
       moveEl.style.margin = '0';
-      moveEl.style.transform = 'translate3d(0px, 0px, 0px)';
+      moveEl.style.transform = 'translate3d(0px, 0px, 0px) scale(1)';
       moveEl.style.zIndex = '999999';
       moveEl.style.willChange = 'transform';
       moveEl.style.pointerEvents = 'none';
@@ -663,12 +665,12 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           moveEl.style.transition = `transform ${outMs}ms ${ease}`;
-          moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+          moveEl.style.transform = `translate3d(${dx}px, ${dy}px, 0px) scale(${scaleUp})`; 
           bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
           window.setTimeout(() => {
             moveEl.style.transition = `transform ${backMs}ms ${ease}`;
-            moveEl.style.transform = 'translate3d(0px, 0px, 0px)';
+            moveEl.style.transform = 'translate3d(0px, 0px, 0px) scale(1)';
 
             window.setTimeout(() => {
               try {
@@ -689,6 +691,7 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
                 moveEl.style.top = prev.top;
                 moveEl.style.width = prev.width;
                 moveEl.style.height = prev.height;
+                moveEl.style.margin = prev.margin;
                 moveEl.style.transform = prev.transform;
                 moveEl.style.transition = prev.transition;
                 moveEl.style.zIndex = prev.zIndex;

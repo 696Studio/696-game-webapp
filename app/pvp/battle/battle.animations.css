@@ -45,10 +45,14 @@ transform-style: preserve-3d;
 }
 
 @keyframes bb_card_vanish{
+  0%{ opacity: 1; filter: none; transform: none; }
+  100%{ opacity: 0; filter: blur(1px) saturate(0.9); transform: scale(0.96); }
 }
 
 @keyframes bb_card_death_to_back{
-18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
+  0%{ transform: translate3d(0,0,0) rotateY(0deg) scale(1); }
+  18%{ transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
+  100%{ transform: translate3d(0,0,0) rotateY(0deg) scale(1); }
 }
 
 .bb-card.is-dead{
@@ -100,14 +104,19 @@ to   { background-position: 100% 50%; opacity: 0; }
   filter: saturate(1.02);
 }
 @keyframes bb_spawn{
-55%  { opacity: 1; transform: translate3d(0,-2px,0) scale(1.02); }
+  0%{ opacity: 0; transform: translate3d(0,6px,0) scale(0.98); }
+  55%{ opacity: 1; transform: translate3d(0,-2px,0) scale(1.02); }
+  100%{ opacity: 1; transform: translate3d(0,0,0) scale(1); }
 }
 
 .bb-slot.is-damage{
   animation: bb_hit_shake 140ms var(--bb-hit-ease) both;
 }
 @keyframes bb_hit_shake{
-25%  { transform: translate3d(-2px,0,0) rotate(-0.6deg) scale(.995); }
+  0%{ transform: translate3d(0,0,0) rotate(0deg) scale(1); }
+  25%{ transform: translate3d(-2px,0,0) rotate(-0.6deg) scale(.995); }
+  50%{ transform: translate3d(2px,0,0) rotate(0.6deg) scale(1.005); }
+  100%{ transform: translate3d(0,0,0) rotate(0deg) scale(1); }
 }
 
 .bb-slot.is-damage::after{
@@ -122,21 +131,27 @@ to   { background-position: 100% 50%; opacity: 0; }
   animation: bb_hit_flash 160ms var(--bb-ease-out) both;
 }
 @keyframes bb_hit_flash{
-45%{ opacity:1; transform: scale(1.02); }
+  0%{ opacity: 0; transform: scale(1); }
+  45%{ opacity:1; transform: scale(1.02); }
+  100%{ opacity: 0; transform: scale(1); }
 }
 
 .bb-slot.is-attack-from{
   animation: bb_attack_lunge 240ms var(--bb-ease-out) both;
 }
 @keyframes bb_attack_lunge{
-55%  { transform: translate3d(0,-10px,0) scale(1.03); } 
+  0%{ transform: translate3d(0,0,0) scale(1); }
+  55%{ transform: translate3d(0,-10px,0) scale(1.03); }
+  100%{ transform: translate3d(0,0,0) scale(1); }
 }
 
 .bb-slot.is-attack-to{
   animation: bb_attack_recoil 220ms var(--bb-ease-out) both;
 }
 @keyframes bb_attack_recoil{
-45%  { transform: translate3d(0,6px,0) scale(.99); }
+  0%{ transform: translate3d(0,0,0) scale(1); }
+  45%{ transform: translate3d(0,6px,0) scale(.99); }
+  100%{ transform: translate3d(0,0,0) scale(1); }
 }
 
 .bb-slot.is-dying{
@@ -145,7 +160,9 @@ to   { background-position: 100% 50%; opacity: 0; }
 }
 
 @keyframes bb_death_collapse{
-18%  { opacity:1; transform: translate3d(0,0,0) rotate(-1.2deg) scale(1.01); } 
+  0%{ opacity: 1; transform: translate3d(0,0,0) rotate(0deg) scale(1); }
+  18%{ opacity:1; transform: translate3d(0,0,0) rotate(-1.2deg) scale(1.01); }
+  100%{ opacity: 1; transform: translate3d(0,0,0) rotate(0deg) scale(1); }
 }
 
 .bb-slot.is-dying .bb-death::after{
@@ -164,7 +181,9 @@ to   { background-position: 100% 50%; opacity: 0; }
   to   { background-position: 100% 50%; }
 }
 @keyframes bb_halo{
-25%{ opacity:.75; transform: scale(1.02); }
+  0%{ opacity: 0; transform: scale(1); }
+  25%{ opacity:.75; transform: scale(1.02); }
+  100%{ opacity: 0; transform: scale(1.01); }
 }
 
 @media (prefers-reduced-motion: reduce){
@@ -193,7 +212,9 @@ animation: bbDeathPunch 240ms ease-out;
 }
 
 @keyframes bbDeathPunch{
-60%{ transform: translateZ(0) scale(1.06); }
+  0%{ transform: translateZ(0) scale(1); }
+  60%{ transform: translateZ(0) scale(1.06); }
+  100%{ transform: translateZ(0) scale(1); }
 }
 
 @keyframes bbDeathSprite{
@@ -231,14 +252,20 @@ to{ transform: translateX(-75%); }
 }
 
 @keyframes bb-death-pop{
-8%{ opacity: 1; }
+  0%{ opacity:0; transform: scale(0.98); }
+  8%{ opacity: 1; }
+  100%{ opacity:0; transform: scale(1.06); }
 }
 
 @keyframes bb_card_death_to_back__final{
-18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
+  0%{ transform: translate3d(0,0,0) rotateY(0deg) scale(1); }
+  18%{ transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
+  100%{ transform: translate3d(0,0,0) rotateY(0deg) scale(1); }
 }
 
 @keyframes bb_card_vanish__final{
+  0%{ opacity: 1; filter: none; transform: none; }
+  100%{ opacity: 0; filter: blur(1px) saturate(0.9); transform: scale(0.96); }
 }
 
 .bb-slot.is-dying .bb-card{
@@ -542,5 +569,31 @@ z-index: 21;
   .bb-card:not(.is-dead) .bb-card-inner {
     -webkit-transform: translate3d(0,0,0) rotateY(0deg);
     transform: translate3d(0,0,0) rotateY(0deg);
+  }
+}
+
+/* =========================================================
+ iOS Telegram WebView — stop random "card spinning"
+ Root cause: preserve-3d + rapid compositing (fixed re-parent / transforms)
+ can make a face stack flicker/flip on iOS. We don't need 3D flipping on iOS,
+ so we flatten the stack and hide the back face.
+ ========================================================= */
+
+@supports (-webkit-touch-callout: none) {
+  /* Flatten 3D stack to prevent WebView flip jitter */
+  .bb-card-inner {
+    -webkit-transform-style: flat !important;
+    transform-style: flat !important;
+  }
+
+  /* Hide the back face entirely on iOS (no accidental flips) */
+  .bb-face.bb-back {
+    display: none !important;
+  }
+
+  /* Ensure inner is never rotated while alive or dead */
+  .bb-card .bb-card-inner {
+    -webkit-transform: translate3d(0,0,0) rotateY(0deg) !important;
+    transform: translate3d(0,0,0) rotateY(0deg) !important;
   }
 }
