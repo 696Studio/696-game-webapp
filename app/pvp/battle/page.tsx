@@ -12,10 +12,46 @@ import BattleFxLayer from './BattleFxLayer';
 
 // ===== BB_ATTACK_DEBUG_OVERLAY =====
 function bbDbgEnabled() {
-  return false;
+  try {
+    if (typeof window === "undefined") return false;
+    // Toggle options (no URL needed):
+    // 1) window.__bbdbg = 1
+    // 2) localStorage.setItem("bbdbg","1")
+    // 3) sessionStorage.setItem("bbdbg","1")
+    const w = window as any;
+    const ls = (() => { try { return window.localStorage?.getItem("bbdbg"); } catch { return null; } })();
+    const ss = (() => { try { return window.sessionStorage?.getItem("bbdbg"); } catch { return null; } })();
+    if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
+    if (ls === "1" || ss === "1") return true;
+
+    // Default ON for now (so you always see it in Telegram). Remove later when animation is stable.
+    return true;
+  } catch {
+    return true;
+  }
 }
-function bbDbgSet() {
-  return;
+function bbDbgSet(msg: string) {
+  if (!bbDbgEnabled()) return;
+  const id = "bb-attack-debug";
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement("div");
+    el.id = id;
+    el.style.position = "fixed";
+    el.style.left = "12px";
+    el.style.top = "12px";
+    el.style.zIndex = "999999";
+    el.style.padding = "10px 12px";
+    el.style.font = "12px/1.25 system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    el.style.background = "rgba(0,0,0,0.72)";
+    el.style.color = "white";
+    el.style.borderRadius = "12px";
+    el.style.pointerEvents = "none";
+    el.style.maxWidth = "92vw";
+    el.style.whiteSpace = "pre-wrap";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
 }
 
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
@@ -525,7 +561,8 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     if (!attackerRoot || !targetRoot) {
-      
+      bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}
+foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       return;
     }
     if (attackerRoot === targetRoot) return;
@@ -632,7 +669,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
         attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
         attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
-        
+        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
         window.setTimeout(() => {
           attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
@@ -643,12 +680,16 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
             // RETURN: put the node back where it was, then restore styles.
             try {
-              if (placeholder.parentNode) {
-                placeholder.parentNode.insertBefore(attackerRoot, placeholder);
-                placeholder.parentNode.removeChild(placeholder);
+              const phParent = placeholder.parentNode as (Node & ParentNode) | null;
+              if (phParent && phParent.contains(placeholder)) {
+                phParent.insertBefore(attackerRoot, placeholder);
+                // Use .remove() (safe no-op if already detached) to avoid iOS WebView removeChild edge cases.
+                try { (placeholder as any).remove?.(); } catch {
+                  try { phParent.removeChild(placeholder); } catch {}
+                }
               } else if (parent) {
                 // fallback
-                if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
+                if (nextSibling && parent.contains(nextSibling)) parent.insertBefore(attackerRoot, nextSibling);
                 else parent.appendChild(attackerRoot);
               }
             } catch {}
@@ -715,7 +756,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
-    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true;  }
+    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for ATTACK events...'); }
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
