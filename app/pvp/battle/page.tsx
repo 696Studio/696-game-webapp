@@ -1826,10 +1826,9 @@ const hpPct = useMemo(() => {
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
     return (
-      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+      <div className={["bb-slot", "bb-card-root", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId} data-bb-slot={slotKey}>
         <div
-          data-bb-slot={slotKey}
-          className="bb-motion-layer bb-card-root"
+          className="bb-motion-layer"
           data-fx-motion="1"
           style={{ willChange: "transform" }}
         >
@@ -2528,24 +2527,6 @@ const hpPct = useMemo(() => {
           0% { transform: rotateY(0deg) scale(0.98); }
           55% { transform: rotateY(90deg) scale(1.02); }
           100% { transform: rotateY(180deg) scale(1); }
-        }
-
-        /* iOS Telegram WebView: avoid 3D rotateY flip (can "stick" and cause random spinning cards).
-           We switch reveal from 3D flip to simple face crossfade only on iOS. */
-        @supports (-webkit-touch-callout: none) {
-          .bb-card.is-revealed { animation: none !important; }
-          .bb-card-inner { transform: none !important; transition: none !important; }
-          .bb-front { transform: none !important; }
-
-          .bb-back, .bb-front {
-            backface-visibility: visible !important;
-            -webkit-backface-visibility: visible !important;
-            transition: opacity 220ms ease-out;
-          }
-          .bb-back { opacity: 1; }
-          .bb-front { opacity: 0; }
-          .bb-card.is-revealed .bb-back { opacity: 0; }
-          .bb-card.is-revealed .bb-front { opacity: 1; }
         }
         @keyframes popHit {
           0% { transform: scale(1); }
