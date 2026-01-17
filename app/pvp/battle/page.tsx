@@ -680,16 +680,12 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
             // RETURN: put the node back where it was, then restore styles.
             try {
-              const phParent = placeholder.parentNode as (Node & ParentNode) | null;
-              if (phParent && phParent.contains(placeholder)) {
-                phParent.insertBefore(attackerRoot, placeholder);
-                // Use .remove() (safe no-op if already detached) to avoid iOS WebView removeChild edge cases.
-                try { (placeholder as any).remove?.(); } catch {
-                  try { phParent.removeChild(placeholder); } catch {}
-                }
+              if (placeholder.parentNode) {
+                placeholder.parentNode.insertBefore(attackerRoot, placeholder);
+                placeholder.parentNode.removeChild(placeholder);
               } else if (parent) {
                 // fallback
-                if (nextSibling && parent.contains(nextSibling)) parent.insertBefore(attackerRoot, nextSibling);
+                if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
                 else parent.appendChild(attackerRoot);
               }
             } catch {}
