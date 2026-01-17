@@ -536,19 +536,9 @@ z-index: 21;
  ========================================================= */
 
 @supports (-webkit-touch-callout: none) {
-  /* iOS WebView: preserve-3d + frequent transforms (JS lunge) can cause "layer spin" */
-  .bb-card-inner {
-    transform-style: flat !important;
-    -webkit-transform-style: flat !important;
-  }
-
-  /* Keep death flip functional, but avoid nested 3D context glitches */
-  .bb-slot.is-dying .bb-card,
-  .bb-slot.is-dying.is-vanish .bb-card,
-  .bb-slot.is-vanish .bb-card {
-    transform-style: flat !important;
-    -webkit-transform-style: flat !important;
-  }
+  /* iOS WebView: avoid rotate()/3D in shake/attack keyframes to prevent "stuck spin".
+     IMPORTANT: do NOT change transform-style on the card itself, because some iOS builds
+     will flatten/vanish the faces when 3D context is removed. */
 
   /* Re-define keyframes without rotate() (even if currently disabled by overrides) */
   @keyframes bb_hit_shake {
