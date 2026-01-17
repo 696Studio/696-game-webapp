@@ -553,6 +553,12 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
+
+    // iOS detection (Telegram WebView safe)
+    const isIOS =
+      typeof navigator !== 'undefined' &&
+      (/iP(hone|ad|od)/.test(navigator.userAgent) ||
+        ((navigator as any).platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1));
     // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
     try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
 
@@ -602,25 +608,8 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     const dy = (by - ay) * 0.78;
 
     const ease = 'cubic-bezier(.18,.9,.22,1)';
-
-    // iOS Telegram WebView: fixed positioning uses the layout viewport, while
-    // getBoundingClientRect() is relative to the visual viewport. Compensate with visualViewport offsets
-    // to avoid "wrong start / wrong target" / jitter.
-    const isIOS =
-      typeof navigator !== 'undefined' &&
-      (/iP(hone|ad|od)/.test(navigator.userAgent) ||
-        // iPadOS reports as MacIntel + touch points
-        ((navigator as any).platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1));
-
-    const vv = (typeof window !== 'undefined' ? (window as any).visualViewport : null) as
-      | { offsetLeft: number; offsetTop: number }
-      | null;
-
-    const vvX = isIOS && vv ? vv.offsetLeft || 0 : 0;
-    const vvY = isIOS && vv ? vv.offsetTop || 0 : 0;
-
-    const outMs = isIOS ? 300 : 220;
-    const backMs = isIOS ? 260 : 200;
+    const outMs = 220;
+    const backMs = 200;
 
     // Save inline styles for full restore.
     const prev = {
@@ -666,8 +655,8 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
     // DETACH: fixed at the exact current screen rect.
     attackerRoot.style.position = 'fixed';
-    attackerRoot.style.left = `${ar.left + vvX}px`;
-    attackerRoot.style.top = `${ar.top + vvY}px`;
+    attackerRoot.style.left = `${ar.left}px`;
+    attackerRoot.style.top = `${ar.top}px`;
     attackerRoot.style.right = 'auto';
     attackerRoot.style.bottom = 'auto';
     attackerRoot.style.width = `${ar.width}px`;
@@ -678,27 +667,13 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     attackerRoot.style.transition = 'none';
     attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
 
-    // iOS TG WebView can shift the element's fixed box vs. pre-detach rect.
-    // Recompute the delta using the *fixed* rect to avoid "barely moves / wrong distance" artifacts.
-    let dx2 = dx;
-    let dy2 = dy;
-    try {
-      // Force layout to apply fixed positioning.
-      void attackerRoot.getBoundingClientRect();
-      const arFixed = attackerRoot.getBoundingClientRect();
-      const ax2 = arFixed.left + arFixed.width / 2;
-      const ay2 = arFixed.top + arFixed.height / 2;
-      dx2 = (bx - ax2) * 0.78;
-      dy2 = (by - ay2) * 0.78;
-    } catch {}
-
     try { targetRoot.classList.add('is-attack-to'); } catch {}
 
     // LUNGE: animate only transform.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
-        attackerRoot.style.transform = `translate3d(${dx2}px, ${dy2}px, 0px)`;
+        attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
         bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
@@ -711,13 +686,9 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
             // RETURN: put the node back where it was, then restore styles.
             try {
-              const phParent = placeholder.parentNode as (Node & ParentNode) | null;
-              if (phParent && (phParent as any).contains?.(placeholder)) {
-                phParent.insertBefore(attackerRoot, placeholder);
-                // Prefer .remove() (no-op if already detached). Fallback to removeChild guarded by try/catch.
-                try { (placeholder as any).remove?.(); } catch {
-                  try { phParent.removeChild(placeholder); } catch {}
-                }
+              if (placeholder.parentNode) {
+                placeholder.parentNode.insertBefore(attackerRoot, placeholder);
+                placeholder.parentNode.removeChild(placeholder);
               } else if (parent) {
                 // fallback
                 if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
