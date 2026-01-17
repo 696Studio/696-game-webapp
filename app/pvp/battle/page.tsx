@@ -573,6 +573,26 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     }
     if (attackerRoot === targetRoot) return;
 
+    // ===== LUNGE LOG (Step 1) =====
+    // Enable on iPhone via: localStorage.bb_lunge_log = "1"
+    const wantLog = (() => {
+      try {
+        return typeof localStorage !== "undefined" && localStorage.getItem("bb_lunge_log") === "1";
+      } catch {
+        return false;
+      }
+    })();
+    const logOnceKey = `bb_lunge_once_${fromId}_${toId}_${(window as any).__bbAtkTick || 0}`;
+    const shouldLog = wantLog && (() => {
+      try {
+        if (typeof sessionStorage === "undefined") return true;
+        if (sessionStorage.getItem(logOnceKey) === "1") return false;
+        sessionStorage.setItem(logOnceKey, "1");
+        return true;
+      } catch {
+        return true;
+      }
+    })();
     // Cancel WAAPI animations if any, so transform/transition is deterministic.
     attackerRoot.getAnimations?.().forEach((anim) => anim.cancel());
 
@@ -599,6 +619,24 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
     const ar = attackerRoot.getBoundingClientRect();
     const br = targetRoot.getBoundingClientRect();
+    if (shouldLog) {
+      const vv = (typeof window !== "undefined" ? (window as any).visualViewport : null) as
+        | { offsetLeft: number; offsetTop: number; width: number; height: number; scale?: number }
+        | null;
+      // eslint-disable-next-line no-console
+      console.log("[bb_lunge] BEFORE", {
+        tick: (window as any).__bbAtkTick || 0,
+        fromId,
+        toId,
+        ar: { left: ar.left, top: ar.top, width: ar.width, height: ar.height },
+        br: { left: br.left, top: br.top, width: br.width, height: br.height },
+        vv: vv
+          ? { offsetLeft: vv.offsetLeft, offsetTop: vv.offsetTop, width: vv.width, height: vv.height, scale: (vv as any).scale }
+          : null,
+        scroll: { x: typeof window !== "undefined" ? window.scrollX : 0, y: typeof window !== "undefined" ? window.scrollY : 0 },
+      });
+    }
+
     const ax = ar.left + ar.width / 2;
     const ay = ar.top + ar.height / 2;
     const bx = br.left + br.width / 2;
@@ -672,6 +710,27 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     // LUNGE: animate only transform.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
+      // Step 1: log rects after fixed positioning (same frame as lunge apply).
+      if (shouldLog) {
+        try {
+          // Force layout
+          void attackerRoot.getBoundingClientRect();
+          const arFixed = attackerRoot.getBoundingClientRect();
+          const brAfter = targetRoot.getBoundingClientRect();
+          // eslint-disable-next-line no-console
+          console.log("[bb_lunge] AFTER_FIXED", {
+            tick: (window as any).__bbAtkTick || 0,
+            fromId,
+            toId,
+            arFixed: { left: arFixed.left, top: arFixed.top, width: arFixed.width, height: arFixed.height },
+            brAfter: { left: brAfter.left, top: brAfter.top, width: brAfter.width, height: brAfter.height },
+          });
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.log("[bb_lunge] AFTER_FIXED_ERR", e);
+        }
+      }
+
         attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
         attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
