@@ -598,13 +598,29 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     const bx = br.left + br.width / 2;
     const by = br.top + br.height / 2;
 
-    const lungeScale = 0.95;
-    const dx = (bx - ax) * lungeScale;
-    const dy = (by - ay) * lungeScale;
+    const dx = (bx - ax) * 0.78;
+    const dy = (by - ay) * 0.78;
 
     const ease = 'cubic-bezier(.18,.9,.22,1)';
-    const outMs = 220;
-    const backMs = 200;
+
+    // iOS Telegram WebView: fixed positioning uses the layout viewport, while
+    // getBoundingClientRect() is relative to the visual viewport. Compensate with visualViewport offsets
+    // to avoid "wrong start / wrong target" / jitter.
+    const isIOS =
+      typeof navigator !== 'undefined' &&
+      (/iP(hone|ad|od)/.test(navigator.userAgent) ||
+        // iPadOS reports as MacIntel + touch points
+        ((navigator as any).platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1));
+
+    const vv = (typeof window !== 'undefined' ? (window as any).visualViewport : null) as
+      | { offsetLeft: number; offsetTop: number }
+      | null;
+
+    const vvX = isIOS && vv ? vv.offsetLeft || 0 : 0;
+    const vvY = isIOS && vv ? vv.offsetTop || 0 : 0;
+
+    const outMs = isIOS ? 300 : 220;
+    const backMs = isIOS ? 260 : 200;
 
     // Save inline styles for full restore.
     const prev = {
@@ -650,8 +666,8 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
     // DETACH: fixed at the exact current screen rect.
     attackerRoot.style.position = 'fixed';
-    attackerRoot.style.left = `${ar.left}px`;
-    attackerRoot.style.top = `${ar.top}px`;
+    attackerRoot.style.left = `${ar.left + vvX}px`;
+    attackerRoot.style.top = `${ar.top + vvY}px`;
     attackerRoot.style.right = 'auto';
     attackerRoot.style.bottom = 'auto';
     attackerRoot.style.width = `${ar.width}px`;
@@ -681,9 +697,13 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
             // RETURN: put the node back where it was, then restore styles.
             try {
-              if (placeholder.parentNode) {
-                placeholder.parentNode.insertBefore(attackerRoot, placeholder);
-                placeholder.parentNode.removeChild(placeholder);
+              const phParent = placeholder.parentNode as (Node & ParentNode) | null;
+              if (phParent && (phParent as any).contains?.(placeholder)) {
+                phParent.insertBefore(attackerRoot, placeholder);
+                // Prefer .remove() (no-op if already detached). Fallback to removeChild guarded by try/catch.
+                try { (placeholder as any).remove?.(); } catch {
+                  try { phParent.removeChild(placeholder); } catch {}
+                }
               } else if (parent) {
                 // fallback
                 if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
@@ -1827,9 +1847,10 @@ const hpPct = useMemo(() => {
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
     return (
-      <div className={["bb-slot", "bb-card-root", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId} data-bb-slot={slotKey}>
+      <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
         <div
-          className="bb-motion-layer"
+          data-bb-slot={slotKey}
+          className="bb-motion-layer bb-card-root"
           data-fx-motion="1"
           style={{ willChange: "transform" }}
         >
@@ -2528,6 +2549,24 @@ const hpPct = useMemo(() => {
           0% { transform: rotateY(0deg) scale(0.98); }
           55% { transform: rotateY(90deg) scale(1.02); }
           100% { transform: rotateY(180deg) scale(1); }
+        }
+
+        /* iOS Telegram WebView: avoid 3D rotateY flip (can "stick" and cause random spinning cards).
+           We switch reveal from 3D flip to simple face crossfade only on iOS. */
+        @supports (-webkit-touch-callout: none) {
+          .bb-card.is-revealed { animation: none !important; }
+          .bb-card-inner { transform: none !important; transition: none !important; }
+          .bb-front { transform: none !important; }
+
+          .bb-back, .bb-front {
+            backface-visibility: visible !important;
+            -webkit-backface-visibility: visible !important;
+            transition: opacity 220ms ease-out;
+          }
+          .bb-back { opacity: 1; }
+          .bb-front { opacity: 0; }
+          .bb-card.is-revealed .bb-back { opacity: 0; }
+          .bb-card.is-revealed .bb-front { opacity: 1; }
         }
         @keyframes popHit {
           0% { transform: scale(1); }
