@@ -598,8 +598,8 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     const bx = br.left + br.width / 2;
     const by = br.top + br.height / 2;
 
-    const dx = (bx - ax) * 0.78;
-    const dy = (by - ay) * 0.78;
+    const dx = (bx - ax) * 0.95;
+    const dy = (by - ay) * 0.95;
 
     const ease = 'cubic-bezier(.18,.9,.22,1)';
 
