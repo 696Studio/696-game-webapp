@@ -598,8 +598,8 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     const bx = br.left + br.width / 2;
     const by = br.top + br.height / 2;
 
-    const dx = (bx - ax) * 0.95;
-    const dy = (by - ay) * 0.95;
+    const dx = (bx - ax) * 0.78;
+    const dy = (by - ay) * 0.78;
 
     const ease = 'cubic-bezier(.18,.9,.22,1)';
 
@@ -678,13 +678,27 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     attackerRoot.style.transition = 'none';
     attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
 
+    // iOS TG WebView can shift the element's fixed box vs. pre-detach rect.
+    // Recompute the delta using the *fixed* rect to avoid "barely moves / wrong distance" artifacts.
+    let dx2 = dx;
+    let dy2 = dy;
+    try {
+      // Force layout to apply fixed positioning.
+      void attackerRoot.getBoundingClientRect();
+      const arFixed = attackerRoot.getBoundingClientRect();
+      const ax2 = arFixed.left + arFixed.width / 2;
+      const ay2 = arFixed.top + arFixed.height / 2;
+      dx2 = (bx - ax2) * 0.78;
+      dy2 = (by - ay2) * 0.78;
+    } catch {}
+
     try { targetRoot.classList.add('is-attack-to'); } catch {}
 
     // LUNGE: animate only transform.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
-        attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+        attackerRoot.style.transform = `translate3d(${dx2}px, ${dy2}px, 0px)`;
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
         bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
