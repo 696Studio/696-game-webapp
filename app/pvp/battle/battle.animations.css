@@ -523,3 +523,53 @@ z-index: 21;
     transition: none !important;
   }
 }
+
+/* =========================================================
+ iOS WEBVIEW HOTFIX — STOP "STUCK ROTATION" / COMPOSITING GLITCH
+ Goal: prevent Telegram iOS WebView from leaving cards in a rotating / jittering state.
+ Strategy (CSS-only, minimal impact):
+ - Disable preserve-3d stacking on the card inner container in iOS WebView.
+ - Remove rotate() from any legacy shake/attack keyframes on iOS.
+ Notes:
+ - Does NOT touch arena layout, slots positioning, avatars/HP/nicks.
+ - JS lunge (detach -> fixed -> return) remains the only motion driver.
+ ========================================================= */
+
+@supports (-webkit-touch-callout: none) {
+  /* iOS WebView: preserve-3d + frequent transforms (JS lunge) can cause "layer spin" */
+  .bb-card-inner {
+    transform-style: flat !important;
+    -webkit-transform-style: flat !important;
+  }
+
+  /* Keep death flip functional, but avoid nested 3D context glitches */
+  .bb-slot.is-dying .bb-card,
+  .bb-slot.is-dying.is-vanish .bb-card,
+  .bb-slot.is-vanish .bb-card {
+    transform-style: flat !important;
+    -webkit-transform-style: flat !important;
+  }
+
+  /* Re-define keyframes without rotate() (even if currently disabled by overrides) */
+  @keyframes bb_hit_shake {
+    25% { transform: translate3d(-2px,0,0) scale(.995); }
+  }
+
+  @keyframes bb_death_collapse {
+    18% { opacity: 1; transform: translate3d(0,0,0) scale(1.01); }
+  }
+
+  @keyframes bb_attack_move_right {
+    0%   { transform: translate3d(0,0,0); }
+    40%  { transform: translate3d(36px,-6px,0) scale(1.01); }
+    65%  { transform: translate3d(28px,-2px,0) scale(1.02); }
+    100% { transform: translate3d(0,0,0); }
+  }
+
+  @keyframes bb_attack_move_left {
+    0%   { transform: translate3d(0,0,0); }
+    40%  { transform: translate3d(-36px,-6px,0) scale(1.01); }
+    65%  { transform: translate3d(-28px,-2px,0) scale(1.02); }
+    100% { transform: translate3d(0,0,0); }
+  }
+}
