@@ -602,8 +602,25 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     const dy = (by - ay) * 0.78;
 
     const ease = 'cubic-bezier(.18,.9,.22,1)';
-    const outMs = 220;
-    const backMs = 200;
+
+    // iOS Telegram WebView: fixed positioning uses the layout viewport, while
+    // getBoundingClientRect() is relative to the visual viewport. Compensate with visualViewport offsets
+    // to avoid "wrong start / wrong target" / jitter.
+    const isIOS =
+      typeof navigator !== 'undefined' &&
+      (/iP(hone|ad|od)/.test(navigator.userAgent) ||
+        // iPadOS reports as MacIntel + touch points
+        ((navigator as any).platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1));
+
+    const vv = (typeof window !== 'undefined' ? (window as any).visualViewport : null) as
+      | { offsetLeft: number; offsetTop: number }
+      | null;
+
+    const vvX = isIOS && vv ? vv.offsetLeft || 0 : 0;
+    const vvY = isIOS && vv ? vv.offsetTop || 0 : 0;
+
+    const outMs = isIOS ? 300 : 220;
+    const backMs = isIOS ? 260 : 200;
 
     // Save inline styles for full restore.
     const prev = {
@@ -649,8 +666,8 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
     // DETACH: fixed at the exact current screen rect.
     attackerRoot.style.position = 'fixed';
-    attackerRoot.style.left = `${ar.left}px`;
-    attackerRoot.style.top = `${ar.top}px`;
+    attackerRoot.style.left = `${ar.left + vvX}px`;
+    attackerRoot.style.top = `${ar.top + vvY}px`;
     attackerRoot.style.right = 'auto';
     attackerRoot.style.bottom = 'auto';
     attackerRoot.style.width = `${ar.width}px`;
@@ -680,9 +697,13 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
             // RETURN: put the node back where it was, then restore styles.
             try {
-              if (placeholder.parentNode) {
-                placeholder.parentNode.insertBefore(attackerRoot, placeholder);
-                placeholder.parentNode.removeChild(placeholder);
+              const phParent = placeholder.parentNode as (Node & ParentNode) | null;
+              if (phParent && (phParent as any).contains?.(placeholder)) {
+                phParent.insertBefore(attackerRoot, placeholder);
+                // Prefer .remove() (no-op if already detached). Fallback to removeChild guarded by try/catch.
+                try { (placeholder as any).remove?.(); } catch {
+                  try { phParent.removeChild(placeholder); } catch {}
+                }
               } else if (parent) {
                 // fallback
                 if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
