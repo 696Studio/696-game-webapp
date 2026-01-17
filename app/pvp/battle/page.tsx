@@ -2529,6 +2529,24 @@ const hpPct = useMemo(() => {
           55% { transform: rotateY(90deg) scale(1.02); }
           100% { transform: rotateY(180deg) scale(1); }
         }
+
+        /* iOS Telegram WebView: avoid 3D rotateY flip (can "stick" and cause random spinning cards).
+           We switch reveal from 3D flip to simple face crossfade only on iOS. */
+        @supports (-webkit-touch-callout: none) {
+          .bb-card.is-revealed { animation: none !important; }
+          .bb-card-inner { transform: none !important; transition: none !important; }
+          .bb-front { transform: none !important; }
+
+          .bb-back, .bb-front {
+            backface-visibility: visible !important;
+            -webkit-backface-visibility: visible !important;
+            transition: opacity 220ms ease-out;
+          }
+          .bb-back { opacity: 1; }
+          .bb-front { opacity: 0; }
+          .bb-card.is-revealed .bb-back { opacity: 0; }
+          .bb-card.is-revealed .bb-front { opacity: 1; }
+        }
         @keyframes popHit {
           0% { transform: scale(1); }
           50% { transform: scale(1.08); }
