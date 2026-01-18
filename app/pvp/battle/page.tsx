@@ -1893,9 +1893,8 @@ const hpPct = useMemo(() => {
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
       {(() => {
         try {
-          const on = bbLungeLogEnabled;
-          if (!on) return null;
-          return (
+          if (!bbLungeLogEnabled) return null;
+          const node = (
             <pre
               style={{
                 position: "fixed",
@@ -1915,9 +1914,10 @@ const hpPct = useMemo(() => {
                 whiteSpace: "pre-wrap",
               }}
             >
-              {bbLungeLogText}
+              {bbLungeLogText || "[bb_lunge] enabled\n(waiting for first attack)"}
             </pre>
           );
+          return typeof document !== "undefined" ? createPortal(node, document.body) : null;
         } catch {
           return null;
         }
