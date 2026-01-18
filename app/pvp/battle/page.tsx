@@ -410,6 +410,20 @@ function BattleInner() {
   // ===== iOS LUNGE VISUAL LOG (Step A) =====
   // Enable on iPhone TG WebView via: localStorage.bb_lunge_log = "1"
   const [bbLungeLogText, setBbLungeLogText] = useState<string>("");
+  const [bbLungeLogEnabled, setBbLungeLogEnabled] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Read enable flag once on mount (iOS TG WebView can differ from desktop/web)
+    try {
+      const on = typeof localStorage !== "undefined" && localStorage.getItem("bb_lunge_log") === "1";
+      setBbLungeLogEnabled(!!on);
+      if (on) setBbLungeLogText((prev) => prev || "[bb_lunge] enabled\n(waiting for first attack)");
+    } catch {
+      setBbLungeLogEnabled(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   const router = useRouter();
   const sp = useSearchParams();
@@ -557,13 +571,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
-    const wantVisualLog = (() => {
-      try {
-        return typeof localStorage !== "undefined" && localStorage.getItem("bb_lunge_log") === "1";
-      } catch {
-        return false;
-      }
-    })();
+    const wantVisualLog = bbLungeLogEnabled;
 
     const writeVisualLog = (label: string, data: any) => {
       if (!wantVisualLog) return;
@@ -1885,15 +1893,15 @@ const hpPct = useMemo(() => {
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
       {(() => {
         try {
-          const on = typeof localStorage !== "undefined" && localStorage.getItem("bb_lunge_log") === "1";
-          if (!on || !bbLungeLogText) return null;
+          const on = bbLungeLogEnabled;
+          if (!on) return null;
           return (
             <pre
               style={{
                 position: "fixed",
                 left: 8,
-                top: 8,
-                zIndex: 999999,
+                top: "calc(env(safe-area-inset-top, 0px) + 8px)",
+                zIndex: 2147483647,
                 maxWidth: "92vw",
                 maxHeight: "40vh",
                 overflow: "auto",
