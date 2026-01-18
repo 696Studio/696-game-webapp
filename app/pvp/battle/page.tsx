@@ -407,6 +407,10 @@ function coverMapRect(
 }
 
 function BattleInner() {
+  // ===== iOS LUNGE VISUAL LOG (Step A) =====
+  // Enable on iPhone TG WebView via: localStorage.bb_lunge_log = "1"
+  const [bbLungeLogText, setBbLungeLogText] = useState<string>("");
+
   const router = useRouter();
   const sp = useSearchParams();
   // Debug flags (safe in Telegram: just read query params).
@@ -553,12 +557,26 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
+    const wantVisualLog = (() => {
+      try {
+        return typeof localStorage !== "undefined" && localStorage.getItem("bb_lunge_log") === "1";
+      } catch {
+        return false;
+      }
+    })();
 
-    // iOS detection (Telegram WebView safe)
-    const isIOS =
-      typeof navigator !== 'undefined' &&
-      (/iP(hone|ad|od)/.test(navigator.userAgent) ||
-        ((navigator as any).platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1));
+    const writeVisualLog = (label: string, data: any) => {
+      if (!wantVisualLog) return;
+      try {
+        const lines: string[] = [];
+        lines.push(`[${label}]`);
+        for (const [k, v] of Object.entries(data || {})) {
+          lines.push(`${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`);
+        }
+        setBbLungeLogText(lines.join("\n"));
+      } catch {}
+    };
+
     // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
     try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
 
@@ -573,26 +591,6 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     }
     if (attackerRoot === targetRoot) return;
 
-    // ===== LUNGE LOG (Step 1) =====
-    // Enable on iPhone via: localStorage.bb_lunge_log = "1"
-    const wantLog = (() => {
-      try {
-        return typeof localStorage !== "undefined" && localStorage.getItem("bb_lunge_log") === "1";
-      } catch {
-        return false;
-      }
-    })();
-    const logOnceKey = `bb_lunge_once_${fromId}_${toId}_${(window as any).__bbAtkTick || 0}`;
-    const shouldLog = wantLog && (() => {
-      try {
-        if (typeof sessionStorage === "undefined") return true;
-        if (sessionStorage.getItem(logOnceKey) === "1") return false;
-        sessionStorage.setItem(logOnceKey, "1");
-        return true;
-      } catch {
-        return true;
-      }
-    })();
     // Cancel WAAPI animations if any, so transform/transition is deterministic.
     attackerRoot.getAnimations?.().forEach((anim) => anim.cancel());
 
@@ -619,20 +617,18 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
     const ar = attackerRoot.getBoundingClientRect();
     const br = targetRoot.getBoundingClientRect();
-    if (shouldLog) {
+    if (wantVisualLog) {
       const vv = (typeof window !== "undefined" ? (window as any).visualViewport : null) as
         | { offsetLeft: number; offsetTop: number; width: number; height: number; scale?: number }
         | null;
-      // eslint-disable-next-line no-console
-      console.log("[bb_lunge] BEFORE", {
+
+      writeVisualLog("BEFORE", {
         tick: (window as any).__bbAtkTick || 0,
         fromId,
         toId,
-        ar: { left: ar.left, top: ar.top, width: ar.width, height: ar.height },
-        br: { left: br.left, top: br.top, width: br.width, height: br.height },
-        vv: vv
-          ? { offsetLeft: vv.offsetLeft, offsetTop: vv.offsetTop, width: vv.width, height: vv.height, scale: (vv as any).scale }
-          : null,
+        ar: { left: ar.left, top: ar.top, w: ar.width, h: ar.height },
+        br: { left: br.left, top: br.top, w: br.width, h: br.height },
+        vv: vv ? { x: vv.offsetLeft, y: vv.offsetTop, w: vv.width, h: vv.height, s: (vv as any).scale } : null,
         scroll: { x: typeof window !== "undefined" ? window.scrollX : 0, y: typeof window !== "undefined" ? window.scrollY : 0 },
       });
     }
@@ -710,26 +706,21 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     // LUNGE: animate only transform.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-      // Step 1: log rects after fixed positioning (same frame as lunge apply).
-      if (shouldLog) {
+      if (wantVisualLog) {
         try {
-          // Force layout
           void attackerRoot.getBoundingClientRect();
           const arFixed = attackerRoot.getBoundingClientRect();
           const brAfter = targetRoot.getBoundingClientRect();
-          // eslint-disable-next-line no-console
-          console.log("[bb_lunge] AFTER_FIXED", {
+          writeVisualLog("AFTER_FIXED", {
             tick: (window as any).__bbAtkTick || 0,
-            fromId,
-            toId,
-            arFixed: { left: arFixed.left, top: arFixed.top, width: arFixed.width, height: arFixed.height },
-            brAfter: { left: brAfter.left, top: brAfter.top, width: brAfter.width, height: brAfter.height },
+            arFixed: { left: arFixed.left, top: arFixed.top, w: arFixed.width, h: arFixed.height },
+            brAfter: { left: brAfter.left, top: brAfter.top, w: brAfter.width, h: brAfter.height },
           });
         } catch (e) {
-          // eslint-disable-next-line no-console
-          console.log("[bb_lunge] AFTER_FIXED_ERR", e);
+          writeVisualLog("AFTER_FIXED_ERR", { err: String(e) });
         }
       }
+
 
         attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
         attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
@@ -1892,6 +1883,38 @@ const hpPct = useMemo(() => {
     if (isHidden) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+      {(() => {
+        try {
+          const on = typeof localStorage !== "undefined" && localStorage.getItem("bb_lunge_log") === "1";
+          if (!on || !bbLungeLogText) return null;
+          return (
+            <pre
+              style={{
+                position: "fixed",
+                left: 8,
+                top: 8,
+                zIndex: 999999,
+                maxWidth: "92vw",
+                maxHeight: "40vh",
+                overflow: "auto",
+                padding: "8px 10px",
+                borderRadius: 8,
+                fontSize: 11,
+                lineHeight: 1.25,
+                background: "rgba(0,0,0,0.72)",
+                color: "rgba(255,255,255,0.92)",
+                pointerEvents: "none",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {bbLungeLogText}
+            </pre>
+          );
+        } catch {
+          return null;
+        }
+      })()}
+
         <div
           data-bb-slot={slotKey}
           className="bb-motion-layer bb-card-root"
@@ -2593,24 +2616,6 @@ const hpPct = useMemo(() => {
           0% { transform: rotateY(0deg) scale(0.98); }
           55% { transform: rotateY(90deg) scale(1.02); }
           100% { transform: rotateY(180deg) scale(1); }
-        }
-
-        /* iOS Telegram WebView: avoid 3D rotateY flip (can "stick" and cause random spinning cards).
-           We switch reveal from 3D flip to simple face crossfade only on iOS. */
-        @supports (-webkit-touch-callout: none) {
-          .bb-card.is-revealed { animation: none !important; }
-          .bb-card-inner { transform: none !important; transition: none !important; }
-          .bb-front { transform: none !important; }
-
-          .bb-back, .bb-front {
-            backface-visibility: visible !important;
-            -webkit-backface-visibility: visible !important;
-            transition: opacity 220ms ease-out;
-          }
-          .bb-back { opacity: 1; }
-          .bb-front { opacity: 0; }
-          .bb-card.is-revealed .bb-back { opacity: 0; }
-          .bb-card.is-revealed .bb-front { opacity: 1; }
         }
         @keyframes popHit {
           0% { transform: scale(1); }
