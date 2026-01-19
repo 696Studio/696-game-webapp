@@ -61,10 +61,7 @@ function bbDbgSet(msg: string) {
   el.textContent = msg;
 }
 
-// Visual debug is OFF by default.
-// Enable it explicitly via flags:
-//   ?dbg=1  (or localStorage/sessionStorage bbdbg=1)
-//   ?layoutdebug=1 (legacy helper for coordinate mapping)
+const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
 
 type MatchRow = {
   id: string;
@@ -439,17 +436,13 @@ function BattleInner() {
   const fxdebug = sp.get("fxdebug") === "1";
   const layoutdebug = sp.get("layoutdebug") === "1" || fxdebug;
 
-  // Single switch for *any* visual/debug UI.
-  // Default OFF. Can be enabled via ?dbg=1 (bbDbgEnabled) or explicit debug query params.
-  const showVisualDebug = bbDbgEnabled() || layoutdebug;
-
-  // Local toggle (does not affect layout): lets you show/hide debug overlay when debug is enabled.
-  const [uiDebug, setUiDebug] = useState<boolean>(showVisualDebug && layoutdebug);
+  // Local toggle (does not affect layout): lets you enable debug overlay without URL params.
+  const [uiDebug, setUiDebug] = useState<boolean>(layoutdebug);
 
   // Debug UI is rendered directly in JSX (no portals/DOM mutations).
-  const uiDebugOn = showVisualDebug && uiDebug;
-  const isArenaDebug = showVisualDebug && (DEBUG_ARENA || uiDebugOn);
-  const isGridDebug = showVisualDebug && (DEBUG_GRID || uiDebugOn);
+const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
+  const isArenaDebug = DEBUG_ARENA || uiDebugOn;
+  const isGridDebug = DEBUG_GRID || uiDebugOn;
 
   const [dbgClick, setDbgClick] = useState<null | { nx: number; ny: number; x: number; y: number }>(null);
 
@@ -2008,8 +2001,6 @@ const hpPct = useMemo(() => {
                   letterSpacing: "0.06em",
                   textTransform: "uppercase",
                   pointerEvents: "none",
-                  backdropFilter: "blur(8px)",
-                  WebkitBackdropFilter: "blur(8px)",
                 }}
               >
                 {awaitingAction
@@ -2196,7 +2187,7 @@ const hpPct = useMemo(() => {
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-{showVisualDebug && (
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2241,11 +2232,11 @@ const hpPct = useMemo(() => {
       </div>
 )}
 
-      {showVisualDebug ? <BattleFxLayer events={fxEvents} /> : null}
+      {!HIDE_VISUAL_DEBUG ? <BattleFxLayer events={fxEvents} /> : null}
 
       {/* Debug UI rendered via portal to avoid being clipped by transformed/overflow-hidden ancestors. */}
       {/* Debug UI overlay (no portal) */}
-      {showVisualDebug && (
+      {!HIDE_VISUAL_DEBUG && (
         <div
           style={{
             position: "fixed",
@@ -2276,7 +2267,7 @@ const hpPct = useMemo(() => {
         </div>
       )}
 
-      {showVisualDebug && isArenaDebug ? (
+      {!HIDE_VISUAL_DEBUG && isArenaDebug ? (
         <div
           style={{
             position: "fixed",
@@ -2306,7 +2297,7 @@ const hpPct = useMemo(() => {
               <div>
                 offsetX/Y: {Math.round(debugCover.offsetX)},{Math.round(debugCover.offsetY)}
               </div>
-{showVisualDebug && (
+{!HIDE_VISUAL_DEBUG && (
               <div>scale: {debugCover.scale.toFixed(4)}</div>
 )}
               <div style={{ marginTop: 6, opacity: 0.9 }}>
@@ -2387,7 +2378,7 @@ const hpPct = useMemo(() => {
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-{showVisualDebug && (
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2446,7 +2437,7 @@ const hpPct = useMemo(() => {
   if (timedOut || error) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-{showVisualDebug && (
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2505,7 +2496,7 @@ const hpPct = useMemo(() => {
   if (errText) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-{showVisualDebug && (
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2564,7 +2555,7 @@ const hpPct = useMemo(() => {
   if (!match) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-{showVisualDebug && (
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2625,7 +2616,7 @@ const hpPct = useMemo(() => {
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
       {/* DBG_V11: always-visible toggle (Telegram + browser). Should be visible during battle. */}
-{showVisualDebug && (
+{!HIDE_VISUAL_DEBUG && (
       <div
         style={{
           position: "fixed",
@@ -2671,7 +2662,7 @@ const hpPct = useMemo(() => {
       </div>
 )}
 
-      {showVisualDebug ? <BattleFxLayer events={fxEvents} /> : null}
+      {!HIDE_VISUAL_DEBUG ? <BattleFxLayer events={fxEvents} /> : null}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -3536,7 +3527,7 @@ const hpPct = useMemo(() => {
       />
 
       {/* DEBUG TOGGLE (hidden in clean mode) */}
-      {showVisualDebug && (
+      {!HIDE_VISUAL_DEBUG && (
         <button
           type="button"
           onClick={() => setUiDebug((v) => !v)}
@@ -3562,7 +3553,7 @@ const hpPct = useMemo(() => {
 
       {/* TEST button removed: lunge is played from real battle timeline events */}
 
-      {showVisualDebug && uiDebugOn && (
+      {!HIDE_VISUAL_DEBUG && uiDebugOn && (
         <div
           style={{
             position: "fixed",
