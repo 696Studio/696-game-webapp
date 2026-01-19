@@ -1,7 +1,7 @@
 ﻿"use client";
 // @ts-nocheck
 
-import React, {Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback} from "react";
+import React, {Suspense, useEffect, useMemo, useRef, useState, useCallback} from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
@@ -24,10 +24,17 @@ function bbDbgEnabled() {
     if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
     if (ls === "1" || ss === "1") return true;
 
-    // Default ON for now (so you always see it in Telegram). Remove later when animation is stable.
-    return true;
+    // URL toggle (works on iOS where console is hard to open):
+    //   ?dbg=1
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("dbg") === "1") return true;
+    } catch {}
+
+    // Default OFF (no overlays unless explicitly enabled)
+    return false;
   } catch {
-    return true;
+    return false;
   }
 }
 function bbDbgSet(msg: string) {
@@ -408,8 +415,7 @@ function coverMapRect(
 
 function BattleInner() {
   // iOS class flag (used for CSS overrides to prevent TG iOS WebView spinning/flip glitches)
-  // Use layout effect so the class is present before first paint.
-  useLayoutEffect(() => {
+  useEffect(() => {
     try {
       const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
       const isIOS =
@@ -500,14 +506,9 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [t, setT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
 
-  // === SEMI-AUTO (Step 3): player chooses ATTACK / DEFEND each turn ===
-  // This provides a real user gesture on iOS (TG WebView paint/compositing wake), and will
-  // also affect combat outcome via small multipliers (client-side MVP simulation).
+  // Semi-auto (Step 3.x): player action choice gating + visible badge on active card
   const [awaitingAction, setAwaitingAction] = useState(false);
-  const [currentTurnSig, setCurrentTurnSig] = useState<string | null>(null);
-  const [lastChoice, setLastChoice] = useState<"attack" | "defend" | null>(null);
-  const turnChoiceRef = useRef<Record<string, "attack" | "defend">>({});
-  const lastPausedTurnSigRef = useRef<string>("");
+  const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -662,18 +663,10 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       attackerRoot.style.pointerEvents = prev.pointerEvents;
     };
 
-    // Re-parent (detach) the *same DOM node* into overlay.
-    // IMPORTANT: keep slot layout stable with a hidden placeholder of the same size.
-    // Without this, the slot can collapse, shifting the board (TG iOS is extra sensitive).
+    // Re-parent (detach) the *same DOM node* into overlay, with a placeholder so we can return it.
     const parent = attackerRoot.parentNode;
     const nextSibling = attackerRoot.nextSibling;
-    const placeholder = document.createElement('div');
-    placeholder.setAttribute('data-bb-lunge-placeholder', '1');
-    placeholder.style.width = `${ar.width}px`;
-    placeholder.style.height = `${ar.height}px`;
-    placeholder.style.display = 'block';
-    placeholder.style.visibility = 'hidden';
-    placeholder.style.pointerEvents = 'none';
+    const placeholder = document.createComment('bb-lunge-placeholder');
     try {
       parent?.insertBefore(placeholder, attackerRoot);
       getOverlay().appendChild(attackerRoot);
@@ -1064,11 +1057,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     const slotMapP2: Record<number, UnitView | null> = { 0: null, 1: null, 2: null, 3: null, 4: null };
     let active: string | null = null;
 
-    // Track current turn signature (instanceId@t) and last attack source so we can apply
-    // simple ATTACK/DEFEND multipliers to subsequent damage events.
-    let turnSigLoop = "";
-    let lastAttackFromSide: "p1" | "p2" | null = null;
-
     for (const e of timeline) {
       if (e.t > t) break;
 
@@ -1122,59 +1110,12 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         }
       } else if (e.type === "turn_start") {
         const ref = readUnitRefFromEvent(e, "unit");
-        if (ref?.instanceId) {
-          active = ref.instanceId;
-          turnSigLoop = `${ref.instanceId}@${Number(e.t ?? 0)}`;
-
-          // If it's OUR turn, pause timeline until player chooses an action.
-          // (This is the key iOS fix: a real tap happens right before the animation.)
-          if (ref.side === youSide) {
-            // If choice already exists (player picked and we resumed), apply DEFEND "guard" bonus at turn start.
-            const choice = turnChoiceRef.current[turnSigLoop] || null;
-            if (choice === "defend") {
-              const u = units.get(ref.instanceId);
-              if (u) {
-                // MVP: grant a small temporary shield to the active unit.
-                const bonus = Math.max(1, Math.round(u.maxHp * 0.25));
-                u.shield = Math.max(0, (u.shield || 0) + bonus);
-              }
-            }
-
-            // Pause only once per unique turn signature.
-            if (lastPausedTurnSigRef.current !== turnSigLoop && !turnChoiceRef.current[turnSigLoop]) {
-              lastPausedTurnSigRef.current = turnSigLoop;
-              // Clamp playback to the exact start of turn to avoid skipping events while paused.
-              if (typeof e.t === "number" && t > e.t) {
-                // eslint-disable-next-line react-hooks/exhaustive-deps
-                setT(e.t);
-              }
-              startAtRef.current = null;
-              // eslint-disable-next-line react-hooks/exhaustive-deps
-              setPlaying(false);
-              // eslint-disable-next-line react-hooks/exhaustive-deps
-              setAwaitingAction(true);
-              // eslint-disable-next-line react-hooks/exhaustive-deps
-              setCurrentTurnSig(turnSigLoop);
-            }
-          }
-        }
-      } else if (e.type === "attack") {
-        // Remember which side is the attacker for subsequent damage events.
-        const fromRef = (e as any)?.from || readUnitRefFromEvent(e as any, "from");
-        lastAttackFromSide = (fromRef?.side as any) || null;
+        if (ref?.instanceId) active = ref.instanceId;
       } else if (e.type === "damage") {
         const tid = String((e as any)?.target?.instanceId ?? "");
-        let amount = Number((e as any)?.amount ?? 0);
+        const amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
         const shield = (e as any)?.shield;
-
-        // Apply choice multipliers for our turns (MVP, client-side).
-        // We key off the last seen turn_start (turnSigLoop) and the last attack source side.
-        const choice = turnSigLoop ? (turnChoiceRef.current[turnSigLoop] || null) : null;
-        if (choice && lastAttackFromSide === youSide) {
-          if (choice === "attack") amount = Math.round(amount * 1.15);
-          if (choice === "defend") amount = Math.round(amount * 0.85);
-        }
         if (tid) {
           const u = units.get(tid);
           if (u) {
@@ -2013,6 +1954,39 @@ const hpPct = useMemo(() => {
               shield={unit?.shield ?? 0}
               showCorner={false}
             />
+
+            {/* Step 3.1: make the choice VISIBLE right on the active card (no console needed) */}
+            {isActive && renderUnit?.side === youSide && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  zIndex: 20,
+                  padding: "6px 8px",
+                  borderRadius: 999,
+                  background: "rgba(0,0,0,0.55)",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  color: "rgba(255,255,255,0.92)",
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  pointerEvents: "none",
+                  backdropFilter: "blur(8px)",
+                  WebkitBackdropFilter: "blur(8px)",
+                }}
+              >
+                {awaitingAction
+                  ? "CHOOSE"
+                  : lastAction === "attack"
+                  ? "⚔ +15%"
+                  : lastAction === "defend"
+                  ? "🛡 -25%"
+                  : "—"}
+              </div>
+            )}
+
             {renderUnit && (
               <div className="bb-fx">
                 {spawned && <div key={`spawn-${spawned.t}-${renderUnit.instanceId}`} className="bb-spawn" />}
@@ -3992,90 +3966,6 @@ const hpPct = useMemo(() => {
             )}
           </div>
         </section>
-      </div>
-
-      {/* Semi-auto action bar (sits above the global bottom tabs) */}
-      <div
-        style={{
-          position: "fixed",
-          left: 12,
-          right: 12,
-          bottom: `calc(12px + env(safe-area-inset-bottom, 0px) + 84px)`,
-          zIndex: 999999,
-          pointerEvents: "auto",
-        }}
-      >
-        <div
-          style={{
-            borderRadius: 18,
-            border: "1px solid rgba(255,255,255,0.18)",
-            background: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(12px)",
-            padding: "12px 12px",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <div style={{ fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.95 }}>
-              {awaitingAction ? "Твой ход: выбери действие" : "Автобой"}
-            </div>
-            <div style={{ fontSize: 12, opacity: 0.85 }}>Последний выбор: {lastChoice ? (lastChoice === "attack" ? "ATTACK" : "DEFEND") : "—"}</div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
-            <button
-              type="button"
-              disabled={!awaitingAction}
-              onClick={() => {
-                if (!awaitingAction || !currentTurnSig) return;
-                turnChoiceRef.current[currentTurnSig] = "attack";
-                setLastChoice("attack");
-                setAwaitingAction(false);
-                setCurrentTurnSig(null);
-                startAtRef.current = null;
-                setPlaying(true);
-              }}
-              style={{
-                height: 44,
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.22)",
-                background: awaitingAction ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-                color: "rgba(255,255,255,0.92)",
-                fontWeight: 900,
-                letterSpacing: "0.16em",
-                textTransform: "uppercase",
-                opacity: awaitingAction ? 1 : 0.6,
-              }}
-            >
-              ATTACK
-            </button>
-            <button
-              type="button"
-              disabled={!awaitingAction}
-              onClick={() => {
-                if (!awaitingAction || !currentTurnSig) return;
-                turnChoiceRef.current[currentTurnSig] = "defend";
-                setLastChoice("defend");
-                setAwaitingAction(false);
-                setCurrentTurnSig(null);
-                startAtRef.current = null;
-                setPlaying(true);
-              }}
-              style={{
-                height: 44,
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.22)",
-                background: awaitingAction ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-                color: "rgba(255,255,255,0.92)",
-                fontWeight: 900,
-                letterSpacing: "0.16em",
-                textTransform: "uppercase",
-                opacity: awaitingAction ? 1 : 0.6,
-              }}
-            >
-              DEFEND
-            </button>
-          </div>
-        </div>
       </div>
     </main>
   );
