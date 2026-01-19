@@ -2659,9 +2659,11 @@ const hpPct = useMemo(() => {
         .bb-ios .bb-card.is-revealed * {
           animation: none !important;
         }
+        /* Important: don't force backfaces visible on iOS. It can expose rotated faces and look like a spin.
+           Keep them hidden and remove any rotateY on faces so reveal is a plain crossfade. */
         .bb-ios .bb-card * {
-          backface-visibility: visible !important;
-          -webkit-backface-visibility: visible !important;
+          backface-visibility: hidden !important;
+          -webkit-backface-visibility: hidden !important;
         }
         /* Kill any effect classes that might use rotate/3D on iOS */
         .bb-ios .bb-card.is-hit .bb-card-inner,
@@ -2674,6 +2676,12 @@ const hpPct = useMemo(() => {
         .bb-ios .bb-back,
         .bb-ios .bb-front {
           transition: opacity 220ms ease-out;
+        }
+        /* Remove any base rotateY transforms on faces */
+        .bb-ios .bb-back,
+        .bb-ios .bb-front {
+          transform: none !important;
+          -webkit-transform: none !important;
         }
         .bb-ios .bb-back { opacity: 1; }
         .bb-ios .bb-front { opacity: 0; }
