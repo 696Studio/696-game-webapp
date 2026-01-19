@@ -834,14 +834,46 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
         });
       };
 
-      // TG iOS paint-kick: some WebViews stall CSS/WAAPI paints until a gesture.
-      // Nudge compositor for 1 frame (no visible UI change) then start the anim.
+      // TG iOS paint-kick: Telegram iOS WebView can stall paints until a real user gesture.
+      // Opacity/reflow alone is often not enough; a hidden scroll container reliably wakes the compositor.
+      const kickPaintIOS = () => {
+        try {
+          const sc = document.createElement('div');
+          sc.setAttribute('data-bb-ios-kick', '1');
+          sc.style.position = 'fixed';
+          sc.style.left = '0px';
+          sc.style.top = '0px';
+          sc.style.width = '1px';
+          sc.style.height = '1px';
+          sc.style.overflow = 'scroll';
+          sc.style.opacity = '0';
+          sc.style.pointerEvents = 'none';
+          sc.style.zIndex = '-1';
+          // iOS compositor hint
+          sc.style.transform = 'translateZ(0)';
+
+          const inner = document.createElement('div');
+          inner.style.width = '1px';
+          inner.style.height = '2px';
+          sc.appendChild(inner);
+          document.body.appendChild(sc);
+
+          // Force layout, then perform a micro scroll.
+          void sc.offsetHeight;
+          sc.scrollTop = 1;
+          sc.scrollTop = 0;
+          void sc.offsetHeight;
+
+          requestAnimationFrame(() => {
+            try { sc.remove(); } catch {}
+          });
+        } catch {}
+      };
+
       if (isIOS) {
-        const prevOp = attackerRoot.style.opacity;
-        attackerRoot.style.opacity = '0.999';
-        try { void attackerRoot.offsetHeight; } catch {}
+        kickPaintIOS();
+        // Start on next frame after kick.
         requestAnimationFrame(() => {
-          attackerRoot.style.opacity = prevOp;
           runAnim();
         });
       } else {
