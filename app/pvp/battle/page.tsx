@@ -54,6 +54,64 @@ function bbDbgSet(msg: string) {
   el.textContent = msg;
 }
 
+
+// ===== BB_CARD_DEBUG_CHIPS (iOS-friendly, no console needed) =====
+const __bbCardDbgTimers: WeakMap<Element, any> = new WeakMap();
+function bbEnsureCardDbgCss() {
+  if (typeof document === 'undefined') return;
+  const id = 'bb-carddbg-css';
+  if (document.getElementById(id)) return;
+  const st = document.createElement('style');
+  st.id = id;
+  st.textContent = `
+    .bb-ios [data-bb-carddbg] { position: relative !important; }
+    .bb-ios [data-bb-carddbg]::after {
+      content: attr(data-bb-carddbg);
+      position: absolute;
+      left: 6px;
+      top: 6px;
+      z-index: 2147483647;
+      padding: 4px 6px;
+      border-radius: 8px;
+      font: 10px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      color: #fff;
+      background: rgba(0,0,0,0.70);
+      border: 1px solid rgba(255,255,255,0.18);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.30);
+      pointer-events: none;
+      white-space: pre;
+    }
+  `;
+  document.head.appendChild(st);
+}
+function bbCardDbgSet(el: Element | null, msg: string, ttlMs: number = 1800) {
+  try {
+    if (!el) return;
+    if (typeof document === 'undefined') return;
+    if (!document.documentElement.classList.contains('bb-ios')) return;
+    bbEnsureCardDbgCss();
+    const safe = String(msg || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+    (el as any).setAttribute('data-bb-carddbg', safe);
+    const prev = __bbCardDbgTimers.get(el);
+    if (prev) clearTimeout(prev);
+    const t = window.setTimeout(() => {
+      try { (el as any).removeAttribute('data-bb-carddbg'); } catch {}
+    }, ttlMs);
+    __bbCardDbgTimers.set(el, t);
+  } catch {}
+}
+function bbCardDbgClear(el: Element | null) {
+  try {
+    if (!el) return;
+    const prev = __bbCardDbgTimers.get(el);
+    if (prev) clearTimeout(prev);
+    __bbCardDbgTimers.delete(el);
+    (el as any).removeAttribute('data-bb-carddbg');
+  } catch {}
+}
+
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
 
 type MatchRow = {
@@ -567,7 +625,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // the CardRoot (data-bb-slot element) via top/left.
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
-
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
     // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
     try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
@@ -583,10 +640,12 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     }
     if (attackerRoot === targetRoot) return;
 
-    // Cancel WAAPI animations if any, so transform/transition is deterministic.
-    attackerRoot.getAnimations?.().forEach((anim) => anim.cancel());
+    const isIOS = typeof document !== 'undefined' && document.documentElement.classList.contains('bb-ios');
 
-    // Create (or reuse) a top-level fixed overlay layer to avoid Telegram WebView layout/stacking issues.
+    // Cancel any in-flight animations so transform is deterministic.
+    try { attackerRoot.getAnimations?.().forEach((a) => a.cancel()); } catch {}
+
+    // Overlay layer for detached fixed-position animation.
     const getOverlay = (): HTMLDivElement => {
       const id = 'bb-anim-layer';
       let el = document.getElementById(id) as HTMLDivElement | null;
@@ -600,24 +659,22 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
         el.style.bottom = '0px';
         el.style.pointerEvents = 'none';
         el.style.zIndex = '2147483647';
-        // Prevent iOS Safari from creating a new stacking context that can swallow fixed children
+        // Helps TG iOS keep fixed children composited.
         el.style.transform = 'translateZ(0)';
         document.body.appendChild(el);
       }
       return el;
     };
 
-    // Measure BEFORE detach: target rect can become 0x0 after reparent on iOS TG WebView.
+    // Measure BEFORE detach (target rect can become 0x0 on TG iOS after reparent).
     const ar = attackerRoot.getBoundingClientRect();
     const br = targetRoot.getBoundingClientRect();
 
-    // Target center is stable when measured before detach.
+    bbCardDbgSet(attackerRoot, `pre ar:${Math.round(ar.width)}x${Math.round(ar.height)} br:${Math.round(br.width)}x${Math.round(br.height)}`, 2400);
+    bbCardDbgSet(targetRoot, `pre br:${Math.round(br.width)}x${Math.round(br.height)}`, 2400);
+
     const bx = br.left + br.width / 2;
     const by = br.top + br.height / 2;
-
-    // dx/dy are computed AFTER we switch attacker to fixed (arFixed), to match iOS coordinate space.
-    let dx = 0;
-    let dy = 0;
 
     const ease = 'cubic-bezier(.18,.9,.22,1)';
     const outMs = 220;
@@ -654,18 +711,16 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       attackerRoot.style.pointerEvents = prev.pointerEvents;
     };
 
-    // Re-parent (detach) the *same DOM node* into overlay, with a placeholder so we can return it.
+    // Detach the *same DOM node* into overlay, with placeholder for reinsertion.
     const parent = attackerRoot.parentNode;
     const nextSibling = attackerRoot.nextSibling;
     const placeholder = document.createComment('bb-lunge-placeholder');
     try {
       parent?.insertBefore(placeholder, attackerRoot);
       getOverlay().appendChild(attackerRoot);
-    } catch {
-      // If reparent fails, do nothing.
-    }
+    } catch {}
 
-    // DETACH: fixed at the exact current screen rect.
+    // Fixed at the exact current screen rect.
     attackerRoot.style.position = 'fixed';
     attackerRoot.style.left = `${ar.left}px`;
     attackerRoot.style.top = `${ar.top}px`;
@@ -677,115 +732,106 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     attackerRoot.style.pointerEvents = 'none';
     attackerRoot.style.willChange = 'transform';
     attackerRoot.style.transition = 'none';
+    (attackerRoot.style as any).webkitTransition = 'none';
     attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+    (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
 
     try { targetRoot.classList.add('is-attack-to'); } catch {}
 
-    // LUNGE: animate only transform.
-    // IMPORTANT (iOS TG WebView): CSS transitions can visually stall until a user gesture
-    // if we set transition+transform in the same frame. So we do a 2-phase commit:
-    // 1) ensure we're at translate(0) with transition:none and flush layout
-    // 2) next frame, set transition and the target transform
+    const doReturn = () => {
+      try { targetRoot.classList.remove('is-attack-to'); } catch {}
+
+      bbCardDbgClear(attackerRoot);
+      bbCardDbgClear(targetRoot);
+
+      try {
+        if (placeholder.parentNode) {
+          placeholder.parentNode.insertBefore(attackerRoot, placeholder);
+          placeholder.parentNode.removeChild(placeholder);
+        } else if (parent) {
+          if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
+          else parent.appendChild(attackerRoot);
+        }
+      } catch {}
+
+      restoreStyles();
+    };
+
+    // Compute dx/dy AFTER we are fixed (TG iOS can shift coordinate space on detach).
     requestAnimationFrame(() => {
-      // Re-measure AFTER fixed positioning: iOS TG WebView can shift the coordinate space on detach.
       const arFixed = attackerRoot.getBoundingClientRect();
-      const axF = arFixed.left + arFixed.width / 2;
-      const ayF = arFixed.top + arFixed.height / 2;
-      dx = bx - axF;
-      dy = by - ayF;
+      const ax = arFixed.left + arFixed.width / 2;
+      const ay = arFixed.top + arFixed.height / 2;
+      let dx = bx - ax;
+      let dy = by - ay;
       if (!Number.isFinite(dx)) dx = 0;
       if (!Number.isFinite(dy)) dy = 0;
+
+      bbCardDbgSet(attackerRoot, `fixed arF:${Math.round(arFixed.width)}x${Math.round(arFixed.height)} dx:${Math.round(dx)} dy:${Math.round(dy)}`, 2600);
+
+      // iOS-first: WAAPI avoids “gesture needed to paint transition” stalls.
+      if (isIOS && typeof (attackerRoot as any).animate === 'function') {
+        try {
+          bbCardDbgSet(attackerRoot, `mode:WAAPI out ${outMs}ms`, 2600);
+
+          const a1 = (attackerRoot as any).animate(
+            [
+              { transform: 'translate3d(0px, 0px, 0px)' },
+              { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
+            ],
+            { duration: outMs, easing: ease, fill: 'forwards' }
+          );
+
+          a1.onfinish = () => {
+            const a2 = (attackerRoot as any).animate(
+              [
+                { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
+                { transform: 'translate3d(0px, 0px, 0px)' },
+              ],
+              { duration: backMs, easing: ease, fill: 'forwards' }
+            );
+            a2.onfinish = () => doReturn();
+          };
+
+          bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_WAAPI ${fromId} -> ${toId}`);
+          return;
+        } catch {
+          // fall through to CSS path
+        }
+      }
+
+      // CSS path (Web/PC): 2-phase start to reduce iOS paint stalls.
+      bbCardDbgSet(attackerRoot, `mode:CSS out ${outMs}ms`, 2600);
 
       // Phase 1: reset + flush
       attackerRoot.style.transition = 'none';
       (attackerRoot.style as any).webkitTransition = 'none';
       attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
       (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
-      attackerRoot.style.willChange = 'transform';
-      (attackerRoot.style as any).webkitBackfaceVisibility = 'hidden';
-      (attackerRoot.style as any).backfaceVisibility = 'hidden';
       try { void attackerRoot.offsetWidth; } catch {}
 
-      // Phase 2: start transition on a fresh frame
+      // Phase 2: next frame, apply transition+transform
       requestAnimationFrame(() => {
         attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
         (attackerRoot.style as any).webkitTransition = `transform ${outMs}ms ${ease}`;
         attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
         (attackerRoot.style as any).webkitTransform = `translate3d(${dx}px, ${dy}px, 0px)`;
-        try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
-        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
-      });
-
-      const isIOS =
-          typeof document !== "undefined" && document.documentElement.classList.contains("bb-ios");
-
-        const doReturn = () => {
-          try { targetRoot.classList.remove('is-attack-to'); } catch {}
-
-          // RETURN: put the node back where it was, then restore styles.
-          try {
-            if (placeholder.parentNode) {
-              placeholder.parentNode.insertBefore(attackerRoot, placeholder);
-              placeholder.parentNode.removeChild(placeholder);
-            } else if (parent) {
-              // fallback
-              if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
-              else parent.appendChild(attackerRoot);
-            }
-          } catch {}
-
-          restoreStyles();
-        };
-
-        if (isIOS && typeof (attackerRoot as any).animate === "function") {
-          // iOS TG WebView: CSS transitions can stall until a user gesture. Use Web Animations API.
-          try {
-            attackerRoot.style.transition = "none";
-            (attackerRoot.style as any).webkitTransition = "none";
-            attackerRoot.style.transform = "translate3d(0px, 0px, 0px)";
-            (attackerRoot.style as any).webkitTransform = "translate3d(0px, 0px, 0px)";
-
-            const a1 = (attackerRoot as any).animate(
-              [
-                { transform: "translate3d(0px, 0px, 0px)" },
-                { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
-              ],
-              { duration: outMs, easing: ease, fill: "forwards" }
-            );
-
-            a1.onfinish = () => {
-              const a2 = (attackerRoot as any).animate(
-                [
-                  { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
-                  { transform: "translate3d(0px, 0px, 0px)" },
-                ],
-                { duration: backMs, easing: ease, fill: "forwards" }
-              );
-              a2.onfinish = () => {
-                doReturn();
-              };
-            };
-
-            bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_WAAPI ${fromId} -> ${toId}`);
-            return;
-          } catch {
-            // fall through to CSS path
-          }
-        }
-
+        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_CSS ${fromId} -> ${toId}`);
 
         window.setTimeout(() => {
           attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
-          attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
           (attackerRoot.style as any).webkitTransition = `transform ${backMs}ms ${ease}`;
+          attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
           (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
 
           window.setTimeout(() => {
             doReturn();
           }, backMs + 80);
         }, outMs + 80);
+      });
     });
   }, []);
+
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
@@ -806,9 +852,8 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
   const prevHpByInstanceRef = useRef<Record<string, number>>({});
   const prevPresentRef = useRef<Set<string>>(new Set());
 
-
-  const deathFxPlayedRef = useRef<Set<string>>(new Set());
-  const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
+    const deathFxPlayedRef = useRef<Set<string>>(new Set());
+const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
     const arenaEl = arenaRef.current;
     if (!arenaEl) return;
 
@@ -818,7 +863,7 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     if (!r) return;
 
     const size = Math.max(84, Math.min(170, Math.max(r.width, r.height) * 1.05));
-    const x = (r.left - arenaRect.left) + r.width / 2;
+const x = (r.left - arenaRect.left) + r.width / 2;
     const y = (r.top - arenaRect.top) + r.height / 2;
 
     const id = `${instanceId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
