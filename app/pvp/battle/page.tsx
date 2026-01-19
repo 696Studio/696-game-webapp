@@ -682,32 +682,41 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     try { targetRoot.classList.add('is-attack-to'); } catch {}
 
     // LUNGE: animate only transform.
+    // IMPORTANT (iOS TG WebView): CSS transitions can visually stall until a user gesture
+    // if we set transition+transform in the same frame. So we do a 2-phase commit:
+    // 1) ensure we're at translate(0) with transition:none and flush layout
+    // 2) next frame, set transition and the target transform
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        // Re-measure AFTER fixed positioning: iOS TG WebView can shift the coordinate space on detach.
-        const arFixed = attackerRoot.getBoundingClientRect();
-        const axF = arFixed.left + arFixed.width / 2;
-        const ayF = arFixed.top + arFixed.height / 2;
-        dx = bx - axF;
-        dy = by - ayF;
-        if (!Number.isFinite(dx)) dx = 0;
-        if (!Number.isFinite(dy)) dy = 0;
+      // Re-measure AFTER fixed positioning: iOS TG WebView can shift the coordinate space on detach.
+      const arFixed = attackerRoot.getBoundingClientRect();
+      const axF = arFixed.left + arFixed.width / 2;
+      const ayF = arFixed.top + arFixed.height / 2;
+      dx = bx - axF;
+      dy = by - ayF;
+      if (!Number.isFinite(dx)) dx = 0;
+      if (!Number.isFinite(dy)) dy = 0;
 
+      // Phase 1: reset + flush
+      attackerRoot.style.transition = 'none';
+      (attackerRoot.style as any).webkitTransition = 'none';
+      attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+      (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
+      attackerRoot.style.willChange = 'transform';
+      (attackerRoot.style as any).webkitBackfaceVisibility = 'hidden';
+      (attackerRoot.style as any).backfaceVisibility = 'hidden';
+      try { void attackerRoot.offsetWidth; } catch {}
+
+      // Phase 2: start transition on a fresh frame
+      requestAnimationFrame(() => {
         attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
-        attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
-        // iOS TG WebView can delay paint of transitions until the next user gesture/scroll.
-        // Force a paint/layout flush right before starting the transition.
-        try {
-          // Force style+layout flush
-          void attackerRoot.offsetHeight;
-          if (typeof document !== 'undefined') void (document.body && (document.body as any).offsetHeight);
-        } catch {}
         (attackerRoot.style as any).webkitTransition = `transform ${outMs}ms ${ease}`;
+        attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
         (attackerRoot.style as any).webkitTransform = `translate3d(${dx}px, ${dy}px, 0px)`;
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
         bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
+      });
 
-        const isIOS =
+      const isIOS =
           typeof document !== "undefined" && document.documentElement.classList.contains("bb-ios");
 
         const doReturn = () => {
@@ -775,8 +784,6 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
             doReturn();
           }, backMs + 80);
         }, outMs + 80);
-
-      });
     });
   }, []);
 
@@ -799,8 +806,9 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
   const prevHpByInstanceRef = useRef<Record<string, number>>({});
   const prevPresentRef = useRef<Set<string>>(new Set());
 
-    const deathFxPlayedRef = useRef<Set<string>>(new Set());
-const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
+
+  const deathFxPlayedRef = useRef<Set<string>>(new Set());
+  const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
     const arenaEl = arenaRef.current;
     if (!arenaEl) return;
 
@@ -810,7 +818,7 @@ const spawnDeathBurst = (instanceId: string, fallbackSize = 140) => {
     if (!r) return;
 
     const size = Math.max(84, Math.min(170, Math.max(r.width, r.height) * 1.05));
-const x = (r.left - arenaRect.left) + r.width / 2;
+    const x = (r.left - arenaRect.left) + r.width / 2;
     const y = (r.top - arenaRect.top) + r.height / 2;
 
     const id = `${instanceId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
