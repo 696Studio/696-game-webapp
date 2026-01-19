@@ -481,6 +481,51 @@ function BattleInner() {
     }
   }, []);
 
+  // =========================================================
+  // TG iOS: one-time user-gesture activation
+  // Telegram iOS WebView sometimes stalls compositor paints for CSS transforms
+  // until the user touches the screen at least once.
+  // We show a minimal, full-screen tap overlay once per page load.
+  // =========================================================
+  const [bbIsIOS, setBbIsIOS] = useState(false);
+  const [bbIosActivated, setBbIosActivated] = useState(false);
+  const bbIosActivatedRef = useRef(false);
+  const bbLastUserTouchRef = useRef(0);
+
+  useEffect(() => {
+    try {
+      const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+      const isIOS =
+        /iP(hone|ad|od)/.test(ua) ||
+        (((navigator as any).platform === "MacIntel") && (navigator as any).maxTouchPoints > 1);
+      setBbIsIOS(!!isIOS);
+      if (!isIOS) {
+        setBbIosActivated(true);
+        bbIosActivatedRef.current = true;
+        return;
+      }
+
+      const mark = () => {
+        bbLastUserTouchRef.current = Date.now();
+        if (!bbIosActivatedRef.current) {
+          bbIosActivatedRef.current = true;
+          setBbIosActivated(true);
+        }
+      };
+
+      window.addEventListener("touchstart", mark, { passive: true } as any);
+      window.addEventListener("pointerdown", mark, { passive: true } as any);
+      return () => {
+        window.removeEventListener("touchstart", mark as any);
+        window.removeEventListener("pointerdown", mark as any);
+      };
+    } catch {
+      // If detection fails, default to no overlay.
+      setBbIosActivated(true);
+      bbIosActivatedRef.current = true;
+    }
+  }, []);
+
   const router = useRouter();
   const sp = useSearchParams();
   // Debug flags (safe in Telegram: just read query params).
@@ -641,6 +686,15 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     if (attackerRoot === targetRoot) return;
 
     const isIOS = typeof document !== 'undefined' && document.documentElement.classList.contains('bb-ios');
+
+    // TG iOS: if the user hasn't interacted yet, Telegram WebView may refuse to paint
+    // compositor animations until a real touch happens. Don't spam broken lunges;
+    // show a tiny in-card hint and wait for the one-time tap overlay.
+    if (isIOS && !bbIosActivatedRef.current) {
+      bbCardDbgSet(attackerRoot, 'TAP ONCE TO ENABLE iOS ANIMS', 1800);
+      bbDbgSet(`#${(window as any).__bbAtkTick || 0} iOS_WAIT_FOR_TAP`);
+      return;
+    }
 
     // Cancel any in-flight animations so transform is deterministic.
     try { attackerRoot.getAnimations?.().forEach((a) => a.cancel()); } catch {}
@@ -2659,6 +2713,47 @@ const hpPct = useMemo(() => {
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
+      {/* TG iOS: one-time activation overlay to unlock compositor paints for lunge */}
+      {bbIsIOS && !bbIosActivated && (
+        <div
+          onPointerDown={() => {
+            bbIosActivatedRef.current = true;
+            setBbIosActivated(true);
+            bbLastUserTouchRef.current = Date.now();
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 2147483646,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.001)",
+            WebkitTapHighlightColor: "transparent" as any,
+            touchAction: "manipulation",
+          }}
+        >
+          <div
+            style={{
+              pointerEvents: "none",
+              padding: "10px 12px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.18)",
+              background: "rgba(0,0,0,0.55)",
+              color: "white",
+              fontSize: 12,
+              fontWeight: 900,
+              letterSpacing: 0.2,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
+              maxWidth: 280,
+              textAlign: "center",
+            }}
+          >
+            Tap once to enable iPhone animations
+          </div>
+        </div>
+      )}
+
       {/* DBG_V11: always-visible toggle (Telegram + browser). Should be visible during battle. */}
 {!HIDE_VISUAL_DEBUG && (
       <div
