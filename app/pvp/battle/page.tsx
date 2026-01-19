@@ -3969,87 +3969,14 @@ const hpPct = useMemo(() => {
         </section>
       </div>
 
-      {/* Semi-auto action bar (Step 2): choose ATTACK/DEFEND to continue each turn */}
+      {/* Semi-auto action bar (Step 2): battle pauses on each turn_start until you choose */}
       <div
         style={{
           position: "fixed",
           left: 12,
           right: 12,
-          bottom: "calc(12px + env(safe-area-inset-bottom))",
-          zIndex: 99999,
-          pointerEvents: "auto",
-        }}
-      >
-        <div
-          className="ui-card"
-          style={{
-            padding: "10px 12px",
-            background: "rgba(0,0,0,0.38)",
-            backdropFilter: "blur(10px)",
-            borderRadius: 16,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
-          >
-            <div style={{ fontSize: 12, opacity: 0.9 }}
-            >
-              {awaitingAction ? "Твой ход: выбери действие" : "Автобой: действие выберешь перед следующим ходом"}
-            </div>
-            <div style={{ fontSize: 12, opacity: 0.9 }}
-            >
-              Выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginTop: 10 }}
-          >
-            <button
-              type="button"
-              disabled={!awaitingAction}
-              onClick={() => {
-                if (!awaitingActionRef.current) return;
-                setLastAction("attack");
-                setAwaitingAction(false);
-                autoPausedByChoiceRef.current = false;
-                setPlaying(true);
-              }}
-              className={["ui-btn", (awaitingAction && lastAction === "attack") ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
-              style={{ flex: 1, opacity: awaitingAction ? 1 : 0.55 }}
-            >
-              ATTACK
-            </button>
-            <button
-              type="button"
-              disabled={!awaitingAction}
-              onClick={() => {
-                if (!awaitingActionRef.current) return;
-                setLastAction("defend");
-                setAwaitingAction(false);
-                autoPausedByChoiceRef.current = false;
-                setPlaying(true);
-              }}
-              className={["ui-btn", (awaitingAction && lastAction === "defend") ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
-              style={{ flex: 1, opacity: awaitingAction ? 1 : 0.55 }}
-            >
-              DEFEND
-            </button>
-          </div>
-
-          {awaitingAction && (
-            <div style={{ marginTop: 8, fontSize: 11, opacity: 0.75 }}
-            >
-              (Это Step 2: сейчас выбор только ставит «жест» для iOS и паузит таймлайн. Математику добавим на следующем шаге.)
-            </div>
-          )}
-        </div>
-
-      {/* SEMI-AUTO ACTION BAR (Step 2): the battle pauses on each turn_start until player chooses */}
-      <div
-        style={{
-          position: "fixed",
-          left: 12,
-          right: 12,
-          bottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+          // Put the action bar ABOVE the bottom navigation tabs
+          bottom: "calc(12px + env(safe-area-inset-bottom, 0px) + 84px)",
           zIndex: 99999,
           pointerEvents: "auto",
         }}
@@ -4061,14 +3988,15 @@ const hpPct = useMemo(() => {
             display: "flex",
             flexDirection: "column",
             gap: 10,
-            background: "rgba(0,0,0,0.32)",
+            background: "rgba(0,0,0,0.38)",
             backdropFilter: "blur(10px)",
             WebkitBackdropFilter: "blur(10px)",
+            borderRadius: 18,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <div className="ui-subtitle" style={{ margin: 0 }}>
-              {awaitingAction ? "Выбери действие, чтобы продолжить ход" : "Автобой: ход идёт…"}
+              {awaitingAction ? "Твой ход: выбери действие" : "Автобой: ожидание следующего хода"}
             </div>
             <div className="ui-subtle" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
               Последний выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
@@ -4080,15 +4008,14 @@ const hpPct = useMemo(() => {
               type="button"
               disabled={!awaitingAction}
               onClick={() => {
+                if (!awaitingActionRef.current) return;
                 setLastAction("attack");
                 setAwaitingAction(false);
                 autoPausedByChoiceRef.current = false;
                 setPlaying(true);
               }}
-              className={["ui-btn", (awaitingAction && lastAction === "attack") ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
-              style={{
-                opacity: awaitingAction ? 1 : 0.5,
-              }}
+              className={["ui-btn", awaitingAction && lastAction === "attack" ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
+              style={{ opacity: awaitingAction ? 1 : 0.5 }}
             >
               ATTACK
             </button>
@@ -4097,15 +4024,14 @@ const hpPct = useMemo(() => {
               type="button"
               disabled={!awaitingAction}
               onClick={() => {
+                if (!awaitingActionRef.current) return;
                 setLastAction("defend");
                 setAwaitingAction(false);
                 autoPausedByChoiceRef.current = false;
                 setPlaying(true);
               }}
-              className={["ui-btn", (awaitingAction && lastAction === "defend") ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
-              style={{
-                opacity: awaitingAction ? 1 : 0.5,
-              }}
+              className={["ui-btn", awaitingAction && lastAction === "defend" ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
+              style={{ opacity: awaitingAction ? 1 : 0.5 }}
             >
               DEFEND
             </button>
@@ -4113,80 +4039,7 @@ const hpPct = useMemo(() => {
         </div>
       </div>
 
-      </div>
-
-      {/* Semi-auto action bar (Step 2): battle pauses before each turn until you choose */}
-      <div
-        style={{
-          position: "fixed",
-          left: 12,
-          right: 12,
-          bottom: "calc(12px + env(safe-area-inset-bottom))",
-          zIndex: 99999,
-          pointerEvents: "auto",
-        }}
-      >
-        <div
-          className="ui-card"
-          style={{
-            padding: 12,
-            background: "rgba(0,0,0,0.40)",
-            backdropFilter: "blur(10px)",
-            borderRadius: 18,
-          }}
-        >
-          <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ fontSize: 12, lineHeight: 1.2, opacity: 0.92 }}>
-              <div style={{ fontWeight: 800, letterSpacing: 0.2 }}>Ход</div>
-              <div style={{ opacity: 0.85 }}>{awaitingAction ? "Выбери действие чтобы продолжить" : "Автобой…"}</div>
-              <div style={{ marginTop: 4, opacity: 0.85 }}>
-                Выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                type="button"
-                disabled={!awaitingAction}
-                onClick={() => {
-                  setLastAction("attack");
-                  autoPausedByChoiceRef.current = false;
-                  setAwaitingAction(false);
-                  setPlaying(true);
-                }}
-                className={[
-                  "ui-btn",
-                  awaitingAction && lastAction === "attack" ? "ui-btn-primary" : "ui-btn-ghost",
-                  !awaitingAction ? "opacity-50 cursor-not-allowed" : "",
-                ].join(" ")}
-              >
-                ATTACK
-              </button>
-
-              <button
-                type="button"
-                disabled={!awaitingAction}
-                onClick={() => {
-                  setLastAction("defend");
-                  autoPausedByChoiceRef.current = false;
-                  setAwaitingAction(false);
-                  setPlaying(true);
-                }}
-                className={[
-                  "ui-btn",
-                  awaitingAction && lastAction === "defend" ? "ui-btn-primary" : "ui-btn-ghost",
-                  !awaitingAction ? "opacity-50 cursor-not-allowed" : "",
-                ].join(" ")}
-              >
-                DEFEND
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-
-    </main>
+</main>
   );
 }
 
