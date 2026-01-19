@@ -694,6 +694,7 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       zIndex: attackerRoot.style.zIndex,
       willChange: attackerRoot.style.willChange,
       pointerEvents: attackerRoot.style.pointerEvents,
+      opacity: attackerRoot.style.opacity,
     };
 
     const restoreStyles = () => {
@@ -709,6 +710,7 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       attackerRoot.style.zIndex = prev.zIndex;
       attackerRoot.style.willChange = prev.willChange;
       attackerRoot.style.pointerEvents = prev.pointerEvents;
+      attackerRoot.style.opacity = (prev as any).opacity ?? '';
     };
 
     // Detach the *same DOM node* into overlay, with placeholder for reinsertion.
@@ -769,66 +771,82 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
       bbCardDbgSet(attackerRoot, `fixed arF:${Math.round(arFixed.width)}x${Math.round(arFixed.height)} dx:${Math.round(dx)} dy:${Math.round(dy)}`, 2600);
 
-      // iOS-first: WAAPI avoids “gesture needed to paint transition” stalls.
-      if (isIOS && typeof (attackerRoot as any).animate === 'function') {
-        try {
-          bbCardDbgSet(attackerRoot, `mode:WAAPI out ${outMs}ms`, 2600);
+      const runAnim = () => {
+        // iOS-first: WAAPI avoids “gesture needed to paint transition” stalls.
+        if (isIOS && typeof (attackerRoot as any).animate === 'function') {
+          try {
+            bbCardDbgSet(attackerRoot, `mode:WAAPI out ${outMs}ms`, 2600);
 
-          const a1 = (attackerRoot as any).animate(
-            [
-              { transform: 'translate3d(0px, 0px, 0px)' },
-              { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
-            ],
-            { duration: outMs, easing: ease, fill: 'forwards' }
-          );
-
-          a1.onfinish = () => {
-            const a2 = (attackerRoot as any).animate(
+            const a1 = (attackerRoot as any).animate(
               [
-                { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
                 { transform: 'translate3d(0px, 0px, 0px)' },
+                { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
               ],
-              { duration: backMs, easing: ease, fill: 'forwards' }
+              { duration: outMs, easing: ease, fill: 'forwards' }
             );
-            a2.onfinish = () => doReturn();
-          };
 
-          bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_WAAPI ${fromId} -> ${toId}`);
-          return;
-        } catch {
-          // fall through to CSS path
+            a1.onfinish = () => {
+              const a2 = (attackerRoot as any).animate(
+                [
+                  { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
+                  { transform: 'translate3d(0px, 0px, 0px)' },
+                ],
+                { duration: backMs, easing: ease, fill: 'forwards' }
+              );
+              a2.onfinish = () => doReturn();
+            };
+
+            bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_WAAPI ${fromId} -> ${toId}`);
+            return;
+          } catch {
+            // fall through to CSS path
+          }
         }
-      }
 
-      // CSS path (Web/PC): 2-phase start to reduce iOS paint stalls.
-      bbCardDbgSet(attackerRoot, `mode:CSS out ${outMs}ms`, 2600);
+        // CSS path (Web/PC): 2-phase start to reduce iOS paint stalls.
+        bbCardDbgSet(attackerRoot, `mode:CSS out ${outMs}ms`, 2600);
 
-      // Phase 1: reset + flush
-      attackerRoot.style.transition = 'none';
-      (attackerRoot.style as any).webkitTransition = 'none';
-      attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
-      (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
-      try { void attackerRoot.offsetWidth; } catch {}
+        // Phase 1: reset + flush
+        attackerRoot.style.transition = 'none';
+        (attackerRoot.style as any).webkitTransition = 'none';
+        attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+        (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
+        try { void attackerRoot.offsetWidth; } catch {}
 
-      // Phase 2: next frame, apply transition+transform
-      requestAnimationFrame(() => {
-        attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
-        (attackerRoot.style as any).webkitTransition = `transform ${outMs}ms ${ease}`;
-        attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
-        (attackerRoot.style as any).webkitTransform = `translate3d(${dx}px, ${dy}px, 0px)`;
-        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_CSS ${fromId} -> ${toId}`);
-
-        window.setTimeout(() => {
-          attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
-          (attackerRoot.style as any).webkitTransition = `transform ${backMs}ms ${ease}`;
-          attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
-          (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
+        // Phase 2: next frame, apply transition+transform
+        requestAnimationFrame(() => {
+          attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
+          (attackerRoot.style as any).webkitTransition = `transform ${outMs}ms ${ease}`;
+          attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+          (attackerRoot.style as any).webkitTransform = `translate3d(${dx}px, ${dy}px, 0px)`;
+          bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_CSS ${fromId} -> ${toId}`);
 
           window.setTimeout(() => {
-            doReturn();
-          }, backMs + 80);
-        }, outMs + 80);
-      });
+            attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
+            (attackerRoot.style as any).webkitTransition = `transform ${backMs}ms ${ease}`;
+            attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+            (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
+
+            window.setTimeout(() => {
+              doReturn();
+            }, backMs + 80);
+          }, outMs + 80);
+        });
+      };
+
+      // TG iOS paint-kick: some WebViews stall CSS/WAAPI paints until a gesture.
+      // Nudge compositor for 1 frame (no visible UI change) then start the anim.
+      if (isIOS) {
+        const prevOp = attackerRoot.style.opacity;
+        attackerRoot.style.opacity = '0.999';
+        try { void attackerRoot.offsetHeight; } catch {}
+        requestAnimationFrame(() => {
+          attackerRoot.style.opacity = prevOp;
+          runAnim();
+        });
+      } else {
+        runAnim();
+      }
     });
   }, []);
 
