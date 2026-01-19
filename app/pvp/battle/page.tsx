@@ -680,7 +680,7 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     attackerRoot.style.pointerEvents = 'none';
     attackerRoot.style.willChange = 'transform';
     attackerRoot.style.transition = 'none';
-    attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+    attackerRoot.style.setProperty('transform', 'translate3d(0px, 0px, 0px)', 'important');
 
     try { targetRoot.classList.add('is-attack-to'); } catch {}
 
@@ -702,13 +702,13 @@ try {
   dy2 = (by - ay2) * lungeScale2;
 } catch {}
 attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
-attackerRoot.style.transform = `translate3d(${dx2}px, ${dy2}px, 0px)`;
+attackerRoot.style.setProperty('transform', `translate3d(${dx2}px, ${dy2}px, 0px)`, 'important');
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
         bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
         window.setTimeout(() => {
           attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
-          attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+          attackerRoot.style.setProperty('transform', 'translate3d(0px, 0px, 0px)', 'important');
 
           window.setTimeout(() => {
             try { targetRoot.classList.remove('is-attack-to'); } catch {}
