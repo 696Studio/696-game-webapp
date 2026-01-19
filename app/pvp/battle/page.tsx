@@ -518,6 +518,14 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [p1Cards, setP1Cards] = useState<string[]>([]);
   const [p2Cards, setP2Cards] = useState<string[]>([]);
 
+  // Which side is "you" in this match (p1 or p2). Used by the semi-auto turn gate.
+  const youSide: "p1" | "p2" = useMemo(() => {
+    if (!match) return "p1";
+    if (myUserId && myUserId === match.p2_user_id) return "p2";
+    return "p1";
+  }, [match, myUserId]);
+
+  const enemySide: "p1" | "p2" = youSide === "p1" ? "p2" : "p1";
   const [p1CardsFull, setP1CardsFull] = useState<CardMeta[]>([]);
   const [p2CardsFull, setP2CardsFull] = useState<CardMeta[]>([]);
 
@@ -544,6 +552,34 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
+
+  // Semi-auto gate: pause on YOUR unit turn until player picks ATTACK/DEFEND.
+  const activeUnitForChoice = useMemo(() => {
+    if (!activeInstance) return null;
+    for (const u of Object.values(p1UnitsBySlot)) if (u?.instanceId === activeInstance) return u;
+    for (const u of Object.values(p2UnitsBySlot)) if (u?.instanceId === activeInstance) return u;
+    return null;
+  }, [activeInstance, p1UnitsBySlot, p2UnitsBySlot]);
+
+  useEffect(() => {
+    if (!activeUnitForChoice) return;
+    if (activeUnitForChoice.side !== youSide) return;
+    if (awaitingAction) return;
+    if (!playing) return; // don't override manual pause
+    // Pause timeline and wait for a real tap (critical for TG iOS WebView painting)
+    setAwaitingAction(true);
+    setLastAction(null);
+    setPlaying(false);
+  }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
+
+  const chooseAction = useCallback(
+    (choice: "attack" | "defend") => {
+      setLastAction(choice);
+      setAwaitingAction(false);
+      setPlaying(true);
+    },
+    []
+  );
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
 
@@ -1031,14 +1067,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       alive = false;
     };
   }, [match?.p1_user_id, match?.p2_user_id]);
-
-  const youSide: "p1" | "p2" = useMemo(() => {
-    if (!match) return "p1";
-    if (myUserId && myUserId === match.p2_user_id) return "p2";
-    return "p1";
-  }, [match, myUserId]);
-
-  const enemySide: "p1" | "p2" = youSide === "p1" ? "p2" : "p1";
 
   useEffect(() => {
     if (!timeline.length) return;
@@ -3966,6 +3994,74 @@ const hpPct = useMemo(() => {
             )}
           </div>
         </section>
+
+	        {/* Semi-auto Action Bar (works on all platforms; critical for iOS gesture) */}
+	        <div
+	          style={{
+	            position: "fixed",
+	            left: 12,
+	            right: 12,
+	            bottom: `calc(12px + env(safe-area-inset-bottom) + 84px)`,
+	            zIndex: 999999,
+	            pointerEvents: "auto",
+	            display: "flex",
+	            gap: 10,
+	            alignItems: "center",
+	            justifyContent: "center",
+	            padding: "10px 12px",
+	            borderRadius: 16,
+	            border: "1px solid rgba(255,255,255,0.16)",
+	            background: "rgba(0,0,0,0.55)",
+	            backdropFilter: "blur(10px)",
+	            WebkitBackdropFilter: "blur(10px)",
+	          }}
+	        >
+	          <div style={{ flex: 1, minWidth: 0 }}>
+	            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.9 }}>
+	              {awaitingAction ? "ТВОЙ ХОД: ВЫБЕРИ ДЕЙСТВИЕ" : "ДЕЙСТВИЕ"}
+	            </div>
+	            <div style={{ marginTop: 2, fontSize: 12, fontWeight: 800, opacity: 0.92 }}>
+	              Последний выбор: {lastAction ? (lastAction === "attack" ? "ATTACK" : "DEFEND") : "—"}
+	            </div>
+	          </div>
+
+	          <button
+	            type="button"
+	            onClick={() => chooseAction("attack")}
+	            style={{
+	              padding: "10px 12px",
+	              borderRadius: 14,
+	              border: lastAction === "attack" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
+	              background: lastAction === "attack" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
+	              color: "rgba(255,255,255,0.95)",
+	              fontSize: 12,
+	              fontWeight: 1000,
+	              letterSpacing: "0.14em",
+	              textTransform: "uppercase",
+	              minWidth: 110,
+	            }}
+	          >
+	            ATTACK
+	          </button>
+	          <button
+	            type="button"
+	            onClick={() => chooseAction("defend")}
+	            style={{
+	              padding: "10px 12px",
+	              borderRadius: 14,
+	              border: lastAction === "defend" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
+	              background: lastAction === "defend" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
+	              color: "rgba(255,255,255,0.95)",
+	              fontSize: 12,
+	              fontWeight: 1000,
+	              letterSpacing: "0.14em",
+	              textTransform: "uppercase",
+	              minWidth: 110,
+	            }}
+	          >
+	            DEFEND
+	          </button>
+	        </div>
       </div>
     </main>
   );
