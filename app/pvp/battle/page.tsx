@@ -1,7 +1,7 @@
 ﻿"use client";
 // @ts-nocheck
 
-import React, {Suspense, useEffect, useMemo, useRef, useState, useCallback} from "react";
+import React, {Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback} from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
@@ -408,7 +408,8 @@ function coverMapRect(
 
 function BattleInner() {
   // iOS class flag (used for CSS overrides to prevent TG iOS WebView spinning/flip glitches)
-  useEffect(() => {
+  // Use layout effect so the class is present before first paint.
+  useLayoutEffect(() => {
     try {
       const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
       const isIOS =
@@ -499,19 +500,17 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [t, setT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
 
-  // Semi-auto step2: pause timeline before each turn until player chooses ATTACK/DEFEND
+  // === SEMI-AUTO (Step 3): player chooses ATTACK / DEFEND each turn ===
+  // This provides a real user gesture on iOS (TG WebView paint/compositing wake), and will
+  // also affect combat outcome via small multipliers (client-side MVP simulation).
   const [awaitingAction, setAwaitingAction] = useState(false);
-  const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
-  const autoPausedByChoiceRef = useRef(false);
+  const [currentTurnSig, setCurrentTurnSig] = useState<string | null>(null);
+  const [lastChoice, setLastChoice] = useState<"attack" | "defend" | null>(null);
+  const turnChoiceRef = useRef<Record<string, "attack" | "defend">>({});
+  const lastPausedTurnSigRef = useRef<string>("");
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
-
-  // Keep latest values for RAF loop without re-subscribing every frame
-  const tRef = useRef(0);
-  useEffect(() => { tRef.current = t; }, [t]);
-  const awaitingActionRef = useRef(false);
-  useEffect(() => { awaitingActionRef.current = awaitingAction; }, [awaitingAction]);
 
   const [roundN, setRoundN] = useState(1);
 
@@ -663,10 +662,18 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       attackerRoot.style.pointerEvents = prev.pointerEvents;
     };
 
-    // Re-parent (detach) the *same DOM node* into overlay, with a placeholder so we can return it.
+    // Re-parent (detach) the *same DOM node* into overlay.
+    // IMPORTANT: keep slot layout stable with a hidden placeholder of the same size.
+    // Without this, the slot can collapse, shifting the board (TG iOS is extra sensitive).
     const parent = attackerRoot.parentNode;
     const nextSibling = attackerRoot.nextSibling;
-    const placeholder = document.createComment('bb-lunge-placeholder');
+    const placeholder = document.createElement('div');
+    placeholder.setAttribute('data-bb-lunge-placeholder', '1');
+    placeholder.style.width = `${ar.width}px`;
+    placeholder.style.height = `${ar.height}px`;
+    placeholder.style.display = 'block';
+    placeholder.style.visibility = 'hidden';
+    placeholder.style.pointerEvents = 'none';
     try {
       parent?.insertBefore(placeholder, attackerRoot);
       getOverlay().appendChild(attackerRoot);
@@ -1057,6 +1064,11 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     const slotMapP2: Record<number, UnitView | null> = { 0: null, 1: null, 2: null, 3: null, 4: null };
     let active: string | null = null;
 
+    // Track current turn signature (instanceId@t) and last attack source so we can apply
+    // simple ATTACK/DEFEND multipliers to subsequent damage events.
+    let turnSigLoop = "";
+    let lastAttackFromSide: "p1" | "p2" | null = null;
+
     for (const e of timeline) {
       if (e.t > t) break;
 
@@ -1110,12 +1122,59 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         }
       } else if (e.type === "turn_start") {
         const ref = readUnitRefFromEvent(e, "unit");
-        if (ref?.instanceId) active = ref.instanceId;
+        if (ref?.instanceId) {
+          active = ref.instanceId;
+          turnSigLoop = `${ref.instanceId}@${Number(e.t ?? 0)}`;
+
+          // If it's OUR turn, pause timeline until player chooses an action.
+          // (This is the key iOS fix: a real tap happens right before the animation.)
+          if (ref.side === youSide) {
+            // If choice already exists (player picked and we resumed), apply DEFEND "guard" bonus at turn start.
+            const choice = turnChoiceRef.current[turnSigLoop] || null;
+            if (choice === "defend") {
+              const u = units.get(ref.instanceId);
+              if (u) {
+                // MVP: grant a small temporary shield to the active unit.
+                const bonus = Math.max(1, Math.round(u.maxHp * 0.25));
+                u.shield = Math.max(0, (u.shield || 0) + bonus);
+              }
+            }
+
+            // Pause only once per unique turn signature.
+            if (lastPausedTurnSigRef.current !== turnSigLoop && !turnChoiceRef.current[turnSigLoop]) {
+              lastPausedTurnSigRef.current = turnSigLoop;
+              // Clamp playback to the exact start of turn to avoid skipping events while paused.
+              if (typeof e.t === "number" && t > e.t) {
+                // eslint-disable-next-line react-hooks/exhaustive-deps
+                setT(e.t);
+              }
+              startAtRef.current = null;
+              // eslint-disable-next-line react-hooks/exhaustive-deps
+              setPlaying(false);
+              // eslint-disable-next-line react-hooks/exhaustive-deps
+              setAwaitingAction(true);
+              // eslint-disable-next-line react-hooks/exhaustive-deps
+              setCurrentTurnSig(turnSigLoop);
+            }
+          }
+        }
+      } else if (e.type === "attack") {
+        // Remember which side is the attacker for subsequent damage events.
+        const fromRef = (e as any)?.from || readUnitRefFromEvent(e as any, "from");
+        lastAttackFromSide = (fromRef?.side as any) || null;
       } else if (e.type === "damage") {
         const tid = String((e as any)?.target?.instanceId ?? "");
-        const amount = Number((e as any)?.amount ?? 0);
+        let amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
         const shield = (e as any)?.shield;
+
+        // Apply choice multipliers for our turns (MVP, client-side).
+        // We key off the last seen turn_start (turnSigLoop) and the last attack source side.
+        const choice = turnSigLoop ? (turnChoiceRef.current[turnSigLoop] || null) : null;
+        if (choice && lastAttackFromSide === youSide) {
+          if (choice === "attack") amount = Math.round(amount * 1.15);
+          if (choice === "defend") amount = Math.round(amount * 0.85);
+        }
         if (tid) {
           const u = units.get(tid);
           if (u) {
@@ -1239,40 +1298,13 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       if (!playing) return;
 
       if (startAtRef.current == null) {
-        startAtRef.current = now - (tRef.current / Math.max(0.0001, rate)) * 1000;
+        startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
       }
 
       const elapsedWall = (now - startAtRef.current) / 1000;
       const elapsed = elapsedWall * rate;
 
       const nextT = Math.min(durationSec, Math.max(0, elapsed));
-
-      // Semi-auto gate: stop before each turn_start until the player chooses an action.
-      if (!awaitingActionRef.current) {
-        const eps = 0.0005;
-        let gateT = null;
-        for (const e of timeline) {
-          if (!e || e.type !== "turn_start") continue;
-          const et = Number((e as any).t ?? 0);
-          if (!Number.isFinite(et)) continue;
-          if (et <= tRef.current + eps) continue;
-          if (et <= nextT + eps) {
-            gateT = et;
-            break;
-          }
-          if (et > nextT + eps) break;
-        }
-        if (gateT != null) {
-          autoPausedByChoiceRef.current = true;
-          setT(gateT);
-          setPlaying(false);
-          setAwaitingAction(true);
-          // Important: clear any previous action so user must choose again.
-          setLastAction(null);
-          return;
-        }
-      }
-
       setT(nextT);
 
       if (nextT >= durationSec) {
@@ -1290,7 +1322,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       rafRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, durationSec, rate, timeline]);
+  }, [match, playing, durationSec, rate]);
 
   useEffect(() => {
     startAtRef.current = null;
@@ -2659,11 +2691,9 @@ const hpPct = useMemo(() => {
         .bb-ios .bb-card.is-revealed * {
           animation: none !important;
         }
-        /* Important: don't force backfaces visible on iOS. It can expose rotated faces and look like a spin.
-           Keep them hidden and remove any rotateY on faces so reveal is a plain crossfade. */
         .bb-ios .bb-card * {
-          backface-visibility: hidden !important;
-          -webkit-backface-visibility: hidden !important;
+          backface-visibility: visible !important;
+          -webkit-backface-visibility: visible !important;
         }
         /* Kill any effect classes that might use rotate/3D on iOS */
         .bb-ios .bb-card.is-hit .bb-card-inner,
@@ -2676,12 +2706,6 @@ const hpPct = useMemo(() => {
         .bb-ios .bb-back,
         .bb-ios .bb-front {
           transition: opacity 220ms ease-out;
-        }
-        /* Remove any base rotateY transforms on faces */
-        .bb-ios .bb-back,
-        .bb-ios .bb-front {
-          transform: none !important;
-          -webkit-transform: none !important;
         }
         .bb-ios .bb-back { opacity: 1; }
         .bb-ios .bb-front { opacity: 0; }
@@ -3623,15 +3647,8 @@ const hpPct = useMemo(() => {
             </div>
 
             <div className="hud-actions">
-              <button
-                onClick={() => {
-                  if (awaitingAction) return;
-                  setPlaying((p) => !p);
-                }}
-                className={["ui-btn ui-btn-ghost", awaitingAction ? "opacity-50 cursor-not-allowed" : ""].join(" ")}
-                type="button"
-              >
-                {awaitingAction ? "Выбор" : playing ? "Пауза" : "▶"}
+              <button onClick={() => setPlaying((p) => !p)} className="ui-btn ui-btn-ghost" type="button">
+                {playing ? "Пауза" : "▶"}
               </button>
               <button
                 onClick={() => {
@@ -3977,77 +3994,90 @@ const hpPct = useMemo(() => {
         </section>
       </div>
 
-      {/* Semi-auto action bar (Step 2): battle pauses on each turn_start until you choose */}
+      {/* Semi-auto action bar (sits above the global bottom tabs) */}
       <div
         style={{
           position: "fixed",
           left: 12,
           right: 12,
-          // Put the action bar ABOVE the bottom navigation tabs
-          bottom: "calc(12px + env(safe-area-inset-bottom, 0px) + 84px)",
-          zIndex: 99999,
+          bottom: `calc(12px + env(safe-area-inset-bottom, 0px) + 84px)`,
+          zIndex: 999999,
           pointerEvents: "auto",
         }}
       >
         <div
-          className="ui-card"
           style={{
-            padding: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-            background: "rgba(0,0,0,0.38)",
-            backdropFilter: "blur(10px)",
-            WebkitBackdropFilter: "blur(10px)",
             borderRadius: 18,
+            border: "1px solid rgba(255,255,255,0.18)",
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(12px)",
+            padding: "12px 12px",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <div className="ui-subtitle" style={{ margin: 0 }}>
-              {awaitingAction ? "Твой ход: выбери действие" : "Автобой: ожидание следующего хода"}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.95 }}>
+              {awaitingAction ? "Твой ход: выбери действие" : "Автобой"}
             </div>
-            <div className="ui-subtle" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-              Последний выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
-            </div>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>Последний выбор: {lastChoice ? (lastChoice === "attack" ? "ATTACK" : "DEFEND") : "—"}</div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
             <button
               type="button"
               disabled={!awaitingAction}
               onClick={() => {
-                if (!awaitingActionRef.current) return;
-                setLastAction("attack");
+                if (!awaitingAction || !currentTurnSig) return;
+                turnChoiceRef.current[currentTurnSig] = "attack";
+                setLastChoice("attack");
                 setAwaitingAction(false);
-                autoPausedByChoiceRef.current = false;
+                setCurrentTurnSig(null);
+                startAtRef.current = null;
                 setPlaying(true);
               }}
-              className={["ui-btn", awaitingAction && lastAction === "attack" ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
-              style={{ opacity: awaitingAction ? 1 : 0.5 }}
+              style={{
+                height: 44,
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.22)",
+                background: awaitingAction ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
+                color: "rgba(255,255,255,0.92)",
+                fontWeight: 900,
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+                opacity: awaitingAction ? 1 : 0.6,
+              }}
             >
               ATTACK
             </button>
-
             <button
               type="button"
               disabled={!awaitingAction}
               onClick={() => {
-                if (!awaitingActionRef.current) return;
-                setLastAction("defend");
+                if (!awaitingAction || !currentTurnSig) return;
+                turnChoiceRef.current[currentTurnSig] = "defend";
+                setLastChoice("defend");
                 setAwaitingAction(false);
-                autoPausedByChoiceRef.current = false;
+                setCurrentTurnSig(null);
+                startAtRef.current = null;
                 setPlaying(true);
               }}
-              className={["ui-btn", awaitingAction && lastAction === "defend" ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
-              style={{ opacity: awaitingAction ? 1 : 0.5 }}
+              style={{
+                height: 44,
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.22)",
+                background: awaitingAction ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
+                color: "rgba(255,255,255,0.92)",
+                fontWeight: 900,
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+                opacity: awaitingAction ? 1 : 0.6,
+              }}
             >
               DEFEND
             </button>
           </div>
         </div>
       </div>
-
-</main>
+    </main>
   );
 }
 
