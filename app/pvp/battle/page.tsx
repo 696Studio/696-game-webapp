@@ -407,23 +407,21 @@ function coverMapRect(
 }
 
 function BattleInner() {
-  // ===== iOS LUNGE VISUAL LOG (Step A) =====
-  // Enable on iPhone TG WebView via: localStorage.bb_lunge_log = "1"
-  const [bbLungeLogText, setBbLungeLogText] = useState<string>("");
-  const [bbLungeLogEnabled, setBbLungeLogEnabled] = useState<boolean>(false);
-
+  // iOS class flag (used for CSS overrides to prevent TG iOS WebView spinning/flip glitches)
   useEffect(() => {
-    // Read enable flag once on mount (iOS TG WebView can differ from desktop/web)
     try {
-      const on = typeof localStorage !== "undefined" && localStorage.getItem("bb_lunge_log") === "1";
-      setBbLungeLogEnabled(!!on);
-      if (on) setBbLungeLogText((prev) => prev || "[bb_lunge] enabled\n(waiting for first attack)");
+      const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+      const isIOS =
+        /iP(hone|ad|od)/.test(ua) ||
+        (((navigator as any).platform === "MacIntel") && (navigator as any).maxTouchPoints > 1);
+      if (isIOS && typeof document !== "undefined") document.documentElement.classList.add("bb-ios");
+      return () => {
+        if (isIOS && typeof document !== "undefined") document.documentElement.classList.remove("bb-ios");
+      };
     } catch {
-      setBbLungeLogEnabled(false);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
 
   const router = useRouter();
   const sp = useSearchParams();
@@ -571,20 +569,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
-    const wantVisualLog = bbLungeLogEnabled;
-
-    const writeVisualLog = (label: string, data: any) => {
-      if (!wantVisualLog) return;
-      try {
-        const lines: string[] = [];
-        lines.push(`[${label}]`);
-        for (const [k, v] of Object.entries(data || {})) {
-          lines.push(`${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`);
-        }
-        setBbLungeLogText(lines.join("\n"));
-      } catch {}
-    };
-
     // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
     try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
 
@@ -625,22 +609,6 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
     const ar = attackerRoot.getBoundingClientRect();
     const br = targetRoot.getBoundingClientRect();
-    if (wantVisualLog) {
-      const vv = (typeof window !== "undefined" ? (window as any).visualViewport : null) as
-        | { offsetLeft: number; offsetTop: number; width: number; height: number; scale?: number }
-        | null;
-
-      writeVisualLog("BEFORE", {
-        tick: (window as any).__bbAtkTick || 0,
-        fromId,
-        toId,
-        ar: { left: ar.left, top: ar.top, w: ar.width, h: ar.height },
-        br: { left: br.left, top: br.top, w: br.width, h: br.height },
-        vv: vv ? { x: vv.offsetLeft, y: vv.offsetTop, w: vv.width, h: vv.height, s: (vv as any).scale } : null,
-        scroll: { x: typeof window !== "undefined" ? window.scrollX : 0, y: typeof window !== "undefined" ? window.scrollY : 0 },
-      });
-    }
-
     const ax = ar.left + ar.width / 2;
     const ay = ar.top + ar.height / 2;
     const bx = br.left + br.width / 2;
@@ -714,22 +682,6 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     // LUNGE: animate only transform.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-      if (wantVisualLog) {
-        try {
-          void attackerRoot.getBoundingClientRect();
-          const arFixed = attackerRoot.getBoundingClientRect();
-          const brAfter = targetRoot.getBoundingClientRect();
-          writeVisualLog("AFTER_FIXED", {
-            tick: (window as any).__bbAtkTick || 0,
-            arFixed: { left: arFixed.left, top: arFixed.top, w: arFixed.width, h: arFixed.height },
-            brAfter: { left: brAfter.left, top: brAfter.top, w: brAfter.width, h: brAfter.height },
-          });
-        } catch (e) {
-          writeVisualLog("AFTER_FIXED_ERR", { err: String(e) });
-        }
-      }
-
-
         attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
         attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
@@ -1891,38 +1843,6 @@ const hpPct = useMemo(() => {
     if (isHidden) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
-      {(() => {
-        try {
-          if (!bbLungeLogEnabled) return null;
-          const node = (
-            <pre
-              style={{
-                position: "fixed",
-                left: 8,
-                top: "calc(env(safe-area-inset-top, 0px) + 8px)",
-                zIndex: 2147483647,
-                maxWidth: "92vw",
-                maxHeight: "40vh",
-                overflow: "auto",
-                padding: "8px 10px",
-                borderRadius: 8,
-                fontSize: 11,
-                lineHeight: 1.25,
-                background: "rgba(0,0,0,0.72)",
-                color: "rgba(255,255,255,0.92)",
-                pointerEvents: "none",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {bbLungeLogText || "[bb_lunge] enabled\n(waiting for first attack)"}
-            </pre>
-          );
-          return typeof document !== "undefined" ? createPortal(node, document.body) : null;
-        } catch {
-          return null;
-        }
-      })()}
-
         <div
           data-bb-slot={slotKey}
           className="bb-motion-layer bb-card-root"
@@ -2625,6 +2545,25 @@ const hpPct = useMemo(() => {
           55% { transform: rotateY(90deg) scale(1.02); }
           100% { transform: rotateY(180deg) scale(1); }
         }
+
+        /* iOS Telegram WebView: avoid 3D rotateY flip (can "stick" and cause random spinning cards).
+           We switch reveal from 3D flip to simple face crossfade only on iOS. */
+        
+        /* iOS TG WebView anti-spin override (JS adds .bb-ios on <html>) */
+        .bb-ios .bb-card.is-revealed { animation: none !important; }
+.bb-ios .bb-card-inner { transform: none !important; transition: none !important; }
+.bb-ios .bb-front { transform: none !important; }
+
+.bb-ios .bb-back, .bb-ios .bb-front {
+            backface-visibility: visible !important;
+            -webkit-backface-visibility: visible !important;
+            transition: opacity 220ms ease-out;
+          }
+.bb-ios .bb-back { opacity: 1; }
+.bb-ios .bb-front { opacity: 0; }
+.bb-ios .bb-card.is-revealed .bb-back { opacity: 0; }
+.bb-ios .bb-card.is-revealed .bb-front { opacity: 1; }
+
         @keyframes popHit {
           0% { transform: scale(1); }
           50% { transform: scale(1.08); }
