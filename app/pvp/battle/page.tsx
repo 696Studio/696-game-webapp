@@ -696,28 +696,75 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
         bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
+        const isIOS =
+          typeof document !== "undefined" && document.documentElement.classList.contains("bb-ios");
+
+        const doReturn = () => {
+          try { targetRoot.classList.remove('is-attack-to'); } catch {}
+
+          // RETURN: put the node back where it was, then restore styles.
+          try {
+            if (placeholder.parentNode) {
+              placeholder.parentNode.insertBefore(attackerRoot, placeholder);
+              placeholder.parentNode.removeChild(placeholder);
+            } else if (parent) {
+              // fallback
+              if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
+              else parent.appendChild(attackerRoot);
+            }
+          } catch {}
+
+          restoreStyles();
+        };
+
+        if (isIOS && typeof (attackerRoot as any).animate === "function") {
+          // iOS TG WebView: CSS transitions can stall until a user gesture. Use Web Animations API.
+          try {
+            attackerRoot.style.transition = "none";
+            (attackerRoot.style as any).webkitTransition = "none";
+            attackerRoot.style.transform = "translate3d(0px, 0px, 0px)";
+            (attackerRoot.style as any).webkitTransform = "translate3d(0px, 0px, 0px)";
+
+            const a1 = (attackerRoot as any).animate(
+              [
+                { transform: "translate3d(0px, 0px, 0px)" },
+                { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
+              ],
+              { duration: outMs, easing: ease, fill: "forwards" }
+            );
+
+            a1.onfinish = () => {
+              const a2 = (attackerRoot as any).animate(
+                [
+                  { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
+                  { transform: "translate3d(0px, 0px, 0px)" },
+                ],
+                { duration: backMs, easing: ease, fill: "forwards" }
+              );
+              a2.onfinish = () => {
+                doReturn();
+              };
+            };
+
+            bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_WAAPI ${fromId} -> ${toId}`);
+            return;
+          } catch {
+            // fall through to CSS path
+          }
+        }
+
+
         window.setTimeout(() => {
           attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
           attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+          (attackerRoot.style as any).webkitTransition = `transform ${backMs}ms ${ease}`;
+          (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
 
           window.setTimeout(() => {
-            try { targetRoot.classList.remove('is-attack-to'); } catch {}
-
-            // RETURN: put the node back where it was, then restore styles.
-            try {
-              if (placeholder.parentNode) {
-                placeholder.parentNode.insertBefore(attackerRoot, placeholder);
-                placeholder.parentNode.removeChild(placeholder);
-              } else if (parent) {
-                // fallback
-                if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
-                else parent.appendChild(attackerRoot);
-              }
-            } catch {}
-
-            restoreStyles();
+            doReturn();
           }, backMs + 80);
         }, outMs + 80);
+
       });
     });
   }, []);
