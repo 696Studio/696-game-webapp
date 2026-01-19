@@ -2327,8 +2327,6 @@ const hpPct = useMemo(() => {
             fontSize: 12,
             lineHeight: "16px",
             pointerEvents: "none",
-            backdropFilter: "blur(6px)",
-            WebkitBackdropFilter: "blur(6px)",
           }}
         >
           <div style={{ fontWeight: 700, marginBottom: 4 }}>Layout Debug</div>
@@ -3964,7 +3962,6 @@ const hpPct = useMemo(() => {
                   right: 14,
                   bottom: 14,
                   background: "rgba(0,0,0,0.32)",
-                  backdropFilter: "blur(10px)",
                   zIndex: 6,
                 }}
               >
@@ -4010,8 +4007,6 @@ const hpPct = useMemo(() => {
 	            borderRadius: 16,
 	            border: "1px solid rgba(255,255,255,0.16)",
 	            background: "rgba(0,0,0,0.55)",
-	            backdropFilter: "blur(10px)",
-	            WebkitBackdropFilter: "blur(10px)",
 	          }}
 	        >
 	          <div style={{ flex: 1, minWidth: 0 }}>
