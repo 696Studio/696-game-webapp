@@ -54,64 +54,6 @@ function bbDbgSet(msg: string) {
   el.textContent = msg;
 }
 
-
-// ===== BB_CARD_DEBUG_CHIPS (iOS-friendly, no console needed) =====
-const __bbCardDbgTimers: WeakMap<Element, any> = new WeakMap();
-function bbEnsureCardDbgCss() {
-  if (typeof document === 'undefined') return;
-  const id = 'bb-carddbg-css';
-  if (document.getElementById(id)) return;
-  const st = document.createElement('style');
-  st.id = id;
-  st.textContent = `
-    .bb-ios [data-bb-carddbg] { position: relative !important; }
-    .bb-ios [data-bb-carddbg]::after {
-      content: attr(data-bb-carddbg);
-      position: absolute;
-      left: 6px;
-      top: 6px;
-      z-index: 2147483647;
-      padding: 4px 6px;
-      border-radius: 8px;
-      font: 10px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
-      font-weight: 800;
-      letter-spacing: 0.2px;
-      color: #fff;
-      background: rgba(0,0,0,0.70);
-      border: 1px solid rgba(255,255,255,0.18);
-      box-shadow: 0 8px 20px rgba(0,0,0,0.30);
-      pointer-events: none;
-      white-space: pre;
-    }
-  `;
-  document.head.appendChild(st);
-}
-function bbCardDbgSet(el: Element | null, msg: string, ttlMs: number = 1800) {
-  try {
-    if (!el) return;
-    if (typeof document === 'undefined') return;
-    if (!document.documentElement.classList.contains('bb-ios')) return;
-    bbEnsureCardDbgCss();
-    const safe = String(msg || '').replace(/\s+/g, ' ').trim().slice(0, 140);
-    (el as any).setAttribute('data-bb-carddbg', safe);
-    const prev = __bbCardDbgTimers.get(el);
-    if (prev) clearTimeout(prev);
-    const t = window.setTimeout(() => {
-      try { (el as any).removeAttribute('data-bb-carddbg'); } catch {}
-    }, ttlMs);
-    __bbCardDbgTimers.set(el, t);
-  } catch {}
-}
-function bbCardDbgClear(el: Element | null) {
-  try {
-    if (!el) return;
-    const prev = __bbCardDbgTimers.get(el);
-    if (prev) clearTimeout(prev);
-    __bbCardDbgTimers.delete(el);
-    (el as any).removeAttribute('data-bb-carddbg');
-  } catch {}
-}
-
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
 
 type MatchRow = {
@@ -481,51 +423,6 @@ function BattleInner() {
     }
   }, []);
 
-  // =========================================================
-  // TG iOS: one-time user-gesture activation
-  // Telegram iOS WebView sometimes stalls compositor paints for CSS transforms
-  // until the user touches the screen at least once.
-  // We show a minimal, full-screen tap overlay once per page load.
-  // =========================================================
-  const [bbIsIOS, setBbIsIOS] = useState(false);
-  const [bbIosActivated, setBbIosActivated] = useState(false);
-  const bbIosActivatedRef = useRef(false);
-  const bbLastUserTouchRef = useRef(0);
-
-  useEffect(() => {
-    try {
-      const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-      const isIOS =
-        /iP(hone|ad|od)/.test(ua) ||
-        (((navigator as any).platform === "MacIntel") && (navigator as any).maxTouchPoints > 1);
-      setBbIsIOS(!!isIOS);
-      if (!isIOS) {
-        setBbIosActivated(true);
-        bbIosActivatedRef.current = true;
-        return;
-      }
-
-      const mark = () => {
-        bbLastUserTouchRef.current = Date.now();
-        if (!bbIosActivatedRef.current) {
-          bbIosActivatedRef.current = true;
-          setBbIosActivated(true);
-        }
-      };
-
-      window.addEventListener("touchstart", mark, { passive: true } as any);
-      window.addEventListener("pointerdown", mark, { passive: true } as any);
-      return () => {
-        window.removeEventListener("touchstart", mark as any);
-        window.removeEventListener("pointerdown", mark as any);
-      };
-    } catch {
-      // If detection fails, default to no overlay.
-      setBbIosActivated(true);
-      bbIosActivatedRef.current = true;
-    }
-  }, []);
-
   const router = useRouter();
   const sp = useSearchParams();
   // Debug flags (safe in Telegram: just read query params).
@@ -602,6 +499,11 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [t, setT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
 
+  // ===== Semi-auto (STEP 1): UI-only choice (does NOT affect battle yet)
+  // We keep this as a simple state so clicks create a real user gesture (iOS),
+  // and later steps can gate turn progression on this value.
+  const [actionChoice, setActionChoice] = useState<"attack" | "defend" | null>(null);
+
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
@@ -670,6 +572,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // the CardRoot (data-bb-slot element) via top/left.
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
+
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
     // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
     try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
@@ -685,21 +588,10 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     }
     if (attackerRoot === targetRoot) return;
 
-    const isIOS = typeof document !== 'undefined' && document.documentElement.classList.contains('bb-ios');
+    // Cancel WAAPI animations if any, so transform/transition is deterministic.
+    attackerRoot.getAnimations?.().forEach((anim) => anim.cancel());
 
-    // TG iOS: if the user hasn't interacted yet, Telegram WebView may refuse to paint
-    // compositor animations until a real touch happens. Don't spam broken lunges;
-    // show a tiny in-card hint and wait for the one-time tap overlay.
-    if (isIOS && !bbIosActivatedRef.current) {
-      bbCardDbgSet(attackerRoot, 'TAP ONCE TO ENABLE iOS ANIMS', 1800);
-      bbDbgSet(`#${(window as any).__bbAtkTick || 0} iOS_WAIT_FOR_TAP`);
-      return;
-    }
-
-    // Cancel any in-flight animations so transform is deterministic.
-    try { attackerRoot.getAnimations?.().forEach((a) => a.cancel()); } catch {}
-
-    // Overlay layer for detached fixed-position animation.
+    // Create (or reuse) a top-level fixed overlay layer to avoid Telegram WebView layout/stacking issues.
     const getOverlay = (): HTMLDivElement => {
       const id = 'bb-anim-layer';
       let el = document.getElementById(id) as HTMLDivElement | null;
@@ -713,22 +605,22 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
         el.style.bottom = '0px';
         el.style.pointerEvents = 'none';
         el.style.zIndex = '2147483647';
-        // Helps TG iOS keep fixed children composited.
+        // Prevent iOS Safari from creating a new stacking context that can swallow fixed children
         el.style.transform = 'translateZ(0)';
         document.body.appendChild(el);
       }
       return el;
     };
 
-    // Measure BEFORE detach (target rect can become 0x0 on TG iOS after reparent).
     const ar = attackerRoot.getBoundingClientRect();
     const br = targetRoot.getBoundingClientRect();
-
-    bbCardDbgSet(attackerRoot, `pre ar:${Math.round(ar.width)}x${Math.round(ar.height)} br:${Math.round(br.width)}x${Math.round(br.height)}`, 2400);
-    bbCardDbgSet(targetRoot, `pre br:${Math.round(br.width)}x${Math.round(br.height)}`, 2400);
-
+    const ax = ar.left + ar.width / 2;
+    const ay = ar.top + ar.height / 2;
     const bx = br.left + br.width / 2;
     const by = br.top + br.height / 2;
+
+    const dx = (bx - ax) * 0.78;
+    const dy = (by - ay) * 0.78;
 
     const ease = 'cubic-bezier(.18,.9,.22,1)';
     const outMs = 220;
@@ -748,7 +640,6 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       zIndex: attackerRoot.style.zIndex,
       willChange: attackerRoot.style.willChange,
       pointerEvents: attackerRoot.style.pointerEvents,
-      opacity: attackerRoot.style.opacity,
     };
 
     const restoreStyles = () => {
@@ -764,19 +655,20 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       attackerRoot.style.zIndex = prev.zIndex;
       attackerRoot.style.willChange = prev.willChange;
       attackerRoot.style.pointerEvents = prev.pointerEvents;
-      attackerRoot.style.opacity = (prev as any).opacity ?? '';
     };
 
-    // Detach the *same DOM node* into overlay, with placeholder for reinsertion.
+    // Re-parent (detach) the *same DOM node* into overlay, with a placeholder so we can return it.
     const parent = attackerRoot.parentNode;
     const nextSibling = attackerRoot.nextSibling;
     const placeholder = document.createComment('bb-lunge-placeholder');
     try {
       parent?.insertBefore(placeholder, attackerRoot);
       getOverlay().appendChild(attackerRoot);
-    } catch {}
+    } catch {
+      // If reparent fails, do nothing.
+    }
 
-    // Fixed at the exact current screen rect.
+    // DETACH: fixed at the exact current screen rect.
     attackerRoot.style.position = 'fixed';
     attackerRoot.style.left = `${ar.left}px`;
     attackerRoot.style.top = `${ar.top}px`;
@@ -788,66 +680,75 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     attackerRoot.style.pointerEvents = 'none';
     attackerRoot.style.willChange = 'transform';
     attackerRoot.style.transition = 'none';
-    (attackerRoot.style as any).webkitTransition = 'none';
     attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
-    (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
 
     try { targetRoot.classList.add('is-attack-to'); } catch {}
 
-    const doReturn = () => {
-      try { targetRoot.classList.remove('is-attack-to'); } catch {}
-
-      bbCardDbgClear(attackerRoot);
-      bbCardDbgClear(targetRoot);
-
-      try {
-        if (placeholder.parentNode) {
-          placeholder.parentNode.insertBefore(attackerRoot, placeholder);
-          placeholder.parentNode.removeChild(placeholder);
-        } else if (parent) {
-          if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
-          else parent.appendChild(attackerRoot);
-        }
-      } catch {}
-
-      restoreStyles();
-    };
-
-    // Compute dx/dy AFTER we are fixed (TG iOS can shift coordinate space on detach).
+    // LUNGE: animate only transform.
     requestAnimationFrame(() => {
-      const arFixed = attackerRoot.getBoundingClientRect();
-      const ax = arFixed.left + arFixed.width / 2;
-      const ay = arFixed.top + arFixed.height / 2;
-      let dx = bx - ax;
-      let dy = by - ay;
-      if (!Number.isFinite(dx)) dx = 0;
-      if (!Number.isFinite(dy)) dy = 0;
+      requestAnimationFrame(() => {
+        attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
+        attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+        // iOS TG WebView can delay paint of transitions until the next user gesture/scroll.
+        // Force a paint/layout flush right before starting the transition.
+        try {
+          // Force style+layout flush
+          void attackerRoot.offsetHeight;
+          if (typeof document !== 'undefined') void (document.body && (document.body as any).offsetHeight);
+        } catch {}
+        (attackerRoot.style as any).webkitTransition = `transform ${outMs}ms ${ease}`;
+        (attackerRoot.style as any).webkitTransform = `translate3d(${dx}px, ${dy}px, 0px)`;
+        try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
+        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
-      bbCardDbgSet(attackerRoot, `fixed arF:${Math.round(arFixed.width)}x${Math.round(arFixed.height)} dx:${Math.round(dx)} dy:${Math.round(dy)}`, 2600);
+        const isIOS =
+          typeof document !== "undefined" && document.documentElement.classList.contains("bb-ios");
 
-      const runAnim = () => {
-        // iOS-first: WAAPI avoids “gesture needed to paint transition” stalls.
-        if (isIOS && typeof (attackerRoot as any).animate === 'function') {
+        const doReturn = () => {
+          try { targetRoot.classList.remove('is-attack-to'); } catch {}
+
+          // RETURN: put the node back where it was, then restore styles.
           try {
-            bbCardDbgSet(attackerRoot, `mode:WAAPI out ${outMs}ms`, 2600);
+            if (placeholder.parentNode) {
+              placeholder.parentNode.insertBefore(attackerRoot, placeholder);
+              placeholder.parentNode.removeChild(placeholder);
+            } else if (parent) {
+              // fallback
+              if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
+              else parent.appendChild(attackerRoot);
+            }
+          } catch {}
+
+          restoreStyles();
+        };
+
+        if (isIOS && typeof (attackerRoot as any).animate === "function") {
+          // iOS TG WebView: CSS transitions can stall until a user gesture. Use Web Animations API.
+          try {
+            attackerRoot.style.transition = "none";
+            (attackerRoot.style as any).webkitTransition = "none";
+            attackerRoot.style.transform = "translate3d(0px, 0px, 0px)";
+            (attackerRoot.style as any).webkitTransform = "translate3d(0px, 0px, 0px)";
 
             const a1 = (attackerRoot as any).animate(
               [
-                { transform: 'translate3d(0px, 0px, 0px)' },
+                { transform: "translate3d(0px, 0px, 0px)" },
                 { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
               ],
-              { duration: outMs, easing: ease, fill: 'forwards' }
+              { duration: outMs, easing: ease, fill: "forwards" }
             );
 
             a1.onfinish = () => {
               const a2 = (attackerRoot as any).animate(
                 [
                   { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
-                  { transform: 'translate3d(0px, 0px, 0px)' },
+                  { transform: "translate3d(0px, 0px, 0px)" },
                 ],
-                { duration: backMs, easing: ease, fill: 'forwards' }
+                { duration: backMs, easing: ease, fill: "forwards" }
               );
-              a2.onfinish = () => doReturn();
+              a2.onfinish = () => {
+                doReturn();
+              };
             };
 
             bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_WAAPI ${fromId} -> ${toId}`);
@@ -857,85 +758,21 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
           }
         }
 
-        // CSS path (Web/PC): 2-phase start to reduce iOS paint stalls.
-        bbCardDbgSet(attackerRoot, `mode:CSS out ${outMs}ms`, 2600);
 
-        // Phase 1: reset + flush
-        attackerRoot.style.transition = 'none';
-        (attackerRoot.style as any).webkitTransition = 'none';
-        attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
-        (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
-        try { void attackerRoot.offsetWidth; } catch {}
-
-        // Phase 2: next frame, apply transition+transform
-        requestAnimationFrame(() => {
-          attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
-          (attackerRoot.style as any).webkitTransition = `transform ${outMs}ms ${ease}`;
-          attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
-          (attackerRoot.style as any).webkitTransform = `translate3d(${dx}px, ${dy}px, 0px)`;
-          bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_CSS ${fromId} -> ${toId}`);
+        window.setTimeout(() => {
+          attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
+          attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+          (attackerRoot.style as any).webkitTransition = `transform ${backMs}ms ${ease}`;
+          (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
 
           window.setTimeout(() => {
-            attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
-            (attackerRoot.style as any).webkitTransition = `transform ${backMs}ms ${ease}`;
-            attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
-            (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
+            doReturn();
+          }, backMs + 80);
+        }, outMs + 80);
 
-            window.setTimeout(() => {
-              doReturn();
-            }, backMs + 80);
-          }, outMs + 80);
-        });
-      };
-
-      // TG iOS paint-kick: Telegram iOS WebView can stall paints until a real user gesture.
-      // Opacity/reflow alone is often not enough; a hidden scroll container reliably wakes the compositor.
-      const kickPaintIOS = () => {
-        try {
-          const sc = document.createElement('div');
-          sc.setAttribute('data-bb-ios-kick', '1');
-          sc.style.position = 'fixed';
-          sc.style.left = '0px';
-          sc.style.top = '0px';
-          sc.style.width = '1px';
-          sc.style.height = '1px';
-          sc.style.overflow = 'scroll';
-          sc.style.opacity = '0';
-          sc.style.pointerEvents = 'none';
-          sc.style.zIndex = '-1';
-          // iOS compositor hint
-          sc.style.transform = 'translateZ(0)';
-
-          const inner = document.createElement('div');
-          inner.style.width = '1px';
-          inner.style.height = '2px';
-          sc.appendChild(inner);
-          document.body.appendChild(sc);
-
-          // Force layout, then perform a micro scroll.
-          void sc.offsetHeight;
-          sc.scrollTop = 1;
-          sc.scrollTop = 0;
-          void sc.offsetHeight;
-
-          requestAnimationFrame(() => {
-            try { sc.remove(); } catch {}
-          });
-        } catch {}
-      };
-
-      if (isIOS) {
-        kickPaintIOS();
-        // Start on next frame after kick.
-        requestAnimationFrame(() => {
-          runAnim();
-        });
-      } else {
-        runAnim();
-      }
+      });
     });
   }, []);
-
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
@@ -2713,47 +2550,6 @@ const hpPct = useMemo(() => {
 
   return (
     <main className="min-h-screen px-4 pt-6 pb-24 flex justify-center">
-      {/* TG iOS: one-time activation overlay to unlock compositor paints for lunge */}
-      {bbIsIOS && !bbIosActivated && (
-        <div
-          onPointerDown={() => {
-            bbIosActivatedRef.current = true;
-            setBbIosActivated(true);
-            bbLastUserTouchRef.current = Date.now();
-          }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 2147483646,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(0,0,0,0.001)",
-            WebkitTapHighlightColor: "transparent" as any,
-            touchAction: "manipulation",
-          }}
-        >
-          <div
-            style={{
-              pointerEvents: "none",
-              padding: "10px 12px",
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "rgba(0,0,0,0.55)",
-              color: "white",
-              fontSize: 12,
-              fontWeight: 900,
-              letterSpacing: 0.2,
-              boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
-              maxWidth: 280,
-              textAlign: "center",
-            }}
-          >
-            Tap once to enable iPhone animations
-          </div>
-        </div>
-      )}
-
       {/* DBG_V11: always-visible toggle (Telegram + browser). Should be visible during battle. */}
 {!HIDE_VISUAL_DEBUG && (
       <div
@@ -4131,6 +3927,78 @@ const hpPct = useMemo(() => {
             )}
           </div>
         </section>
+      </div>
+
+      {/* ===== Semi-auto (STEP 1): Action Choice Bar (UI only, all platforms) ===== */}
+      <div
+        aria-label="Action choice"
+        style={{
+          position: "fixed",
+          left: 0,
+          right: 0,
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
+          zIndex: 2147482000,
+          pointerEvents: "none",
+          display: "flex",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          className="ui-card"
+          style={{
+            pointerEvents: "auto",
+            padding: "10px 12px",
+            borderRadius: 16,
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(10px)",
+            boxShadow: "0 18px 50px rgba(0,0,0,0.35)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            maxWidth: "min(560px, calc(100vw - 24px))",
+            width: "100%",
+          }}
+        >
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button
+              type="button"
+              onClick={() => setActionChoice("attack")}
+              className={["ui-btn", actionChoice === "attack" ? "ui-btn-primary" : ""].join(" ")}
+              style={{
+                flex: 1,
+                fontWeight: 900,
+                letterSpacing: 0.3,
+                ...(actionChoice === "attack"
+                  ? {}
+                  : {
+                      background: "rgba(0,0,0,0.35)",
+                      border: "1px solid rgba(255,255,255,0.16)",
+                    }),
+              }}
+            >
+              ATTACK
+            </button>
+            <button
+              type="button"
+              onClick={() => setActionChoice("defend")}
+              className={["ui-btn", actionChoice === "defend" ? "ui-btn-primary" : ""].join(" ")}
+              style={{
+                flex: 1,
+                fontWeight: 900,
+                letterSpacing: 0.3,
+                ...(actionChoice === "defend"
+                  ? {}
+                  : {
+                      background: "rgba(0,0,0,0.35)",
+                      border: "1px solid rgba(255,255,255,0.16)",
+                    }),
+              }}
+            >
+              DEFEND
+            </button>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, opacity: 0.85 }}>
+            Выбор на ход: {actionChoice ? (actionChoice === "attack" ? "Атака" : "Защита") : "—"}
+          </div>
+        </div>
       </div>
     </main>
   );
