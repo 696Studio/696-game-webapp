@@ -569,6 +569,11 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const lastAttackSigRef = useRef<string>("");
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
+    const isIOS =
+      typeof navigator !== "undefined" &&
+      (/iP(hone|ad|od)/.test(navigator.userAgent) ||
+        (((navigator as any).platform === "MacIntel") && (navigator as any).maxTouchPoints > 1));
+
     // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
     try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
 
@@ -682,8 +687,22 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     // LUNGE: animate only transform.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
-        attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
+        // iOS TG WebView: after Detach->fixed, the attacker's fixed rect can shift relative to the pre-detach rect.
+// Target rect after detach is sometimes 0x0 on iOS, so keep target center from the pre-detach br,
+// but recompute attacker center AFTER fixed and derive dx/dy in the same coordinate space.
+let dx2 = dx;
+let dy2 = dy;
+try {
+  void attackerRoot.getBoundingClientRect();
+  const arFixed = attackerRoot.getBoundingClientRect();
+  const ax2 = arFixed.left + arFixed.width / 2;
+  const ay2 = arFixed.top + arFixed.height / 2;
+  const lungeScale2 = isIOS ? 1.0 : 0.78;
+  dx2 = (bx - ax2) * lungeScale2;
+  dy2 = (by - ay2) * lungeScale2;
+} catch {}
+attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
+attackerRoot.style.transform = `translate3d(${dx2}px, ${dy2}px, 0px)`;
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
         bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
 
