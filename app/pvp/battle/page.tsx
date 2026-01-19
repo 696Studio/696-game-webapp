@@ -407,22 +407,6 @@ function coverMapRect(
 }
 
 function BattleInner() {
-  // iOS class flag (used for CSS overrides to prevent TG iOS WebView spinning/flip glitches)
-  useEffect(() => {
-    try {
-      const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-      const isIOS =
-        /iP(hone|ad|od)/.test(ua) ||
-        (((navigator as any).platform === "MacIntel") && (navigator as any).maxTouchPoints > 1);
-      if (isIOS && typeof document !== "undefined") document.documentElement.classList.add("bb-ios");
-      return () => {
-        if (isIOS && typeof document !== "undefined") document.documentElement.classList.remove("bb-ios");
-      };
-    } catch {
-      return;
-    }
-  }, []);
-
   const router = useRouter();
   const sp = useSearchParams();
   // Debug flags (safe in Telegram: just read query params).
@@ -614,9 +598,12 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     const bx = br.left + br.width / 2;
     const by = br.top + br.height / 2;
 
-    const dx = (bx - ax) * 0.78;
-    const dy = (by - ay) * 0.78;
+    const isIOS = (typeof document !== 'undefined' && document.documentElement.classList.contains('bb-ios')) || (typeof navigator !== 'undefined' && /iP(hone|ad|od)/.test(navigator.userAgent));
+    const lungeScale = isIOS ? 1.0 : 0.78;
 
+    // Base vector in pre-detach space (we will recompute attacker center after detach on iOS)
+    let dx = (bx - ax) * lungeScale;
+    let dy = (by - ay) * lungeScale;
     const ease = 'cubic-bezier(.18,.9,.22,1)';
     const outMs = 220;
     const backMs = 200;
@@ -675,96 +662,52 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
     attackerRoot.style.pointerEvents = 'none';
     attackerRoot.style.willChange = 'transform';
     attackerRoot.style.transition = 'none';
-    attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
+    if (isIOS) attackerRoot.style.setProperty('transform', 'translate3d(0px, 0px, 0px)', 'important');
+          else attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
 
     try { targetRoot.classList.add('is-attack-to'); } catch {}
 
     // LUNGE: animate only transform.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
+        // iOS TG WebView: recompute attacker center after detach (fixed-space) to avoid shortened lunge
+        if (isIOS) {
+          try {
+            const arFixed = attackerRoot.getBoundingClientRect();
+            const ax2 = arFixed.left + arFixed.width / 2;
+            const ay2 = arFixed.top + arFixed.height / 2;
+            dx = (bx - ax2) * lungeScale;
+            dy = (by - ay2) * lungeScale;
+          } catch {}
+        }
         attackerRoot.style.transition = `transform ${outMs}ms ${ease}`;
-        attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
-        // iOS TG WebView can delay paint of transitions until the next user gesture/scroll.
-        // Force a paint/layout flush right before starting the transition.
-        try {
-          // Force style+layout flush
-          void attackerRoot.offsetHeight;
-          if (typeof document !== 'undefined') void (document.body && (document.body as any).offsetHeight);
-        } catch {}
-        (attackerRoot.style as any).webkitTransition = `transform ${outMs}ms ${ease}`;
-        (attackerRoot.style as any).webkitTransform = `translate3d(${dx}px, ${dy}px, 0px)`;
+        if (isIOS) attackerRoot.style.setProperty('transform', `translate3d(${dx}px, ${dy}px, 0px)`, 'important');
+        else attackerRoot.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
         bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
-
-        const isIOS =
-          typeof document !== "undefined" && document.documentElement.classList.contains("bb-ios");
-
-        const doReturn = () => {
-          try { targetRoot.classList.remove('is-attack-to'); } catch {}
-
-          // RETURN: put the node back where it was, then restore styles.
-          try {
-            if (placeholder.parentNode) {
-              placeholder.parentNode.insertBefore(attackerRoot, placeholder);
-              placeholder.parentNode.removeChild(placeholder);
-            } else if (parent) {
-              // fallback
-              if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
-              else parent.appendChild(attackerRoot);
-            }
-          } catch {}
-
-          restoreStyles();
-        };
-
-        if (isIOS && typeof (attackerRoot as any).animate === "function") {
-          // iOS TG WebView: CSS transitions can stall until a user gesture. Use Web Animations API.
-          try {
-            attackerRoot.style.transition = "none";
-            (attackerRoot.style as any).webkitTransition = "none";
-            attackerRoot.style.transform = "translate3d(0px, 0px, 0px)";
-            (attackerRoot.style as any).webkitTransform = "translate3d(0px, 0px, 0px)";
-
-            const a1 = (attackerRoot as any).animate(
-              [
-                { transform: "translate3d(0px, 0px, 0px)" },
-                { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
-              ],
-              { duration: outMs, easing: ease, fill: "forwards" }
-            );
-
-            a1.onfinish = () => {
-              const a2 = (attackerRoot as any).animate(
-                [
-                  { transform: `translate3d(${dx}px, ${dy}px, 0px)` },
-                  { transform: "translate3d(0px, 0px, 0px)" },
-                ],
-                { duration: backMs, easing: ease, fill: "forwards" }
-              );
-              a2.onfinish = () => {
-                doReturn();
-              };
-            };
-
-            bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_WAAPI ${fromId} -> ${toId}`);
-            return;
-          } catch {
-            // fall through to CSS path
-          }
-        }
-
 
         window.setTimeout(() => {
           attackerRoot.style.transition = `transform ${backMs}ms ${ease}`;
           attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
-          (attackerRoot.style as any).webkitTransition = `transform ${backMs}ms ${ease}`;
-          (attackerRoot.style as any).webkitTransform = 'translate3d(0px, 0px, 0px)';
 
           window.setTimeout(() => {
-            doReturn();
+            try { targetRoot.classList.remove('is-attack-to'); } catch {}
+
+            // RETURN: put the node back where it was, then restore styles.
+            try {
+              if (placeholder.parentNode) {
+                placeholder.parentNode.insertBefore(attackerRoot, placeholder);
+                placeholder.parentNode.removeChild(placeholder);
+              } else if (parent) {
+                // fallback
+                if (nextSibling) parent.insertBefore(attackerRoot, nextSibling);
+                else parent.appendChild(attackerRoot);
+              }
+            } catch {}
+
+            restoreStyles();
           }, backMs + 80);
         }, outMs + 80);
-
       });
     });
   }, []);
@@ -2601,47 +2544,6 @@ const hpPct = useMemo(() => {
           55% { transform: rotateY(90deg) scale(1.02); }
           100% { transform: rotateY(180deg) scale(1); }
         }
-
-        /* iOS Telegram WebView: avoid 3D rotateY flip (can "stick" and cause random spinning cards).
-           We switch reveal from 3D flip to simple face crossfade only on iOS. */
-        
-                /* iOS TG WebView anti-spin override (JS adds .bb-ios on <html>) */
-        .bb-ios .bb-card {
-          perspective: none !important;
-          transform-style: flat !important;
-          -webkit-transform-style: flat !important;
-        }
-        .bb-ios .bb-card-inner {
-          transform: none !important;
-          transition: none !important;
-          transform-style: flat !important;
-          -webkit-transform-style: flat !important;
-        }
-        .bb-ios .bb-card.is-revealed,
-        .bb-ios .bb-card.is-revealed * {
-          animation: none !important;
-        }
-        .bb-ios .bb-card * {
-          backface-visibility: visible !important;
-          -webkit-backface-visibility: visible !important;
-        }
-        /* Kill any effect classes that might use rotate/3D on iOS */
-        .bb-ios .bb-card.is-hit .bb-card-inner,
-        .bb-ios .bb-card.is-damage .bb-card-inner,
-        .bb-ios .bb-card.is-attack-to .bb-card-inner,
-        .bb-ios .bb-card.is-attack-from .bb-card-inner {
-          transform: none !important;
-        }
-        /* iOS reveal becomes simple crossfade (no rotateY) */
-        .bb-ios .bb-back,
-        .bb-ios .bb-front {
-          transition: opacity 220ms ease-out;
-        }
-        .bb-ios .bb-back { opacity: 1; }
-        .bb-ios .bb-front { opacity: 0; }
-        .bb-ios .bb-card.is-revealed .bb-back { opacity: 0; }
-        .bb-ios .bb-card.is-revealed .bb-front { opacity: 1; }
-
         @keyframes popHit {
           0% { transform: scale(1); }
           50% { transform: scale(1.08); }
