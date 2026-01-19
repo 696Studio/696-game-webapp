@@ -499,13 +499,19 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [t, setT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
 
-  // ===== Semi-auto (STEP 1): UI-only choice (does NOT affect battle yet)
-  // We keep this as a simple state so clicks create a real user gesture (iOS),
-  // and later steps can gate turn progression on this value.
-  const [actionChoice, setActionChoice] = useState<"attack" | "defend" | null>(null);
+  // Semi-auto step2: pause timeline before each turn until player chooses ATTACK/DEFEND
+  const [awaitingAction, setAwaitingAction] = useState(false);
+  const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
+  const autoPausedByChoiceRef = useRef(false);
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
+
+  // Keep latest values for RAF loop without re-subscribing every frame
+  const tRef = useRef(0);
+  useEffect(() => { tRef.current = t; }, [t]);
+  const awaitingActionRef = useRef(false);
+  useEffect(() => { awaitingActionRef.current = awaitingAction; }, [awaitingAction]);
 
   const [roundN, setRoundN] = useState(1);
 
@@ -1233,13 +1239,40 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       if (!playing) return;
 
       if (startAtRef.current == null) {
-        startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
+        startAtRef.current = now - (tRef.current / Math.max(0.0001, rate)) * 1000;
       }
 
       const elapsedWall = (now - startAtRef.current) / 1000;
       const elapsed = elapsedWall * rate;
 
       const nextT = Math.min(durationSec, Math.max(0, elapsed));
+
+      // Semi-auto gate: stop before each turn_start until the player chooses an action.
+      if (!awaitingActionRef.current) {
+        const eps = 0.0005;
+        let gateT = null;
+        for (const e of timeline) {
+          if (!e || e.type !== "turn_start") continue;
+          const et = Number((e as any).t ?? 0);
+          if (!Number.isFinite(et)) continue;
+          if (et <= tRef.current + eps) continue;
+          if (et <= nextT + eps) {
+            gateT = et;
+            break;
+          }
+          if (et > nextT + eps) break;
+        }
+        if (gateT != null) {
+          autoPausedByChoiceRef.current = true;
+          setT(gateT);
+          setPlaying(false);
+          setAwaitingAction(true);
+          // Important: clear any previous action so user must choose again.
+          setLastAction(null);
+          return;
+        }
+      }
+
       setT(nextT);
 
       if (nextT >= durationSec) {
@@ -1257,7 +1290,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       rafRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, durationSec, rate]);
+  }, [match, playing, durationSec, rate, timeline]);
 
   useEffect(() => {
     startAtRef.current = null;
@@ -3582,8 +3615,15 @@ const hpPct = useMemo(() => {
             </div>
 
             <div className="hud-actions">
-              <button onClick={() => setPlaying((p) => !p)} className="ui-btn ui-btn-ghost" type="button">
-                {playing ? "Пауза" : "▶"}
+              <button
+                onClick={() => {
+                  if (awaitingAction) return;
+                  setPlaying((p) => !p);
+                }}
+                className={["ui-btn ui-btn-ghost", awaitingAction ? "opacity-50 cursor-not-allowed" : ""].join(" ")}
+                type="button"
+              >
+                {awaitingAction ? "Выбор" : playing ? "Пауза" : "▶"}
               </button>
               <button
                 onClick={() => {
@@ -3929,77 +3969,223 @@ const hpPct = useMemo(() => {
         </section>
       </div>
 
-      {/* ===== Semi-auto (STEP 1): Action Choice Bar (UI only, all platforms) ===== */}
+      {/* Semi-auto action bar (Step 2): choose ATTACK/DEFEND to continue each turn */}
       <div
-        aria-label="Action choice"
         style={{
           position: "fixed",
-          left: 0,
-          right: 0,
-          bottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
-          zIndex: 2147482000,
-          pointerEvents: "none",
-          display: "flex",
-          justifyContent: "center",
+          left: 12,
+          right: 12,
+          bottom: "calc(12px + env(safe-area-inset-bottom))",
+          zIndex: 99999,
+          pointerEvents: "auto",
         }}
       >
         <div
           className="ui-card"
           style={{
-            pointerEvents: "auto",
             padding: "10px 12px",
-            borderRadius: 16,
-            background: "rgba(0,0,0,0.55)",
+            background: "rgba(0,0,0,0.38)",
             backdropFilter: "blur(10px)",
-            boxShadow: "0 18px 50px rgba(0,0,0,0.35)",
-            border: "1px solid rgba(255,255,255,0.12)",
-            maxWidth: "min(560px, calc(100vw - 24px))",
-            width: "100%",
+            borderRadius: 16,
           }}
         >
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+          >
+            <div style={{ fontSize: 12, opacity: 0.9 }}
+            >
+              {awaitingAction ? "Твой ход: выбери действие" : "Автобой: действие выберешь перед следующим ходом"}
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.9 }}
+            >
+              Выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 10 }}
+          >
             <button
               type="button"
-              onClick={() => setActionChoice("attack")}
-              className={["ui-btn", actionChoice === "attack" ? "ui-btn-primary" : ""].join(" ")}
-              style={{
-                flex: 1,
-                fontWeight: 900,
-                letterSpacing: 0.3,
-                ...(actionChoice === "attack"
-                  ? {}
-                  : {
-                      background: "rgba(0,0,0,0.35)",
-                      border: "1px solid rgba(255,255,255,0.16)",
-                    }),
+              disabled={!awaitingAction}
+              onClick={() => {
+                if (!awaitingActionRef.current) return;
+                setLastAction("attack");
+                setAwaitingAction(false);
+                autoPausedByChoiceRef.current = false;
+                setPlaying(true);
               }}
+              className={["ui-btn", (awaitingAction && lastAction === "attack") ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
+              style={{ flex: 1, opacity: awaitingAction ? 1 : 0.55 }}
             >
               ATTACK
             </button>
             <button
               type="button"
-              onClick={() => setActionChoice("defend")}
-              className={["ui-btn", actionChoice === "defend" ? "ui-btn-primary" : ""].join(" ")}
+              disabled={!awaitingAction}
+              onClick={() => {
+                if (!awaitingActionRef.current) return;
+                setLastAction("defend");
+                setAwaitingAction(false);
+                autoPausedByChoiceRef.current = false;
+                setPlaying(true);
+              }}
+              className={["ui-btn", (awaitingAction && lastAction === "defend") ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
+              style={{ flex: 1, opacity: awaitingAction ? 1 : 0.55 }}
+            >
+              DEFEND
+            </button>
+          </div>
+
+          {awaitingAction && (
+            <div style={{ marginTop: 8, fontSize: 11, opacity: 0.75 }}
+            >
+              (Это Step 2: сейчас выбор только ставит «жест» для iOS и паузит таймлайн. Математику добавим на следующем шаге.)
+            </div>
+          )}
+        </div>
+
+      {/* SEMI-AUTO ACTION BAR (Step 2): the battle pauses on each turn_start until player chooses */}
+      <div
+        style={{
+          position: "fixed",
+          left: 12,
+          right: 12,
+          bottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+          zIndex: 99999,
+          pointerEvents: "auto",
+        }}
+      >
+        <div
+          className="ui-card"
+          style={{
+            padding: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            background: "rgba(0,0,0,0.32)",
+            backdropFilter: "blur(10px)",
+            WebkitBackdropFilter: "blur(10px)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div className="ui-subtitle" style={{ margin: 0 }}>
+              {awaitingAction ? "Выбери действие, чтобы продолжить ход" : "Автобой: ход идёт…"}
+            </div>
+            <div className="ui-subtle" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+              Последний выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <button
+              type="button"
+              disabled={!awaitingAction}
+              onClick={() => {
+                setLastAction("attack");
+                setAwaitingAction(false);
+                autoPausedByChoiceRef.current = false;
+                setPlaying(true);
+              }}
+              className={["ui-btn", (awaitingAction && lastAction === "attack") ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
               style={{
-                flex: 1,
-                fontWeight: 900,
-                letterSpacing: 0.3,
-                ...(actionChoice === "defend"
-                  ? {}
-                  : {
-                      background: "rgba(0,0,0,0.35)",
-                      border: "1px solid rgba(255,255,255,0.16)",
-                    }),
+                opacity: awaitingAction ? 1 : 0.5,
+              }}
+            >
+              ATTACK
+            </button>
+
+            <button
+              type="button"
+              disabled={!awaitingAction}
+              onClick={() => {
+                setLastAction("defend");
+                setAwaitingAction(false);
+                autoPausedByChoiceRef.current = false;
+                setPlaying(true);
+              }}
+              className={["ui-btn", (awaitingAction && lastAction === "defend") ? "ui-btn-primary" : "ui-btn-ghost"].join(" ")}
+              style={{
+                opacity: awaitingAction ? 1 : 0.5,
               }}
             >
               DEFEND
             </button>
           </div>
-          <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, opacity: 0.85 }}>
-            Выбор на ход: {actionChoice ? (actionChoice === "attack" ? "Атака" : "Защита") : "—"}
+        </div>
+      </div>
+
+      </div>
+
+      {/* Semi-auto action bar (Step 2): battle pauses before each turn until you choose */}
+      <div
+        style={{
+          position: "fixed",
+          left: 12,
+          right: 12,
+          bottom: "calc(12px + env(safe-area-inset-bottom))",
+          zIndex: 99999,
+          pointerEvents: "auto",
+        }}
+      >
+        <div
+          className="ui-card"
+          style={{
+            padding: 12,
+            background: "rgba(0,0,0,0.40)",
+            backdropFilter: "blur(10px)",
+            borderRadius: 18,
+          }}
+        >
+          <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: 12, lineHeight: 1.2, opacity: 0.92 }}>
+              <div style={{ fontWeight: 800, letterSpacing: 0.2 }}>Ход</div>
+              <div style={{ opacity: 0.85 }}>{awaitingAction ? "Выбери действие чтобы продолжить" : "Автобой…"}</div>
+              <div style={{ marginTop: 4, opacity: 0.85 }}>
+                Выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                type="button"
+                disabled={!awaitingAction}
+                onClick={() => {
+                  setLastAction("attack");
+                  autoPausedByChoiceRef.current = false;
+                  setAwaitingAction(false);
+                  setPlaying(true);
+                }}
+                className={[
+                  "ui-btn",
+                  awaitingAction && lastAction === "attack" ? "ui-btn-primary" : "ui-btn-ghost",
+                  !awaitingAction ? "opacity-50 cursor-not-allowed" : "",
+                ].join(" ")}
+              >
+                ATTACK
+              </button>
+
+              <button
+                type="button"
+                disabled={!awaitingAction}
+                onClick={() => {
+                  setLastAction("defend");
+                  autoPausedByChoiceRef.current = false;
+                  setAwaitingAction(false);
+                  setPlaying(true);
+                }}
+                className={[
+                  "ui-btn",
+                  awaitingAction && lastAction === "defend" ? "ui-btn-primary" : "ui-btn-ghost",
+                  !awaitingAction ? "opacity-50 cursor-not-allowed" : "",
+                ].join(" ")}
+              >
+                DEFEND
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+
     </main>
   );
 }
