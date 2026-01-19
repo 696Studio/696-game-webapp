@@ -2605,20 +2605,42 @@ const hpPct = useMemo(() => {
         /* iOS Telegram WebView: avoid 3D rotateY flip (can "stick" and cause random spinning cards).
            We switch reveal from 3D flip to simple face crossfade only on iOS. */
         
-        /* iOS TG WebView anti-spin override (JS adds .bb-ios on <html>) */
-        .bb-ios .bb-card.is-revealed { animation: none !important; }
-.bb-ios .bb-card-inner { transform: none !important; transition: none !important; }
-.bb-ios .bb-front { transform: none !important; }
-
-.bb-ios .bb-back, .bb-ios .bb-front {
-            backface-visibility: visible !important;
-            -webkit-backface-visibility: visible !important;
-            transition: opacity 220ms ease-out;
-          }
-.bb-ios .bb-back { opacity: 1; }
-.bb-ios .bb-front { opacity: 0; }
-.bb-ios .bb-card.is-revealed .bb-back { opacity: 0; }
-.bb-ios .bb-card.is-revealed .bb-front { opacity: 1; }
+                /* iOS TG WebView anti-spin override (JS adds .bb-ios on <html>) */
+        .bb-ios .bb-card {
+          perspective: none !important;
+          transform-style: flat !important;
+          -webkit-transform-style: flat !important;
+        }
+        .bb-ios .bb-card-inner {
+          transform: none !important;
+          transition: none !important;
+          transform-style: flat !important;
+          -webkit-transform-style: flat !important;
+        }
+        .bb-ios .bb-card.is-revealed,
+        .bb-ios .bb-card.is-revealed * {
+          animation: none !important;
+        }
+        .bb-ios .bb-card * {
+          backface-visibility: visible !important;
+          -webkit-backface-visibility: visible !important;
+        }
+        /* Kill any effect classes that might use rotate/3D on iOS */
+        .bb-ios .bb-card.is-hit .bb-card-inner,
+        .bb-ios .bb-card.is-damage .bb-card-inner,
+        .bb-ios .bb-card.is-attack-to .bb-card-inner,
+        .bb-ios .bb-card.is-attack-from .bb-card-inner {
+          transform: none !important;
+        }
+        /* iOS reveal becomes simple crossfade (no rotateY) */
+        .bb-ios .bb-back,
+        .bb-ios .bb-front {
+          transition: opacity 220ms ease-out;
+        }
+        .bb-ios .bb-back { opacity: 1; }
+        .bb-ios .bb-front { opacity: 0; }
+        .bb-ios .bb-card.is-revealed .bb-back { opacity: 0; }
+        .bb-ios .bb-card.is-revealed .bb-front { opacity: 1; }
 
         @keyframes popHit {
           0% { transform: scale(1); }
