@@ -509,36 +509,17 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // Turn gates: pause at the start of EACH turn_start (plus t=0 start gate).
   // iOS-safe loop: pause → choice (gesture) → resolve ONE slice → pause.
   // NOTE: We gate on every turn_start (not only your side) to avoid multi-turn "autoplay" per click.
-  const turnStarts = useMemo(() => {
-    // Sorted list of turn_start markers from the battle timeline.
-    const list: { t: number; side: "p1" | "p2" }[] = [];
+  const turnGates = useMemo(() => {
+    const gates: number[] = [0];
     for (const e of timeline) {
       if (!e || (e as any).type !== "turn_start") continue;
       const tt = Number((e as any)?.t ?? 0);
-      const side = ((e as any)?.side ?? null) as any;
-      if (!Number.isFinite(tt) || tt < 0) continue;
-      if (side !== "p1" && side !== "p2") continue;
-      list.push({ t: tt, side });
+      if (Number.isFinite(tt) && tt >= 0) gates.push(tt);
     }
-    list.sort((a, b) => a.t - b.t);
-
-    // de-dup by time (avoid float noise)
-    const out: { t: number; side: "p1" | "p2" }[] = [];
-    for (const it of list) {
-      const tRounded = Math.round(it.t * 10000) / 10000;
-      const prev = out[out.length - 1];
-      if (prev && Math.abs(prev.t - tRounded) < 1e-6) continue;
-      out.push({ t: tRounded, side: it.side });
-    }
-    return out;
+    // de-dup + sort (round to avoid float noise)
+    const uniq = Array.from(new Set(gates.map((x) => Math.round(x * 10000) / 10000))).sort((a, b) => a - b);
+    return uniq;
   }, [timeline]);
-
-  // Gate list used by the resolver. Index is a "turn marker" index.
-  // We prepend t=0 so the first click can resolve from the start.
-  const turnGates = useMemo(() => {
-    const ts = [{ t: 0, side: youSide as "p1" | "p2" }, ...turnStarts];
-    return ts;
-  }, [turnStarts, youSide]);
 
   const [p1CardsFull, setP1CardsFull] = useState<CardMeta[]>([]);
   const [p2CardsFull, setP2CardsFull] = useState<CardMeta[]>([]);
@@ -566,6 +547,49 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
+
+
+  // Turn ownership by gate index (used to pause only on YOUR turns, and auto-continue enemy slices)
+  const turnOwnerByIndex = useMemo(() => {
+    const owners: Array<"p1" | "p2" | null> = new Array(turnGates.length).fill(null);
+    const eps = 1e-3;
+
+    for (let i = 0; i < turnGates.length; i++) {
+      const gateT = turnGates[i];
+
+      for (const e of timeline) {
+        if (!e || (e as any).type !== "turn_start") continue;
+        const tt = Number((e as any)?.t ?? 0);
+        if (!Number.isFinite(tt)) continue;
+        if (Math.abs(tt - gateT) > eps) continue;
+
+        const ref = readUnitRefFromEvent(e as any, "unit");
+        const iid = ref?.instanceId;
+        if (!iid) break;
+
+        let owner: "p1" | "p2" | null = null;
+        for (const u of Object.values(p1UnitsBySlot)) {
+          if (u?.instanceId === iid) {
+            owner = "p1";
+            break;
+          }
+        }
+        if (!owner) {
+          for (const u of Object.values(p2UnitsBySlot)) {
+            if (u?.instanceId === iid) {
+              owner = "p2";
+              break;
+            }
+          }
+        }
+
+        owners[i] = owner;
+        break;
+      }
+    }
+
+    return owners;
+  }, [timeline, turnGates, p1UnitsBySlot, p2UnitsBySlot]);
 
   // Semi-auto gate: pause on YOUR unit turn until player picks ATTACK/DEFEND.
   const activeUnitForChoice = useMemo(() => {
@@ -1270,20 +1294,11 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     // Never resolve unless state machine says so.
     if (battlePhase !== "RESOLVING") return;
 
-    const segStart = Math.max(0, Number(turnGates?.[turnId]?.t ?? 0));
-
-    // Resolve from this marker until the next marker where it's YOUR turn again.
-    // This makes "one click = one round slice" (player turn + enemy response),
-    // and avoids over-clicking without re-introducing autoplay.
-    let nextTurnIdx = -1;
-    for (let i = turnId + 1; i < (turnGates?.length ?? 0); i++) {
-      if (turnGates[i]?.side === youSide) {
-        nextTurnIdx = i;
-        break;
-      }
-    }
-    const segEndT = nextTurnIdx >= 0 ? Number(turnGates?.[nextTurnIdx]?.t ?? durationSec) : durationSec;
-    const segEnd = Math.min(durationSec, Math.max(segStart, segEndT));
+    const segStart = Math.max(0, Number(turnGates?.[turnId] ?? 0));
+    const segEnd = Math.min(
+      durationSec,
+      Math.max(segStart, Number(turnGates?.[turnId + 1] ?? durationSec))
+    );
 
     const step = (now: number) => {
       if (battlePhase !== "RESOLVING") return;
@@ -1302,17 +1317,30 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
       if (nextT >= segEnd - 1e-6) {
         // End of this turn slice.
-        setPlaying(false);
         setResolvedTurnId(turnId);
 
-        const nextTurn = nextTurnIdx >= 0 ? nextTurnIdx : turnGates.length;
-        if (nextTurn >= turnGates.length) {
+        const nextTurn = turnId + 1;
+        const isLast = nextTurn >= turnGates.length;
+        const nextOwner = !isLast ? (turnOwnerByIndex?.[nextTurn] ?? null) : null;
+        const shouldPauseForChoice = !isLast && nextOwner === youSide;
+
+        if (isLast) {
+          setPlaying(false);
           setBattlePhase("FINISHED");
         } else {
           setTurnId(nextTurn);
           setChoiceForTurnId(null);
           setLastAction(null);
-          setBattlePhase("AWAIT_CHOICE");
+
+          if (shouldPauseForChoice) {
+            // Pause only on YOUR turns (gesture gate)
+            setPlaying(false);
+            setBattlePhase("AWAIT_CHOICE");
+          } else {
+            // Auto-continue enemy slice without extra clicks
+            setPlaying(true);
+            setBattlePhase("RESOLVING");
+          }
         }
 
         startAtRef.current = null;
@@ -1329,7 +1357,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       rafRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, battlePhase, turnId, turnGates, durationSec, rate, t]);
+  }, [match, playing, battlePhase, turnId, turnGates, turnOwnerByIndex, durationSec, rate, t]);
 
   useEffect(() => {
     startAtRef.current = null;
