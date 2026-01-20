@@ -10,57 +10,6 @@ import CardArt from "../../components/CardArt";
 import BattleFxLayer from './BattleFxLayer';
 
 
-// ===== BB_ATTACK_DEBUG_OVERLAY =====
-function bbDbgEnabled() {
-  try {
-    if (typeof window === "undefined") return false;
-    // Toggle options (no URL needed):
-    // 1) window.__bbdbg = 1
-    // 2) localStorage.setItem("bbdbg","1")
-    // 3) sessionStorage.setItem("bbdbg","1")
-    const w = window as any;
-    const ls = (() => { try { return window.localStorage?.getItem("bbdbg"); } catch { return null; } })();
-    const ss = (() => { try { return window.sessionStorage?.getItem("bbdbg"); } catch { return null; } })();
-    if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
-    if (ls === "1" || ss === "1") return true;
-
-    // URL toggle (works on iOS where console is hard to open):
-    //   ?dbg=1
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      if (sp.get("dbg") === "1") return true;
-    } catch {}
-
-    // Default OFF (no overlays unless explicitly enabled)
-    return false;
-  } catch {
-    return false;
-  }
-}
-function bbDbgSet(msg: string) {
-  if (!bbDbgEnabled()) return;
-  const id = "bb-attack-debug";
-  let el = document.getElementById(id);
-  if (!el) {
-    el = document.createElement("div");
-    el.id = id;
-    el.style.position = "fixed";
-    el.style.left = "12px";
-    el.style.top = "12px";
-    el.style.zIndex = "999999";
-    el.style.padding = "10px 12px";
-    el.style.font = "12px/1.25 system-ui, -apple-system, Segoe UI, Roboto, Arial";
-    el.style.background = "rgba(0,0,0,0.72)";
-    el.style.color = "white";
-    el.style.borderRadius = "12px";
-    el.style.pointerEvents = "none";
-    el.style.maxWidth = "92vw";
-    el.style.whiteSpace = "pre-wrap";
-    document.body.appendChild(el);
-  }
-  el.textContent = msg;
-}
-
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
 
 type MatchRow = {
@@ -557,20 +506,20 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const enemySide: "p1" | "p2" = youSide === "p1" ? "p2" : "p1";
 
-  // Turn gates: pause at the start of each of YOUR turns (plus t=0 start gate).
-  // Strict loop: pause → choice → resolve-slice → pause.
+  // Turn gates: pause at the start of EACH turn_start (plus t=0 start gate).
+  // iOS-safe loop: pause → choice (gesture) → resolve ONE slice → pause.
+  // NOTE: We gate on every turn_start (not only your side) to avoid multi-turn "autoplay" per click.
   const turnGates = useMemo(() => {
     const gates: number[] = [0];
     for (const e of timeline) {
       if (!e || (e as any).type !== "turn_start") continue;
-      const side = String((e as any)?.unit?.side ?? (e as any)?.side ?? "");
       const tt = Number((e as any)?.t ?? 0);
-      if (side === youSide && Number.isFinite(tt) && tt >= 0) gates.push(tt);
+      if (Number.isFinite(tt) && tt >= 0) gates.push(tt);
     }
     // de-dup + sort (round to avoid float noise)
     const uniq = Array.from(new Set(gates.map((x) => Math.round(x * 10000) / 10000))).sort((a, b) => a - b);
     return uniq;
-  }, [timeline, youSide]);
+  }, [timeline]);
 
   const [p1CardsFull, setP1CardsFull] = useState<CardMeta[]>([]);
   const [p2CardsFull, setP2CardsFull] = useState<CardMeta[]>([]);
@@ -667,9 +616,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     if (!attackerRoot || !targetRoot) {
-      bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}
-foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
-      return;
+return;
     }
     if (attackerRoot === targetRoot) return;
 
@@ -784,9 +731,7 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
         (attackerRoot.style as any).webkitTransition = `transform ${outMs}ms ${ease}`;
         (attackerRoot.style as any).webkitTransform = `translate3d(${dx}px, ${dy}px, 0px)`;
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
-        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
-
-        const isIOS =
+const isIOS =
           typeof document !== "undefined" && document.documentElement.classList.contains("bb-ios");
 
         const doReturn = () => {
@@ -835,9 +780,7 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
                 doReturn();
               };
             };
-
-            bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_WAAPI ${fromId} -> ${toId}`);
-            return;
+return;
           } catch {
             // fall through to CSS path
           }
@@ -914,7 +857,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
-    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for ATTACK events...'); }
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
