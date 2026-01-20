@@ -509,17 +509,36 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // Turn gates: pause at the start of EACH turn_start (plus t=0 start gate).
   // iOS-safe loop: pause → choice (gesture) → resolve ONE slice → pause.
   // NOTE: We gate on every turn_start (not only your side) to avoid multi-turn "autoplay" per click.
-  const turnGates = useMemo(() => {
-    const gates: number[] = [0];
+  const turnStarts = useMemo(() => {
+    // Sorted list of turn_start markers from the battle timeline.
+    const list: { t: number; side: "p1" | "p2" }[] = [];
     for (const e of timeline) {
       if (!e || (e as any).type !== "turn_start") continue;
       const tt = Number((e as any)?.t ?? 0);
-      if (Number.isFinite(tt) && tt >= 0) gates.push(tt);
+      const side = ((e as any)?.side ?? null) as any;
+      if (!Number.isFinite(tt) || tt < 0) continue;
+      if (side !== "p1" && side !== "p2") continue;
+      list.push({ t: tt, side });
     }
-    // de-dup + sort (round to avoid float noise)
-    const uniq = Array.from(new Set(gates.map((x) => Math.round(x * 10000) / 10000))).sort((a, b) => a - b);
-    return uniq;
+    list.sort((a, b) => a.t - b.t);
+
+    // de-dup by time (avoid float noise)
+    const out: { t: number; side: "p1" | "p2" }[] = [];
+    for (const it of list) {
+      const tRounded = Math.round(it.t * 10000) / 10000;
+      const prev = out[out.length - 1];
+      if (prev && Math.abs(prev.t - tRounded) < 1e-6) continue;
+      out.push({ t: tRounded, side: it.side });
+    }
+    return out;
   }, [timeline]);
+
+  // Gate list used by the resolver. Index is a "turn marker" index.
+  // We prepend t=0 so the first click can resolve from the start.
+  const turnGates = useMemo(() => {
+    const ts = [{ t: 0, side: youSide as "p1" | "p2" }, ...turnStarts];
+    return ts;
+  }, [turnStarts, youSide]);
 
   const [p1CardsFull, setP1CardsFull] = useState<CardMeta[]>([]);
   const [p2CardsFull, setP2CardsFull] = useState<CardMeta[]>([]);
@@ -1251,11 +1270,20 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     // Never resolve unless state machine says so.
     if (battlePhase !== "RESOLVING") return;
 
-    const segStart = Math.max(0, Number(turnGates?.[turnId] ?? 0));
-    const segEnd = Math.min(
-      durationSec,
-      Math.max(segStart, Number(turnGates?.[turnId + 1] ?? durationSec))
-    );
+    const segStart = Math.max(0, Number(turnGates?.[turnId]?.t ?? 0));
+
+    // Resolve from this marker until the next marker where it's YOUR turn again.
+    // This makes "one click = one round slice" (player turn + enemy response),
+    // and avoids over-clicking without re-introducing autoplay.
+    let nextTurnIdx = -1;
+    for (let i = turnId + 1; i < (turnGates?.length ?? 0); i++) {
+      if (turnGates[i]?.side === youSide) {
+        nextTurnIdx = i;
+        break;
+      }
+    }
+    const segEndT = nextTurnIdx >= 0 ? Number(turnGates?.[nextTurnIdx]?.t ?? durationSec) : durationSec;
+    const segEnd = Math.min(durationSec, Math.max(segStart, segEndT));
 
     const step = (now: number) => {
       if (battlePhase !== "RESOLVING") return;
@@ -1277,7 +1305,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         setPlaying(false);
         setResolvedTurnId(turnId);
 
-        const nextTurn = turnId + 1;
+        const nextTurn = nextTurnIdx >= 0 ? nextTurnIdx : turnGates.length;
         if (nextTurn >= turnGates.length) {
           setBattlePhase("FINISHED");
         } else {
