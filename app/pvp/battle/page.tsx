@@ -453,9 +453,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
-  // renderT is the *visual* time used to derive slots/HP. We only commit it at slice boundaries
-  // to prevent iOS flicker (cards disappearing/reappearing) during RAF-driven resolving.
-  const [renderT, setRenderT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
 
   // =========================================================
@@ -470,7 +467,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   // UI helper (keeps existing UI wiring simple)
   const awaitingAction = battlePhase === "AWAIT_CHOICE";
-  const canChooseAction = battlePhase === "AWAIT_CHOICE" && turnId > resolvedTurnId;
 
   // Player action choice (applies to current turnId)
   const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
@@ -491,7 +487,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     // Hard stop at start (gesture required on iOS)
     setPlaying(false);
     setT(0);
-    setRenderT(0);
   }, [match?.id]);
 
   const startAtRef = useRef<number | null>(null);
@@ -622,6 +617,9 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   );
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
+
+  // Attack clarity overlay: show who attacks whom during the lunge (iOS-safe, no text on cards).
+  const [atkLink, setAtkLink] = useState<null | { x1: number; y1: number; x2: number; y2: number; w: number; h: number; key: string }>(null);
 
   const onArenaPointerDownCapture = (ev: React.PointerEvent) => {
     if (!isArenaDebug) return;
@@ -762,7 +760,22 @@ return;
     attackerRoot.style.transition = 'none';
     attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
 
+    try { attackerRoot.classList.add('is-attack-from'); } catch {}
     try { targetRoot.classList.add('is-attack-to'); } catch {}
+
+    // Draw attack link inside arena (helps player see who hits who).
+    try {
+      const arenaEl = arenaRef.current;
+      const arenaR = arenaEl ? arenaEl.getBoundingClientRect() : null;
+      if (arenaR) {
+        const x1 = (ar.left + ar.width / 2) - arenaR.left;
+        const y1 = (ar.top + ar.height / 2) - arenaR.top;
+        const x2 = (br.left + br.width / 2) - arenaR.left;
+        const y2 = (br.top + br.height / 2) - arenaR.top;
+        setAtkLink({ x1, y1, x2, y2, w: arenaR.width, h: arenaR.height, key: `${fromId}->${toId}:${Date.now()}` });
+      }
+    } catch {}
+
 
     // LUNGE: animate only transform.
     requestAnimationFrame(() => {
@@ -783,7 +796,9 @@ const isIOS =
           typeof document !== "undefined" && document.documentElement.classList.contains("bb-ios");
 
         const doReturn = () => {
+          try { setAtkLink(null); } catch {}
           try { targetRoot.classList.remove('is-attack-to'); } catch {}
+          try { attackerRoot.classList.remove('is-attack-from'); } catch {}
 
           // RETURN: put the node back where it was, then restore styles.
           try {
@@ -1103,7 +1118,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
   useEffect(() => {
     if (!timeline.length) return;
-    const t = renderT;
+
     let rr = 1;
     let c1: string[] = [];
     let c2: string[] = [];
@@ -1291,7 +1306,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     setP2UnitsBySlot(slotMapP2);
 
     setLayoutTick((x) => x + 1);
-  }, [renderT, timeline]);
+  }, [t, timeline]);
 
   useEffect(() => {
     if (!match) return;
@@ -1304,9 +1319,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       durationSec,
       Math.max(segStart, Number(turnGates?.[turnId + 1] ?? durationSec))
     );
-
-    // Freeze visual state during resolving; commit only at slice boundaries.
-    setRenderT(segStart);
 
     const step = (now: number) => {
       if (battlePhase !== "RESOLVING") return;
@@ -1326,8 +1338,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       if (nextT >= segEnd - 1e-6) {
         // End of this turn slice.
         setResolvedTurnId(turnId);
-        // Commit visual state to the end of this slice (prevents card flicker/disappear during RAF)
-        setRenderT(segEnd);
 
         const nextTurn = turnId + 1;
         const isLast = nextTurn >= turnGates.length;
@@ -2012,7 +2022,20 @@ const hpPct = useMemo(() => {
     const isActive = !!activeUnit && activeInstance ? activeUnit.instanceId === activeInstance : false;
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
+
+    // Empty slot: render only the slot container (no card faces / no 696 mark / no placeholder text).
+    // This avoids "phantom cards" at battle start and prevents iOS compositing weirdness.
+    if (!renderUnit) {
+      return (
+        <div
+          className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}
+          data-unit-id={undefined}
+        />
+      );
+    }
+
     return (
+
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
         <div
           data-bb-slot={slotKey}
@@ -2076,11 +2099,9 @@ const hpPct = useMemo(() => {
                 {renderUnit && dmg && (
                   <>
                     <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
-                    {!dmg.blocked && dmg.amount > 0 && (
                     <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
-                      -{Math.max(0, Math.floor(dmg.amount))}
+                      {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
                     </div>
-                  )}
                   </>
                 )}
 
@@ -2996,6 +3017,16 @@ const hpPct = useMemo(() => {
           marker-end: url(#atkArrow);
         }
 
+        /* Who-attacks-who clarity (no text, iOS-safe) */
+        .bb-card.is-attack-from .bb-card-inner {
+          box-shadow: 0 0 0 2px rgba(255,255,255,0.55), 0 10px 22px rgba(0,0,0,0.35);
+        }
+        .bb-card.is-attack-to .bb-card-inner {
+          box-shadow: 0 0 0 2px rgba(255,255,255,0.85), 0 10px 22px rgba(0,0,0,0.35);
+        }
+
+
+
         .map-portrait {
           position: absolute;
           pointer-events: none;
@@ -3718,6 +3749,35 @@ const hpPct = useMemo(() => {
 
         <section ref={arenaRef as any} onPointerDownCapture={onArenaPointerDownCapture} className={["board", "arena", boardFxClass].join(" ")}>
 
+          {/* Attack link overlay (who hits who) */}
+          {atkLink && (
+            <svg
+              className="atk-path"
+              width="100%"
+              height="100%"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 40,
+                pointerEvents: "none",
+              }}
+            >
+              <defs>
+                <marker id="atkArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 Z" fill="rgba(255,255,255,0.85)" />
+                </marker>
+              </defs>
+              {/* We draw in arena pixel space using an absolute SVG with 100% size; convert to percentages */}
+              <path
+                className="atk-path-core"
+                d={`M ${(atkLink.x1 / (atkLink.w || 1)) * 100} ${(atkLink.y1 / (atkLink.h || 1)) * 100} L ${(atkLink.x2 / (atkLink.w || 1)) * 100} ${(atkLink.y2 / (atkLink.h || 1)) * 100}`}
+              />
+            </svg>
+          )}
+
+
           {isArenaDebug && (
             <div
               style={{
@@ -4065,13 +4125,12 @@ const hpPct = useMemo(() => {
 	              {awaitingAction ? "ТВОЙ ХОД: ВЫБЕРИ ДЕЙСТВИЕ" : "ДЕЙСТВИЕ"}
 	            </div>
 	            <div style={{ marginTop: 2, fontSize: 12, fontWeight: 800, opacity: 0.92 }}>
-	              Выбор: {choiceForTurnId === turnId && lastAction ? (lastAction === "attack" ? "ATTACK" : "DEFEND") : "—"}
+	              Последний выбор: {lastAction ? (lastAction === "attack" ? "ATTACK" : "DEFEND") : "—"}
 	            </div>
 	          </div>
 
 	          <button
 	            type="button"
-            disabled={!canChooseAction}
 	            onClick={() => chooseAction("attack")}
 	            style={{
 	              padding: "10px 12px",
@@ -4079,8 +4138,6 @@ const hpPct = useMemo(() => {
 	              border: lastAction === "attack" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
 	              background: lastAction === "attack" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
 	              color: "rgba(255,255,255,0.95)",
-              opacity: !canChooseAction ? 0.55 : 1,
-              cursor: !canChooseAction ? "not-allowed" : "pointer",
 	              fontSize: 12,
 	              fontWeight: 1000,
 	              letterSpacing: "0.14em",
@@ -4092,7 +4149,6 @@ const hpPct = useMemo(() => {
 	          </button>
 	          <button
 	            type="button"
-            disabled={!canChooseAction}
 	            onClick={() => chooseAction("defend")}
 	            style={{
 	              padding: "10px 12px",
@@ -4100,8 +4156,6 @@ const hpPct = useMemo(() => {
 	              border: lastAction === "defend" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
 	              background: lastAction === "defend" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
 	              color: "rgba(255,255,255,0.95)",
-              opacity: !canChooseAction ? 0.55 : 1,
-              cursor: !canChooseAction ? "not-allowed" : "pointer",
 	              fontSize: 12,
 	              fontWeight: 1000,
 	              letterSpacing: "0.14em",
