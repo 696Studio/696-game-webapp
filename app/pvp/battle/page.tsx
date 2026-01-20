@@ -467,6 +467,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   // UI helper (keeps existing UI wiring simple)
   const awaitingAction = battlePhase === "AWAIT_CHOICE";
+  const canChooseAction = battlePhase === "AWAIT_CHOICE" && turnId > resolvedTurnId;
 
   // Player action choice (applies to current turnId)
   const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
@@ -2066,9 +2067,11 @@ const hpPct = useMemo(() => {
                 {renderUnit && dmg && (
                   <>
                     <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
+                    {!dmg.blocked && dmg.amount > 0 && (
                     <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
-                      {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
+                      -{Math.max(0, Math.floor(dmg.amount))}
                     </div>
+                  )}
                   </>
                 )}
 
@@ -4053,12 +4056,13 @@ const hpPct = useMemo(() => {
 	              {awaitingAction ? "ТВОЙ ХОД: ВЫБЕРИ ДЕЙСТВИЕ" : "ДЕЙСТВИЕ"}
 	            </div>
 	            <div style={{ marginTop: 2, fontSize: 12, fontWeight: 800, opacity: 0.92 }}>
-	              Последний выбор: {lastAction ? (lastAction === "attack" ? "ATTACK" : "DEFEND") : "—"}
+	              Выбор: {choiceForTurnId === turnId && lastAction ? (lastAction === "attack" ? "ATTACK" : "DEFEND") : "—"}
 	            </div>
 	          </div>
 
 	          <button
 	            type="button"
+            disabled={!canChooseAction}
 	            onClick={() => chooseAction("attack")}
 	            style={{
 	              padding: "10px 12px",
@@ -4066,6 +4070,8 @@ const hpPct = useMemo(() => {
 	              border: lastAction === "attack" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
 	              background: lastAction === "attack" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
 	              color: "rgba(255,255,255,0.95)",
+              opacity: !canChooseAction ? 0.55 : 1,
+              cursor: !canChooseAction ? "not-allowed" : "pointer",
 	              fontSize: 12,
 	              fontWeight: 1000,
 	              letterSpacing: "0.14em",
@@ -4077,6 +4083,7 @@ const hpPct = useMemo(() => {
 	          </button>
 	          <button
 	            type="button"
+            disabled={!canChooseAction}
 	            onClick={() => chooseAction("defend")}
 	            style={{
 	              padding: "10px 12px",
@@ -4084,6 +4091,8 @@ const hpPct = useMemo(() => {
 	              border: lastAction === "defend" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
 	              background: lastAction === "defend" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
 	              color: "rgba(255,255,255,0.95)",
+              opacity: !canChooseAction ? 0.55 : 1,
+              cursor: !canChooseAction ? "not-allowed" : "pointer",
 	              fontSize: 12,
 	              fontWeight: 1000,
 	              letterSpacing: "0.14em",
