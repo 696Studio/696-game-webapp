@@ -502,13 +502,26 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     return 3;
   }, [timeline, rounds.length]);
 
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
 
   // Semi-auto (Step 3.x): player action choice gating + visible badge on active card
   const [awaitingAction, setAwaitingAction] = useState(false);
   const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
+
+  // Start gate: require a user gesture (ATTACK/DEFEND) before any playback.
+  // Critical for Telegram iOS WebView to reliably paint transforms/transitions.
+  const didStartGateRef = useRef(false);
+  useEffect(() => {
+    if (!match) return;
+    if (didStartGateRef.current) return;
+    didStartGateRef.current = true;
+    // Pause at the very beginning so the first tap is guaranteed to be a real gesture.
+    setAwaitingAction(true);
+    setLastAction(null);
+    setPlaying(false);
+  }, [match?.id]);
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
