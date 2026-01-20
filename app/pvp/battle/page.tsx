@@ -453,6 +453,9 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
+  // renderT is the *visual* time used to derive slots/HP. We only commit it at slice boundaries
+  // to prevent iOS flicker (cards disappearing/reappearing) during RAF-driven resolving.
+  const [renderT, setRenderT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
 
   // =========================================================
@@ -488,6 +491,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     // Hard stop at start (gesture required on iOS)
     setPlaying(false);
     setT(0);
+    setRenderT(0);
   }, [match?.id]);
 
   const startAtRef = useRef<number | null>(null);
@@ -1099,7 +1103,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
   useEffect(() => {
     if (!timeline.length) return;
-
+    const t = renderT;
     let rr = 1;
     let c1: string[] = [];
     let c2: string[] = [];
@@ -1287,7 +1291,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     setP2UnitsBySlot(slotMapP2);
 
     setLayoutTick((x) => x + 1);
-  }, [t, timeline]);
+  }, [renderT, timeline]);
 
   useEffect(() => {
     if (!match) return;
@@ -1300,6 +1304,9 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       durationSec,
       Math.max(segStart, Number(turnGates?.[turnId + 1] ?? durationSec))
     );
+
+    // Freeze visual state during resolving; commit only at slice boundaries.
+    setRenderT(segStart);
 
     const step = (now: number) => {
       if (battlePhase !== "RESOLVING") return;
@@ -1319,6 +1326,8 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       if (nextT >= segEnd - 1e-6) {
         // End of this turn slice.
         setResolvedTurnId(turnId);
+        // Commit visual state to the end of this slice (prevents card flicker/disappear during RAF)
+        setRenderT(segEnd);
 
         const nextTurn = turnId + 1;
         const isLast = nextTurn >= turnGates.length;
