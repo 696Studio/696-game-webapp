@@ -1983,35 +1983,8 @@ const hpPct = useMemo(() => {
               showCorner={false}
             />
 
-            {/* Step 3.1: make the choice VISIBLE right on the active card (no console needed) */}
-            {isActive && renderUnit?.side === youSide && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 8,
-                  right: 8,
-                  zIndex: 20,
-                  padding: "6px 8px",
-                  borderRadius: 999,
-                  background: "rgba(0,0,0,0.55)",
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  color: "rgba(255,255,255,0.92)",
-                  fontSize: 11,
-                  fontWeight: 800,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  pointerEvents: "none",
-                }}
-              >
-                {awaitingAction
-                  ? "CHOOSE"
-                  : lastAction === "attack"
-                  ? "⚔ +15%"
-                  : lastAction === "defend"
-                  ? "🛡 -25%"
-                  : "—"}
-              </div>
-            )}
+            {/* Choice badge on card removed (iOS WebView can mirror/glitch text inside transformed layers).
+                Choice remains in the bottom action panel only. */}
 
             {renderUnit && (
               <div className="bb-fx">
