@@ -506,21 +506,38 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [t, setT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
 
-  // Semi-auto (Step 3.x): player action choice gating + visible badge on active card
-  const [awaitingAction, setAwaitingAction] = useState(false);
+  // =========================================================
+  // TURN-BASED STATE MACHINE (iOS-safe)
+  // One turn = one resolve = exactly once.
+  // =========================================================
+  type BattlePhase = "IDLE" | "AWAIT_CHOICE" | "RESOLVING" | "TURN_END" | "FINISHED";
+  const [battlePhase, setBattlePhase] = useState<BattlePhase>("IDLE");
+  const [turnId, setTurnId] = useState(0);
+  const [resolvedTurnId, setResolvedTurnId] = useState(-1);
+  const [choiceForTurnId, setChoiceForTurnId] = useState<number | null>(null);
+
+  // UI helper (keeps existing UI wiring simple)
+  const awaitingAction = battlePhase === "AWAIT_CHOICE";
+
+  // Player action choice (applies to current turnId)
   const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
 
-  // Start gate: require a user gesture (ATTACK/DEFEND) before any playback.
-  // Critical for Telegram iOS WebView to reliably paint transforms/transitions.
-  const didStartGateRef = useRef(false);
+  // Gate at match start: NO autoplay. Must wait for user gesture.
+  const didInitStateMachineRef = useRef(false);
   useEffect(() => {
     if (!match) return;
-    if (didStartGateRef.current) return;
-    didStartGateRef.current = true;
-    // Pause at the very beginning so the first tap is guaranteed to be a real gesture.
-    setAwaitingAction(true);
+    if (didInitStateMachineRef.current) return;
+    didInitStateMachineRef.current = true;
+
+    setBattlePhase("AWAIT_CHOICE");
+    setTurnId(0);
+    setResolvedTurnId(-1);
+    setChoiceForTurnId(null);
     setLastAction(null);
+
+    // Hard stop at start (gesture required on iOS)
     setPlaying(false);
+    setT(0);
   }, [match?.id]);
 
   const startAtRef = useRef<number | null>(null);
@@ -539,6 +556,22 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   }, [match, myUserId]);
 
   const enemySide: "p1" | "p2" = youSide === "p1" ? "p2" : "p1";
+
+  // Turn gates: pause at the start of each of YOUR turns (plus t=0 start gate).
+  // Strict loop: pause → choice → resolve-slice → pause.
+  const turnGates = useMemo(() => {
+    const gates: number[] = [0];
+    for (const e of timeline) {
+      if (!e || (e as any).type !== "turn_start") continue;
+      const side = String((e as any)?.unit?.side ?? (e as any)?.side ?? "");
+      const tt = Number((e as any)?.t ?? 0);
+      if (side === youSide && Number.isFinite(tt) && tt >= 0) gates.push(tt);
+    }
+    // de-dup + sort (round to avoid float noise)
+    const uniq = Array.from(new Set(gates.map((x) => Math.round(x * 10000) / 10000))).sort((a, b) => a - b);
+    return uniq;
+  }, [timeline, youSide]);
+
   const [p1CardsFull, setP1CardsFull] = useState<CardMeta[]>([]);
   const [p2CardsFull, setP2CardsFull] = useState<CardMeta[]>([]);
 
@@ -574,24 +607,21 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     return null;
   }, [activeInstance, p1UnitsBySlot, p2UnitsBySlot]);
 
-  useEffect(() => {
-    if (!activeUnitForChoice) return;
-    if (activeUnitForChoice.side !== youSide) return;
-    if (awaitingAction) return;
-    if (!playing) return; // don't override manual pause
-    // Pause timeline and wait for a real tap (critical for TG iOS WebView painting)
-    setAwaitingAction(true);
-    setLastAction(null);
-    setPlaying(false);
-  }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
-
+  // Turn-based choice gate: action applies ONLY to current turnId and starts exactly one resolve.
   const chooseAction = useCallback(
     (choice: "attack" | "defend") => {
+      if (battlePhase !== "AWAIT_CHOICE") return;
+      // Prevent re-resolving the same turn under any re-render
+      if (turnId <= resolvedTurnId) return;
+
       setLastAction(choice);
-      setAwaitingAction(false);
+      setChoiceForTurnId(turnId);
+
+      // Start resolving this turn (gesture-safe for iOS)
+      setBattlePhase("RESOLVING");
       setPlaying(true);
     },
-    []
+    [battlePhase, turnId, resolvedTurnId]
   );
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
@@ -1276,35 +1306,60 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   useEffect(() => {
     if (!match) return;
 
+    // Never resolve unless state machine says so.
+    if (battlePhase !== "RESOLVING") return;
+
+    const segStart = Math.max(0, Number(turnGates?.[turnId] ?? 0));
+    const segEnd = Math.min(
+      durationSec,
+      Math.max(segStart, Number(turnGates?.[turnId + 1] ?? durationSec))
+    );
+
     const step = (now: number) => {
+      if (battlePhase !== "RESOLVING") return;
       if (!playing) return;
 
       if (startAtRef.current == null) {
-        startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
+        // Keep continuity if RESOLVING resumes from a non-zero t.
+        startAtRef.current = now - (((t - segStart) / Math.max(0.0001, rate)) * 1000);
       }
 
       const elapsedWall = (now - startAtRef.current) / 1000;
       const elapsed = elapsedWall * rate;
 
-      const nextT = Math.min(durationSec, Math.max(0, elapsed));
+      const nextT = Math.min(segEnd, Math.max(segStart, segStart + elapsed));
       setT(nextT);
 
-      if (nextT >= durationSec) {
+      if (nextT >= segEnd - 1e-6) {
+        // End of this turn slice.
         setPlaying(false);
+        setResolvedTurnId(turnId);
+
+        const nextTurn = turnId + 1;
+        if (nextTurn >= turnGates.length) {
+          setBattlePhase("FINISHED");
+        } else {
+          setTurnId(nextTurn);
+          setChoiceForTurnId(null);
+          setLastAction(null);
+          setBattlePhase("AWAIT_CHOICE");
+        }
+
+        startAtRef.current = null;
         return;
       }
 
       rafRef.current = window.requestAnimationFrame(step);
     };
 
-    if (playing) rafRef.current = window.requestAnimationFrame(step);
+    rafRef.current = window.requestAnimationFrame(step);
 
     return () => {
       if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, durationSec, rate]);
+  }, [match, playing, battlePhase, turnId, turnGates, durationSec, rate, t]);
 
   useEffect(() => {
     startAtRef.current = null;
