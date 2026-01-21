@@ -4022,9 +4022,24 @@ const hpPct = useMemo(() => {
 	            </div>
 	          </div>
 
-	          <button
-	            type="button"
-	            onClick={() => chooseAction("attack")}
+	          <div
+	            role="button"
+	            aria-label="ATTACK"
+	            tabIndex={-1}
+	            onTouchStart={(e) => {
+	              e.preventDefault();
+	              e.stopPropagation();
+	              const ae: any = document.activeElement;
+	              if (ae && typeof ae.blur === "function") ae.blur();
+	              chooseAction("attack");
+	            }}
+	            onMouseDown={(e) => {
+	              e.preventDefault();
+	              e.stopPropagation();
+	              const ae: any = document.activeElement;
+	              if (ae && typeof ae.blur === "function") ae.blur();
+	              chooseAction("attack");
+	            }}
 	            style={{
 	              padding: "10px 12px",
 	              borderRadius: 14,
@@ -4036,13 +4051,33 @@ const hpPct = useMemo(() => {
 	              letterSpacing: "0.14em",
 	              textTransform: "uppercase",
 	              minWidth: 110,
+	            
+	              cursor: "pointer",
+	              userSelect: "none",
+	              WebkitTapHighlightColor: "transparent",
+	              touchAction: "manipulation",
 	            }}
 	          >
 	            ATTACK
-	          </button>
-	          <button
-	            type="button"
-	            onClick={() => chooseAction("defend")}
+	          </div>
+	          <div
+	            role="button"
+	            aria-label="DEFEND"
+	            tabIndex={-1}
+	            onTouchStart={(e) => {
+	              e.preventDefault();
+	              e.stopPropagation();
+	              const ae: any = document.activeElement;
+	              if (ae && typeof ae.blur === "function") ae.blur();
+	              chooseAction("defend");
+	            }}
+	            onMouseDown={(e) => {
+	              e.preventDefault();
+	              e.stopPropagation();
+	              const ae: any = document.activeElement;
+	              if (ae && typeof ae.blur === "function") ae.blur();
+	              chooseAction("defend");
+	            }}
 	            style={{
 	              padding: "10px 12px",
 	              borderRadius: 14,
@@ -4054,10 +4089,15 @@ const hpPct = useMemo(() => {
 	              letterSpacing: "0.14em",
 	              textTransform: "uppercase",
 	              minWidth: 110,
+	            
+	              cursor: "pointer",
+	              userSelect: "none",
+	              WebkitTapHighlightColor: "transparent",
+	              touchAction: "manipulation",
 	            }}
 	          >
 	            DEFEND
-	          </button>
+	          </div>
 	        </div>
       </div>
     </main>
