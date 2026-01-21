@@ -600,6 +600,19 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     setPlaying(false);
   }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
 
+
+  // Step 1b: iOS TG WebView jump fix — stabilize scroll for a few frames after a tap.
+  const stabilizeScrollAfterTap = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const x = window.scrollX || 0;
+    const y = window.scrollY || 0;
+    // Restore scroll position over several frames/timeouts to defeat iOS "scroll-into-view" bounce.
+    requestAnimationFrame(() => window.scrollTo(x, y));
+    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(x, y)));
+    setTimeout(() => window.scrollTo(x, y), 50);
+    setTimeout(() => window.scrollTo(x, y), 200);
+  }, []);
+
   const chooseAction = useCallback(
     (choice: "attack" | "defend") => {
       setLastAction(choice);
@@ -4031,6 +4044,7 @@ const hpPct = useMemo(() => {
 	              e.stopPropagation();
 	              const ae: any = document.activeElement;
 	              if (ae && typeof ae.blur === "function") ae.blur();
+	              stabilizeScrollAfterTap();
 	              chooseAction("attack");
 	            }}
 	            onMouseDown={(e) => {
@@ -4038,6 +4052,7 @@ const hpPct = useMemo(() => {
 	              e.stopPropagation();
 	              const ae: any = document.activeElement;
 	              if (ae && typeof ae.blur === "function") ae.blur();
+	              stabilizeScrollAfterTap();
 	              chooseAction("attack");
 	            }}
 	            style={{
@@ -4055,6 +4070,7 @@ const hpPct = useMemo(() => {
 	              cursor: "pointer",
 	              userSelect: "none",
 	              WebkitTapHighlightColor: "transparent",
+	              WebkitTouchCallout: "none",
 	              touchAction: "manipulation",
 	            }}
 	          >
@@ -4069,6 +4085,7 @@ const hpPct = useMemo(() => {
 	              e.stopPropagation();
 	              const ae: any = document.activeElement;
 	              if (ae && typeof ae.blur === "function") ae.blur();
+	              stabilizeScrollAfterTap();
 	              chooseAction("defend");
 	            }}
 	            onMouseDown={(e) => {
@@ -4076,6 +4093,7 @@ const hpPct = useMemo(() => {
 	              e.stopPropagation();
 	              const ae: any = document.activeElement;
 	              if (ae && typeof ae.blur === "function") ae.blur();
+	              stabilizeScrollAfterTap();
 	              chooseAction("defend");
 	            }}
 	            style={{
@@ -4093,6 +4111,7 @@ const hpPct = useMemo(() => {
 	              cursor: "pointer",
 	              userSelect: "none",
 	              WebkitTapHighlightColor: "transparent",
+	              WebkitTouchCallout: "none",
 	              touchAction: "manipulation",
 	            }}
 	          >
