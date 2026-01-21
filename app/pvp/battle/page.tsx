@@ -526,7 +526,11 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
+  // TG iOS WebView can freeze RAF and then 'catch up' with a huge time jump.
+  // We integrate time incrementally with a clamped delta to keep resolves sequential.
   const lastNowRef = useRef<number | null>(null);
+  const elapsedRef = useRef<number>(0);
+
   const [roundN, setRoundN] = useState(1);
 
   const [p1Cards, setP1Cards] = useState<string[]>([]);
@@ -1311,29 +1315,26 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     const step = (now: number) => {
       if (!playing) return;
 
-      // TG iOS WebView can "pause" requestAnimationFrame and then resume with a big timestamp jump.
-      // If we use absolute (now - startAt), the timeline can skip forward and fire many events at once.
-      // We clamp large gaps so resolves stay sequential and readable.
-      const MAX_GAP_MS = 90;
-
       if (startAtRef.current == null) {
-        startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
+        // Initialize incremental clock (keeps playback stable on TG iOS WebView).
+        startAtRef.current = now;
         lastNowRef.current = now;
-      } else if (lastNowRef.current != null) {
-        const gap = now - lastNowRef.current;
-        if (gap > MAX_GAP_MS) {
-          // Move the "start" forward so elapsedWall only advances by MAX_GAP_MS, not the full gap.
-          startAtRef.current += gap - MAX_GAP_MS;
-        }
-        lastNowRef.current = now;
+        // If we resume from a non-zero t, continue from there.
+        elapsedRef.current = Math.max(0, Math.min(durationSec, t));
       } else {
+        const last = lastNowRef.current ?? now;
+        let dtMs = now - last;
+        // Clamp large gaps (RAF stall) so we don't 'catch up' a whole resolve in one frame.
+        if (dtMs > 90) dtMs = 90;
+        if (dtMs < 0) dtMs = 0;
         lastNowRef.current = now;
+        elapsedRef.current = Math.min(
+          durationSec,
+          elapsedRef.current + (dtMs / 1000) * rate
+        );
       }
 
-      const elapsedWall = (now - startAtRef.current) / 1000;
-      const elapsed = elapsedWall * rate;
-
-      const nextT = Math.min(durationSec, Math.max(0, elapsed));
+      const nextT = elapsedRef.current;
       setT(nextT);
 
       if (nextT >= durationSec) {
@@ -1356,6 +1357,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   useEffect(() => {
     startAtRef.current = null;
     lastNowRef.current = null;
+    elapsedRef.current = 0;
   }, [playing, rate]);
 
   const progressPct = useMemo(() => {
