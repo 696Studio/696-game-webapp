@@ -4031,13 +4031,13 @@ const hpPct = useMemo(() => {
 	              {awaitingAction ? "ТВОЙ ХОД: ВЫБЕРИ ДЕЙСТВИЕ" : "ДЕЙСТВИЕ"}
 	            </div>
 	            <div style={{ marginTop: 2, fontSize: 12, fontWeight: 800, opacity: 0.92 }}>
-	              Последний выбор: {lastAction ? (lastAction === "attack" ? "ATTACK" : "DEFEND") : "—"}
+	              Последний выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
 	            </div>
 	          </div>
 
 	          <div
 	            role="button"
-	            aria-label="ATTACK"
+	            aria-label="Атака"
 	            tabIndex={-1}
 	            onTouchStart={(e) => {
 	              e.preventDefault();
@@ -4074,11 +4074,11 @@ const hpPct = useMemo(() => {
 	              touchAction: "manipulation",
 	            }}
 	          >
-	            ATTACK
+	            Атака
 	          </div>
 	          <div
 	            role="button"
-	            aria-label="DEFEND"
+	            aria-label="Защита"
 	            tabIndex={-1}
 	            onTouchStart={(e) => {
 	              e.preventDefault();
@@ -4115,11 +4115,42 @@ const hpPct = useMemo(() => {
 	              touchAction: "manipulation",
 	            }}
 	          >
-	            DEFEND
+	            Защита
 	          </div>
 	        </div>
       </div>
-    </main>
+    
+      {typeof document !== "undefined" &&
+        (awaitingAction ||
+          (playing && activeUnitForChoice && activeUnitForChoice.side !== youSide)) &&
+        createPortal(
+          <div
+            aria-hidden="true"
+            style={{
+              position: "fixed",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              zIndex: 99999,
+              pointerEvents: "none",
+              padding: "10px 14px",
+              borderRadius: 14,
+              background: "rgba(0,0,0,0.45)",
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              color: "rgba(255,255,255,0.96)",
+              fontWeight: 900,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              fontSize: 12,
+            }}
+          >
+            {awaitingAction ? "Твой ход" : "Ход противника"}
+          </div>,
+          document.body
+        )}
+</main>
   );
 }
 
