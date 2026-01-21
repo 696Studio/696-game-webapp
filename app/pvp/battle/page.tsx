@@ -597,18 +597,19 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 // iOS Telegram WebView can "jump" the page on tap (scroll-into-view / bounce).
 // We stabilize the scroll position for a few frames right after the user gesture.
 const stabilizeScrollAfterTap = useCallback(() => {
+  // Goal: stop TG iOS "scroll jump" on tap WITHOUT disabling scrolling.
+  // We only restore the scroll position once, and only if it actually changed.
   if (typeof window === "undefined") return;
   const x = window.scrollX || 0;
   const y = window.scrollY || 0;
 
-  // Immediate + a couple of frames + short timeouts catch TG iOS bounce reliably.
-  try { window.scrollTo(x, y); } catch {}
-  requestAnimationFrame(() => { try { window.scrollTo(x, y); } catch {} });
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => { try { window.scrollTo(x, y); } catch {} });
+    const nx = window.scrollX || 0;
+    const ny = window.scrollY || 0;
+    if (Math.abs(nx - x) > 1 || Math.abs(ny - y) > 1) {
+      try { window.scrollTo(x, y); } catch {}
+    }
   });
-  setTimeout(() => { try { window.scrollTo(x, y); } catch {} }, 50);
-  setTimeout(() => { try { window.scrollTo(x, y); } catch {} }, 200);
 }, []);
 
 const handleChoiceTap = useCallback((choice: "attack" | "defend") => {
