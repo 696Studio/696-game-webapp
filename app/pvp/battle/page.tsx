@@ -526,11 +526,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  // TG iOS WebView can freeze RAF and then 'catch up' with a huge time jump.
-  // We integrate time incrementally with a clamped delta to keep resolves sequential.
-  const lastNowRef = useRef<number | null>(null);
-  const elapsedRef = useRef<number>(0);
-
   const [roundN, setRoundN] = useState(1);
 
   const [p1Cards, setP1Cards] = useState<string[]>([]);
@@ -1316,25 +1311,13 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       if (!playing) return;
 
       if (startAtRef.current == null) {
-        // Initialize incremental clock (keeps playback stable on TG iOS WebView).
-        startAtRef.current = now;
-        lastNowRef.current = now;
-        // If we resume from a non-zero t, continue from there.
-        elapsedRef.current = Math.max(0, Math.min(durationSec, t));
-      } else {
-        const last = lastNowRef.current ?? now;
-        let dtMs = now - last;
-        // Clamp large gaps (RAF stall) so we don't 'catch up' a whole resolve in one frame.
-        if (dtMs > 90) dtMs = 90;
-        if (dtMs < 0) dtMs = 0;
-        lastNowRef.current = now;
-        elapsedRef.current = Math.min(
-          durationSec,
-          elapsedRef.current + (dtMs / 1000) * rate
-        );
+        startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
       }
 
-      const nextT = elapsedRef.current;
+      const elapsedWall = (now - startAtRef.current) / 1000;
+      const elapsed = elapsedWall * rate;
+
+      const nextT = Math.min(durationSec, Math.max(0, elapsed));
       setT(nextT);
 
       if (nextT >= durationSec) {
@@ -1356,8 +1339,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
   useEffect(() => {
     startAtRef.current = null;
-    lastNowRef.current = null;
-    elapsedRef.current = 0;
   }, [playing, rate]);
 
   const progressPct = useMemo(() => {
@@ -4027,7 +4008,42 @@ const hpPct = useMemo(() => {
         </section>
 
 	        {/* Semi-auto Action Bar (works on all platforms; critical for iOS gesture) */}
+	        
+	      {(awaitingAction || (playing && activeUnitForChoice && activeUnitForChoice.side !== youSide)) && (
 	        <div
+	          style={{
+	            position: "fixed",
+	            left: 0,
+	            right: 0,
+	            top: 0,
+	            bottom: 0,
+	            display: "flex",
+	            alignItems: "center",
+	            justifyContent: "center",
+	            pointerEvents: "none",
+	            zIndex: 60,
+	          }}
+	        >
+	          <div
+	            style={{
+	              padding: "10px 14px",
+	              borderRadius: 16,
+	              background: "rgba(0,0,0,0.55)",
+	              backdropFilter: "blur(10px)",
+	              WebkitBackdropFilter: "blur(10px)",
+	              fontSize: 18,
+	              fontWeight: 900,
+	              letterSpacing: "0.08em",
+	              textTransform: "uppercase",
+	              color: "white",
+	              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+	            }}
+	          >
+	            {awaitingAction ? "Твой ход" : "Ход противника"}
+	          </div>
+	        </div>
+	      )}
+<div
 	          style={{
 	            position: "fixed",
 	            left: 12,
@@ -4050,13 +4066,13 @@ const hpPct = useMemo(() => {
 	              {awaitingAction ? "ТВОЙ ХОД: ВЫБЕРИ ДЕЙСТВИЕ" : "ДЕЙСТВИЕ"}
 	            </div>
 	            <div style={{ marginTop: 2, fontSize: 12, fontWeight: 800, opacity: 0.92 }}>
-	              Последний выбор: {lastAction ? (lastAction === "attack" ? "ATTACK" : "DEFEND") : "—"}
+	              Последний выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
 	            </div>
 	          </div>
 
 	          <div
 	            role="button"
-	            aria-label="ATTACK"
+	            aria-label="Атака"
 	            tabIndex={-1}
 	            onTouchStart={(e) => {
 	              e.preventDefault();
@@ -4093,11 +4109,11 @@ const hpPct = useMemo(() => {
 	              touchAction: "manipulation",
 	            }}
 	          >
-	            ATTACK
+	            Атака
 	          </div>
 	          <div
 	            role="button"
-	            aria-label="DEFEND"
+	            aria-label="Защита"
 	            tabIndex={-1}
 	            onTouchStart={(e) => {
 	              e.preventDefault();
@@ -4134,7 +4150,7 @@ const hpPct = useMemo(() => {
 	              touchAction: "manipulation",
 	            }}
 	          >
-	            DEFEND
+	            Защита
 	          </div>
 	        </div>
       </div>
