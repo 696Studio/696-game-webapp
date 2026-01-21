@@ -915,7 +915,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
-    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for ATTACK events...'); }
+    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet("DBG READY — waiting for ATTACK events..."); }
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
@@ -986,6 +986,15 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       botX: bot.x,
       botY: bot.y,
     };
+  }, [arenaBox]);
+
+
+  // Anchor for action buttons: below bottom avatar, split left/right (iOS-safe, no layout shifts)
+  const actionAnchor = useMemo(() => {
+    if (!arenaBox) return null;
+    // Slightly below the bottom ring center
+    const p = coverMapPoint(BOT_RING_NX, clamp(BOT_RING_NY + 0.092, 0, 1), arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+    return { x: arenaBox.left + p.x, y: arenaBox.top + p.y };
   }, [arenaBox]);
 
   // DEBUG GRID (A/B MIRROR)
@@ -3704,7 +3713,7 @@ const hpPct = useMemo(() => {
             >
               {"layoutdebug: tap arena to read nx/ny\n" +
                 (dbgClick
-                  ? `click nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)} (x=${Math.round(dbgClick.x)} y=${Math.round(dbgClick.y)})`
+              ? `click nx=${dbgClick.nx.toFixed(4)} ny=${dbgClick.ny.toFixed(4)} (x=${Math.round(dbgClick.x)} y=${Math.round(dbgClick.y)})`
                   : "click: —")}
             </div>
           )}
@@ -4007,153 +4016,148 @@ const hpPct = useMemo(() => {
           </div>
         </section>
 
-	        {/* Semi-auto Action Bar (works on all platforms; critical for iOS gesture) */}
 	        
-	      {(awaitingAction || (playing && activeUnitForChoice && activeUnitForChoice.side !== youSide)) && (
-	        <div
-	          style={{
-	            position: "fixed",
-	            left: 0,
-	            right: 0,
-	            top: 0,
-	            bottom: 0,
-	            display: "flex",
-	            alignItems: "center",
-	            justifyContent: "center",
-	            pointerEvents: "none",
-	            zIndex: 60,
-	          }}
-	        >
-	          <div
-	            style={{
-	              padding: "10px 14px",
-	              borderRadius: 16,
-	              background: "rgba(0,0,0,0.55)",
-	              backdropFilter: "blur(10px)",
-	              WebkitBackdropFilter: "blur(10px)",
-	              fontSize: 18,
-	              fontWeight: 900,
-	              letterSpacing: "0.08em",
-	              textTransform: "uppercase",
-	              color: "white",
-	              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-	            }}
-	          >
-	            {awaitingAction ? "Твой ход" : "Ход противника"}
-	          </div>
-	        </div>
-	      )}
-<div
-	          style={{
-	            position: "fixed",
-	            left: 12,
-	            right: 12,
-	            bottom: `calc(12px + env(safe-area-inset-bottom) + 84px)`,
-	            zIndex: 999999,
-	            pointerEvents: "auto",
-	            display: "flex",
-	            gap: 10,
-	            alignItems: "center",
-	            justifyContent: "center",
-	            padding: "10px 12px",
-	            borderRadius: 16,
-	            border: "1px solid rgba(255,255,255,0.16)",
-	            background: "rgba(0,0,0,0.55)",
-	          }}
-	        >
-	          <div style={{ flex: 1, minWidth: 0 }}>
-	            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.9 }}>
-	              {awaitingAction ? "ТВОЙ ХОД: ВЫБЕРИ ДЕЙСТВИЕ" : "ДЕЙСТВИЕ"}
-	            </div>
-	            <div style={{ marginTop: 2, fontSize: 12, fontWeight: 800, opacity: 0.92 }}>
-	              Последний выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
-	            </div>
-	          </div>
+        {/* Turn indicator (center). Pointer-events disabled so it never blocks interactions/scroll. */}
+        {(awaitingAction || (playing && activeUnitForChoice && activeUnitForChoice.side !== youSide)) && (
+          <div
+            style={{
+              position: "fixed",
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              zIndex: 12000,
+              pointerEvents: "none",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "22%",
+                transform: "translate(-50%, -50%)",
+                padding: "10px 16px",
+                borderRadius: 999,
+                background: "rgba(0,0,0,0.55)",
+                border: "1px solid rgba(255,255,255,0.16)",
+                backdropFilter: "blur(10px)",
+                WebkitBackdropFilter: "blur(10px)",
+                fontWeight: 1000,
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+                color: "white",
+                boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+              }}
+            >
+              {awaitingAction ? "Твой ход" : "Ход противника"}
+            </div>
+          </div>
+        )}
 
-	          <div
-	            role="button"
-	            aria-label="Атака"
-	            tabIndex={-1}
-	            onTouchStart={(e) => {
-	              e.preventDefault();
-	              e.stopPropagation();
-	              const ae: any = document.activeElement;
-	              if (ae && typeof ae.blur === "function") ae.blur();
-	              stabilizeScrollAfterTap();
-	              chooseAction("attack");
-	            }}
-	            onMouseDown={(e) => {
-	              e.preventDefault();
-	              e.stopPropagation();
-	              const ae: any = document.activeElement;
-	              if (ae && typeof ae.blur === "function") ae.blur();
-	              stabilizeScrollAfterTap();
-	              chooseAction("attack");
-	            }}
-	            style={{
-	              padding: "10px 12px",
-	              borderRadius: 14,
-	              border: lastAction === "attack" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
-	              background: lastAction === "attack" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
-	              color: "rgba(255,255,255,0.95)",
-	              fontSize: 12,
-	              fontWeight: 1000,
-	              letterSpacing: "0.14em",
-	              textTransform: "uppercase",
-	              minWidth: 110,
-	            
-	              cursor: "pointer",
-	              userSelect: "none",
-	              WebkitTapHighlightColor: "transparent",
-	              WebkitTouchCallout: "none",
-	              touchAction: "manipulation",
-	            }}
-	          >
-	            Атака
-	          </div>
-	          <div
-	            role="button"
-	            aria-label="Защита"
-	            tabIndex={-1}
-	            onTouchStart={(e) => {
-	              e.preventDefault();
-	              e.stopPropagation();
-	              const ae: any = document.activeElement;
-	              if (ae && typeof ae.blur === "function") ae.blur();
-	              stabilizeScrollAfterTap();
-	              chooseAction("defend");
-	            }}
-	            onMouseDown={(e) => {
-	              e.preventDefault();
-	              e.stopPropagation();
-	              const ae: any = document.activeElement;
-	              if (ae && typeof ae.blur === "function") ae.blur();
-	              stabilizeScrollAfterTap();
-	              chooseAction("defend");
-	            }}
-	            style={{
-	              padding: "10px 12px",
-	              borderRadius: 14,
-	              border: lastAction === "defend" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
-	              background: lastAction === "defend" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
-	              color: "rgba(255,255,255,0.95)",
-	              fontSize: 12,
-	              fontWeight: 1000,
-	              letterSpacing: "0.14em",
-	              textTransform: "uppercase",
-	              minWidth: 110,
-	            
-	              cursor: "pointer",
-	              userSelect: "none",
-	              WebkitTapHighlightColor: "transparent",
-	              WebkitTouchCallout: "none",
-	              touchAction: "manipulation",
-	            }}
-	          >
-	            Защита
-	          </div>
-	        </div>
-      </div>
+        {/* Action buttons (your turn only) — positioned near bottom avatar. */}
+        {awaitingAction && actionAnchor && (
+          <div
+            style={{
+              position: "fixed",
+              left: actionAnchor.x,
+              top: actionAnchor.y,
+              transform: "translate(-50%, 0)",
+              display: "flex",
+              gap: 10,
+              zIndex: 12001,
+              pointerEvents: "auto",
+            }}
+          >
+            <div
+              role="button"
+              aria-label="Атака"
+              tabIndex={-1}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const ae: any = document.activeElement;
+                if (ae && typeof ae.blur === "function") ae.blur();
+                stabilizeScrollAfterTap();
+                chooseAction("attack");
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const ae: any = document.activeElement;
+                if (ae && typeof ae.blur === "function") ae.blur();
+                stabilizeScrollAfterTap();
+                chooseAction("attack");
+              }}
+              style={{
+                padding: "12px 14px",
+                borderRadius: 16,
+                border: lastAction === "attack" ? "1px solid rgba(255,255,255,0.32)" : "1px solid rgba(255,255,255,0.14)",
+                background:
+                  lastAction === "attack"
+                    ? "linear-gradient(180deg, rgba(255,80,80,0.85), rgba(140,20,20,0.78))"
+                    : "linear-gradient(180deg, rgba(255,70,70,0.65), rgba(110,18,18,0.58))",
+                color: "rgba(255,255,255,0.96)",
+                fontSize: 12,
+                fontWeight: 1100,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                minWidth: 120,
+                textAlign: "center",
+                boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                touchAction: "manipulation",
+              }}
+            >
+              Атака
+            </div>
+
+            <div
+              role="button"
+              aria-label="Защита"
+              tabIndex={-1}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const ae: any = document.activeElement;
+                if (ae && typeof ae.blur === "function") ae.blur();
+                stabilizeScrollAfterTap();
+                chooseAction("defend");
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const ae: any = document.activeElement;
+                if (ae && typeof ae.blur === "function") ae.blur();
+                stabilizeScrollAfterTap();
+                chooseAction("defend");
+              }}
+              style={{
+                padding: "12px 14px",
+                borderRadius: 16,
+                border: lastAction === "defend" ? "1px solid rgba(255,255,255,0.32)" : "1px solid rgba(255,255,255,0.14)",
+                background:
+                  lastAction === "defend"
+                    ? "linear-gradient(180deg, rgba(120,190,255,0.82), rgba(25,60,120,0.78))"
+                    : "linear-gradient(180deg, rgba(110,175,240,0.62), rgba(18,45,95,0.58))",
+                color: "rgba(255,255,255,0.96)",
+                fontSize: 12,
+                fontWeight: 1100,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                minWidth: 120,
+                textAlign: "center",
+                boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                touchAction: "manipulation",
+              }}
+            >
+              Защита
+            </div>
+          </div>
+        )}
+
     </main>
   );
 }
