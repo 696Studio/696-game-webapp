@@ -525,8 +525,8 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
-  const lastNowRef = useRef<number | null>(null);
 
+  const lastNowRef = useRef<number | null>(null);
   const [roundN, setRoundN] = useState(1);
 
   const [p1Cards, setP1Cards] = useState<string[]>([]);
@@ -1311,21 +1311,24 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     const step = (now: number) => {
       if (!playing) return;
 
+      // TG iOS WebView can "pause" requestAnimationFrame and then resume with a big timestamp jump.
+      // If we use absolute (now - startAt), the timeline can skip forward and fire many events at once.
+      // We clamp large gaps so resolves stay sequential and readable.
+      const MAX_GAP_MS = 90;
+
       if (startAtRef.current == null) {
         startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
-      }
-
-      // TG iOS WebView can stall RAF for a moment; when it resumes, 'now' jumps forward,
-      // causing time to "skip" and many timeline events to fire at once ("narco" playback).
-      // Clamp large gaps by shifting the start anchor forward, so elapsed advances smoothly.
-      if (lastNowRef.current != null) {
+        lastNowRef.current = now;
+      } else if (lastNowRef.current != null) {
         const gap = now - lastNowRef.current;
-        if (gap > 120) {
-          // allow at most ~50ms of progress for this frame
-          startAtRef.current += gap - 50;
+        if (gap > MAX_GAP_MS) {
+          // Move the "start" forward so elapsedWall only advances by MAX_GAP_MS, not the full gap.
+          startAtRef.current += gap - MAX_GAP_MS;
         }
+        lastNowRef.current = now;
+      } else {
+        lastNowRef.current = now;
       }
-      lastNowRef.current = now;
 
       const elapsedWall = (now - startAtRef.current) / 1000;
       const elapsed = elapsedWall * rate;
@@ -4045,13 +4048,13 @@ const hpPct = useMemo(() => {
 	              {awaitingAction ? "ТВОЙ ХОД: ВЫБЕРИ ДЕЙСТВИЕ" : "ДЕЙСТВИЕ"}
 	            </div>
 	            <div style={{ marginTop: 2, fontSize: 12, fontWeight: 800, opacity: 0.92 }}>
-	              Последний выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
+	              Последний выбор: {lastAction ? (lastAction === "attack" ? "ATTACK" : "DEFEND") : "—"}
 	            </div>
 	          </div>
 
 	          <div
 	            role="button"
-	            aria-label="Атака"
+	            aria-label="ATTACK"
 	            tabIndex={-1}
 	            onTouchStart={(e) => {
 	              e.preventDefault();
@@ -4088,11 +4091,11 @@ const hpPct = useMemo(() => {
 	              touchAction: "manipulation",
 	            }}
 	          >
-	            Атака
+	            ATTACK
 	          </div>
 	          <div
 	            role="button"
-	            aria-label="Защита"
+	            aria-label="DEFEND"
 	            tabIndex={-1}
 	            onTouchStart={(e) => {
 	              e.preventDefault();
@@ -4129,42 +4132,11 @@ const hpPct = useMemo(() => {
 	              touchAction: "manipulation",
 	            }}
 	          >
-	            Защита
+	            DEFEND
 	          </div>
 	        </div>
       </div>
-    
-      {typeof document !== "undefined" &&
-        (awaitingAction ||
-          (playing && activeUnitForChoice && activeUnitForChoice.side !== youSide)) &&
-        createPortal(
-          <div
-            aria-hidden="true"
-            style={{
-              position: "fixed",
-              left: "50%",
-              top: "50%",
-              transform: "translate(-50%, -50%)",
-              zIndex: 99999,
-              pointerEvents: "none",
-              padding: "10px 14px",
-              borderRadius: 14,
-              background: "rgba(0,0,0,0.45)",
-              backdropFilter: "blur(8px)",
-              WebkitBackdropFilter: "blur(8px)",
-              border: "1px solid rgba(255,255,255,0.14)",
-              color: "rgba(255,255,255,0.96)",
-              fontWeight: 900,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              fontSize: 12,
-            }}
-          >
-            {awaitingAction ? "Твой ход" : "Ход противника"}
-          </div>,
-          document.body
-        )}
-</main>
+    </main>
   );
 }
 
