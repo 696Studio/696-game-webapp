@@ -597,31 +597,51 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 // iOS Telegram WebView can "jump" the page on tap (scroll-into-view / bounce).
 // We stabilize the scroll position for a few frames right after the user gesture.
 const stabilizeScrollAfterTap = useCallback(() => {
-  // Goal: stop TG iOS "scroll jump" on tap WITHOUT disabling scrolling.
-  // We only restore the scroll position once, and only if it actually changed.
   if (typeof window === "undefined") return;
   const x = window.scrollX || 0;
   const y = window.scrollY || 0;
 
+  // Immediate + a couple of frames + short timeouts catch TG iOS bounce reliably.
+  try { window.scrollTo(x, y); } catch {}
+  requestAnimationFrame(() => { try { window.scrollTo(x, y); } catch {} });
   requestAnimationFrame(() => {
-    const nx = window.scrollX || 0;
-    const ny = window.scrollY || 0;
-    if (Math.abs(nx - x) > 1 || Math.abs(ny - y) > 1) {
-      try { window.scrollTo(x, y); } catch {}
-    }
+    requestAnimationFrame(() => { try { window.scrollTo(x, y); } catch {} });
   });
+  setTimeout(() => { try { window.scrollTo(x, y); } catch {} }, 50);
+  setTimeout(() => { try { window.scrollTo(x, y); } catch {} }, 200);
 }, []);
 
 const handleChoiceTap = useCallback((choice: "attack" | "defend") => {
   // Kill focus to prevent scroll-into-view on iOS.
   try { (document.activeElement as HTMLElement | null)?.blur?.(); } catch {}
-  stabilizeScrollAfterTap();
   chooseAction(choice);
-}, [chooseAction, stabilizeScrollAfterTap]);
+}, [chooseAction]);
 
 
 
-  const arenaRef = useRef<HTMLDivElement | null>(null);
+  
+  const attackBtnRef = useRef<HTMLDivElement | null>(null);
+  const defendBtnRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const attach = (el: HTMLDivElement | null, choice: "attack" | "defend") => {
+      if (!el) return () => {};
+      const handler = (ev: TouchEvent) => {
+        // IMPORTANT: must be non-passive so preventDefault works on iOS WebView.
+        ev.preventDefault();
+        ev.stopPropagation();
+        try { (document.activeElement as HTMLElement | null)?.blur?.(); } catch {}
+        chooseAction(choice);
+      };
+      el.addEventListener("touchstart", handler, { passive: false });
+      return () => el.removeEventListener("touchstart", handler as any);
+    };
+    const d1 = attach(attackBtnRef.current, "attack");
+    const d2 = attach(defendBtnRef.current, "defend");
+    return () => { try { d1(); } catch {} try { d2(); } catch {} };
+  }, [chooseAction]);
+
+const arenaRef = useRef<HTMLDivElement | null>(null);
 
   const onArenaPointerDownCapture = (ev: React.PointerEvent) => {
     if (!isArenaDebug) return;
@@ -4061,7 +4081,7 @@ const hpPct = useMemo(() => {
 	          <div
   role="button"
   tabIndex={-1}
-  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); handleChoiceTap("attack"); }}
+  ref={attackBtnRef}
   onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleChoiceTap("attack"); }}
   style={{
     padding: "10px 12px",
@@ -4087,7 +4107,7 @@ const hpPct = useMemo(() => {
 <div
   role="button"
   tabIndex={-1}
-  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); handleChoiceTap("defend"); }}
+  ref={defendBtnRef}
   onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleChoiceTap("defend"); }}
   style={{
     padding: "10px 12px",
