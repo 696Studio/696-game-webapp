@@ -574,9 +574,24 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     return null;
   }, [activeInstance, p1UnitsBySlot, p2UnitsBySlot]);
 
+  // Prevent immediate re-pausing on the same choice point right after the user taps ATTACK/DEFEND.
+  // We only pause once per activeInstance/active unit, then allow playback to advance.
+  const resumeGuardRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Clear guard as soon as the active choice point changes.
+    const cur = activeUnitForChoice?.instanceId ?? null;
+    if (resumeGuardRef.current && cur && cur !== resumeGuardRef.current) {
+      resumeGuardRef.current = null;
+    }
+  }, [activeUnitForChoice?.instanceId]);
+
+
+
   useEffect(() => {
     if (!activeUnitForChoice) return;
     if (activeUnitForChoice.side !== youSide) return;
+    if (resumeGuardRef.current === activeUnitForChoice.instanceId) return;
     if (awaitingAction) return;
     if (!playing) return; // don't override manual pause
     // Pause timeline and wait for a real tap (critical for TG iOS WebView painting)
@@ -588,10 +603,13 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const chooseAction = useCallback(
     (choice: "attack" | "defend") => {
       setLastAction(choice);
+      // Mark this choice point as "consumed" so the pause effect doesn't instantly re-trigger
+      // before the timeline advances to the next activeInstance.
+      resumeGuardRef.current = activeUnitForChoice?.instanceId ?? null;
       setAwaitingAction(false);
       setPlaying(true);
     },
-    []
+    [activeUnitForChoice?.instanceId]
   );
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
@@ -637,6 +655,8 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     if (!attackerRoot || !targetRoot) {
+      bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}
+foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       return;
     }
     if (attackerRoot === targetRoot) return;
