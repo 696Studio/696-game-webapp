@@ -2323,6 +2323,9 @@ const hpPct = useMemo(() => {
             onClick={() => setUiDebug((v) => !v)}
             style={{
               padding: "10px 12px",
+              touchAction: "manipulation",
+              WebkitTapHighlightColor: "transparent",
+              userSelect: "none",
               borderRadius: 12,
               border: "1px solid rgba(255,255,255,0.22)",
               background: "rgba(0,0,0,0.7)",
@@ -4131,9 +4134,14 @@ const hpPct = useMemo(() => {
 
 	          <button
 	            type="button"
-	            onClick={() => chooseAction("attack")}
+	            onMouseDown={(e) => { e.preventDefault(); }}
+              onTouchStart={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur?.(); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); chooseAction("attack"); }}
 	            style={{
 	              padding: "10px 12px",
+              touchAction: "manipulation",
+              WebkitTapHighlightColor: "transparent",
+              userSelect: "none",
 	              borderRadius: 14,
 	              border: lastAction === "attack" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
 	              background: lastAction === "attack" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
@@ -4149,7 +4157,9 @@ const hpPct = useMemo(() => {
 	          </button>
 	          <button
 	            type="button"
-	            onClick={() => chooseAction("defend")}
+	            onMouseDown={(e) => { e.preventDefault(); }}
+              onTouchStart={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur?.(); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); chooseAction("defend"); }}
 	            style={{
 	              padding: "10px 12px",
 	              borderRadius: 14,
