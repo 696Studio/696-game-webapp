@@ -601,17 +601,39 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
 
 
-  // Step 1b: iOS TG WebView jump fix — stabilize scroll for a few frames after a tap.
-  const stabilizeScrollAfterTap = useCallback(() => {
+  // Step 1b: iOS TG WebView jump fix — prevent "scroll-into-view" bounce when tapping choice buttons.
+  const scrollGuardRef = useRef<null | { x: number; y: number; until: number }>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onScroll = () => {
+      const g = scrollGuardRef.current;
+      if (!g) return;
+      if (Date.now() > g.until) {
+        scrollGuardRef.current = null;
+        return;
+      }
+      window.scrollTo(g.x, g.y);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll as any);
+  }, []);
+
+  const stabilizeScrollAfterTap = useCallback((ms: number = 350) => {
     if (typeof window === "undefined") return;
     const x = window.scrollX || 0;
     const y = window.scrollY || 0;
-    // Restore scroll position over several frames/timeouts to defeat iOS "scroll-into-view" bounce.
+    scrollGuardRef.current = { x, y, until: Date.now() + ms };
+
+    // Hammer it a few times to beat iOS WebView bounce.
+    window.scrollTo(x, y);
     requestAnimationFrame(() => window.scrollTo(x, y));
     requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(x, y)));
     setTimeout(() => window.scrollTo(x, y), 50);
-    setTimeout(() => window.scrollTo(x, y), 200);
+    setTimeout(() => window.scrollTo(x, y), 150);
+    setTimeout(() => window.scrollTo(x, y), 260);
   }, []);
+
 
   const chooseAction = useCallback(
     (choice: "attack" | "defend") => {
