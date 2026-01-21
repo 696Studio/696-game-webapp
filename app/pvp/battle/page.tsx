@@ -611,37 +611,52 @@ const stabilizeScrollAfterTap = useCallback(() => {
   setTimeout(() => { try { window.scrollTo(x, y); } catch {} }, 200);
 }, []);
 
+const choiceHandlerRef = useRef<(choice: "attack" | "defend") => void>(() => {});
+useEffect(() => {
+  choiceHandlerRef.current = (choice) => {
+    // Hard gate: only accept taps when we are awaiting the player's action.
+    if (!awaitingAction) return;
+    chooseAction(choice);
+  };
+}, [awaitingAction, chooseAction]);
+
+useEffect(() => {
+  // Telegram iOS WebView: React onTouchStart can be passive; preventDefault won't reliably stop scroll-into-view.
+  // We attach a native touchstart listener with { passive:false } and event delegation.
+  const onTouchStart = (ev: TouchEvent) => {
+    const target = ev.target as HTMLElement | null;
+    const el = (target?.closest?.('[data-bb-choice]') as HTMLElement | null) ?? null;
+    if (!el) return;
+
+    // Stop TG iOS micro-bounce / scroll-into-view.
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    try { (document.activeElement as HTMLElement | null)?.blur?.(); } catch {}
+
+    const choice = el.getAttribute('data-bb-choice');
+    if (choice === "attack" || choice === "defend") {
+      choiceHandlerRef.current(choice);
+    }
+  };
+
+  document.addEventListener("touchstart", onTouchStart, { passive: false, capture: true });
+
+  return () => {
+    document.removeEventListener("touchstart", onTouchStart, { capture: true } as any);
+  };
+}, []);
+
 const handleChoiceTap = useCallback((choice: "attack" | "defend") => {
-  // Kill focus to prevent scroll-into-view on iOS.
+  // Desktop / non-touch fallback.
+  if (!awaitingAction) return;
   try { (document.activeElement as HTMLElement | null)?.blur?.(); } catch {}
   chooseAction(choice);
-}, [chooseAction]);
+}, [awaitingAction, chooseAction]);
 
 
 
-  
-  const attackBtnRef = useRef<HTMLDivElement | null>(null);
-  const defendBtnRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const attach = (el: HTMLDivElement | null, choice: "attack" | "defend") => {
-      if (!el) return () => {};
-      const handler = (ev: TouchEvent) => {
-        // IMPORTANT: must be non-passive so preventDefault works on iOS WebView.
-        ev.preventDefault();
-        ev.stopPropagation();
-        try { (document.activeElement as HTMLElement | null)?.blur?.(); } catch {}
-        chooseAction(choice);
-      };
-      el.addEventListener("touchstart", handler, { passive: false });
-      return () => el.removeEventListener("touchstart", handler as any);
-    };
-    const d1 = attach(attackBtnRef.current, "attack");
-    const d2 = attach(defendBtnRef.current, "defend");
-    return () => { try { d1(); } catch {} try { d2(); } catch {} };
-  }, [chooseAction]);
-
-const arenaRef = useRef<HTMLDivElement | null>(null);
+  const arenaRef = useRef<HTMLDivElement | null>(null);
 
   const onArenaPointerDownCapture = (ev: React.PointerEvent) => {
     if (!isArenaDebug) return;
@@ -4081,7 +4096,7 @@ const hpPct = useMemo(() => {
 	          <div
   role="button"
   tabIndex={-1}
-  ref={attackBtnRef}
+  data-bb-choice="attack"
   onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleChoiceTap("attack"); }}
   style={{
     padding: "10px 12px",
@@ -4107,7 +4122,7 @@ const hpPct = useMemo(() => {
 <div
   role="button"
   tabIndex={-1}
-  ref={defendBtnRef}
+  data-bb-choice="defend"
   onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleChoiceTap("defend"); }}
   style={{
     padding: "10px 12px",
