@@ -10,6 +10,57 @@ import CardArt from "../../components/CardArt";
 import BattleFxLayer from './BattleFxLayer';
 
 
+// ===== BB_ATTACK_DEBUG_OVERLAY =====
+function bbDbgEnabled() {
+  try {
+    if (typeof window === "undefined") return false;
+    // Toggle options (no URL needed):
+    // 1) window.__bbdbg = 1
+    // 2) localStorage.setItem("bbdbg","1")
+    // 3) sessionStorage.setItem("bbdbg","1")
+    const w = window as any;
+    const ls = (() => { try { return window.localStorage?.getItem("bbdbg"); } catch { return null; } })();
+    const ss = (() => { try { return window.sessionStorage?.getItem("bbdbg"); } catch { return null; } })();
+    if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
+    if (ls === "1" || ss === "1") return true;
+
+    // URL toggle (works on iOS where console is hard to open):
+    //   ?dbg=1
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("dbg") === "1") return true;
+    } catch {}
+
+    // Default OFF (no overlays unless explicitly enabled)
+    return false;
+  } catch {
+    return false;
+  }
+}
+function bbDbgSet(msg: string) {
+  if (!bbDbgEnabled()) return;
+  const id = "bb-attack-debug";
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement("div");
+    el.id = id;
+    el.style.position = "fixed";
+    el.style.left = "12px";
+    el.style.top = "12px";
+    el.style.zIndex = "999999";
+    el.style.padding = "10px 12px";
+    el.style.font = "12px/1.25 system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    el.style.background = "rgba(0,0,0,0.72)";
+    el.style.color = "white";
+    el.style.borderRadius = "12px";
+    el.style.pointerEvents = "none";
+    el.style.maxWidth = "92vw";
+    el.style.whiteSpace = "pre-wrap";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+}
+
 const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
 
 type MatchRow = {
@@ -455,38 +506,21 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [t, setT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
 
-  // =========================================================
-  // TURN-BASED STATE MACHINE (iOS-safe)
-  // One turn = one resolve = exactly once.
-  // =========================================================
-  type BattlePhase = "IDLE" | "AWAIT_CHOICE" | "RESOLVING" | "TURN_END" | "FINISHED";
-  const [battlePhase, setBattlePhase] = useState<BattlePhase>("IDLE");
-  const [turnId, setTurnId] = useState(0);
-  const [resolvedTurnId, setResolvedTurnId] = useState(-1);
-  const [choiceForTurnId, setChoiceForTurnId] = useState<number | null>(null);
-
-  // UI helper (keeps existing UI wiring simple)
-  const awaitingAction = battlePhase === "AWAIT_CHOICE";
-
-  // Player action choice (applies to current turnId)
+  // Semi-auto (Step 3.x): player action choice gating + visible badge on active card
+  const [awaitingAction, setAwaitingAction] = useState(false);
   const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
 
-  // Gate at match start: NO autoplay. Must wait for user gesture.
-  const didInitStateMachineRef = useRef(false);
+  // Start gate: require a user gesture (ATTACK/DEFEND) before any playback.
+  // Critical for Telegram iOS WebView to reliably paint transforms/transitions.
+  const didStartGateRef = useRef(false);
   useEffect(() => {
     if (!match) return;
-    if (didInitStateMachineRef.current) return;
-    didInitStateMachineRef.current = true;
-
-    setBattlePhase("AWAIT_CHOICE");
-    setTurnId(0);
-    setResolvedTurnId(-1);
-    setChoiceForTurnId(null);
+    if (didStartGateRef.current) return;
+    didStartGateRef.current = true;
+    // Pause at the very beginning so the first tap is guaranteed to be a real gesture.
+    setAwaitingAction(true);
     setLastAction(null);
-
-    // Hard stop at start (gesture required on iOS)
     setPlaying(false);
-    setT(0);
   }, [match?.id]);
 
   const startAtRef = useRef<number | null>(null);
@@ -505,22 +539,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   }, [match, myUserId]);
 
   const enemySide: "p1" | "p2" = youSide === "p1" ? "p2" : "p1";
-
-  // Turn gates: pause at the start of EACH turn_start (plus t=0 start gate).
-  // iOS-safe loop: pause → choice (gesture) → resolve ONE slice → pause.
-  // NOTE: We gate on every turn_start (not only your side) to avoid multi-turn "autoplay" per click.
-  const turnGates = useMemo(() => {
-    const gates: number[] = [0];
-    for (const e of timeline) {
-      if (!e || (e as any).type !== "turn_start") continue;
-      const tt = Number((e as any)?.t ?? 0);
-      if (Number.isFinite(tt) && tt >= 0) gates.push(tt);
-    }
-    // de-dup + sort (round to avoid float noise)
-    const uniq = Array.from(new Set(gates.map((x) => Math.round(x * 10000) / 10000))).sort((a, b) => a - b);
-    return uniq;
-  }, [timeline]);
-
   const [p1CardsFull, setP1CardsFull] = useState<CardMeta[]>([]);
   const [p2CardsFull, setP2CardsFull] = useState<CardMeta[]>([]);
 
@@ -548,49 +566,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
-
-  // Turn ownership by gate index (used to pause only on YOUR turns, and auto-continue enemy slices)
-  const turnOwnerByIndex = useMemo(() => {
-    const owners: Array<"p1" | "p2" | null> = new Array(turnGates.length).fill(null);
-    const eps = 1e-3;
-
-    for (let i = 0; i < turnGates.length; i++) {
-      const gateT = turnGates[i];
-
-      for (const e of timeline) {
-        if (!e || (e as any).type !== "turn_start") continue;
-        const tt = Number((e as any)?.t ?? 0);
-        if (!Number.isFinite(tt)) continue;
-        if (Math.abs(tt - gateT) > eps) continue;
-
-        const ref = readUnitRefFromEvent(e as any, "unit");
-        const iid = ref?.instanceId;
-        if (!iid) break;
-
-        let owner: "p1" | "p2" | null = null;
-        for (const u of Object.values(p1UnitsBySlot)) {
-          if (u?.instanceId === iid) {
-            owner = "p1";
-            break;
-          }
-        }
-        if (!owner) {
-          for (const u of Object.values(p2UnitsBySlot)) {
-            if (u?.instanceId === iid) {
-              owner = "p2";
-              break;
-            }
-          }
-        }
-
-        owners[i] = owner;
-        break;
-      }
-    }
-
-    return owners;
-  }, [timeline, turnGates, p1UnitsBySlot, p2UnitsBySlot]);
-
   // Semi-auto gate: pause on YOUR unit turn until player picks ATTACK/DEFEND.
   const activeUnitForChoice = useMemo(() => {
     if (!activeInstance) return null;
@@ -599,105 +574,27 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     return null;
   }, [activeInstance, p1UnitsBySlot, p2UnitsBySlot]);
 
-  // Turn-based choice gate: action applies ONLY to current turnId and starts exactly one resolve.
+  useEffect(() => {
+    if (!activeUnitForChoice) return;
+    if (activeUnitForChoice.side !== youSide) return;
+    if (awaitingAction) return;
+    if (!playing) return; // don't override manual pause
+    // Pause timeline and wait for a real tap (critical for TG iOS WebView painting)
+    setAwaitingAction(true);
+    setLastAction(null);
+    setPlaying(false);
+  }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
+
   const chooseAction = useCallback(
     (choice: "attack" | "defend") => {
-      if (battlePhase !== "AWAIT_CHOICE") return;
-      // Prevent re-resolving the same turn under any re-render
-      if (turnId <= resolvedTurnId) return;
-
       setLastAction(choice);
-      setChoiceForTurnId(turnId);
-
-      // Start resolving this turn (gesture-safe for iOS)
-      setBattlePhase("RESOLVING");
+      setAwaitingAction(false);
       setPlaying(true);
     },
-    [battlePhase, turnId, resolvedTurnId]
+    []
   );
 
-  // iOS TG WebView иногда "подпрыгивает" при тапе (scroll-into-view / overscroll bounce).
-  // Нам нельзя лочить скролл всегда (нужно свайпать к полю), поэтому лочим КОРОТКО после нажатия.
-  const bodyLockRef = useRef<null | { scrollY: number; bodyCssText: string; htmlCssText: string }>(null);
-  const bodyLockTimerRef = useRef<number | null>(null);
-
-  const lockBodyScrollBriefly = useCallback(() => {
-    if (typeof window === "undefined") return;
-
-    // cancel previous timer, keep lock window "fresh"
-    if (bodyLockTimerRef.current != null) {
-      window.clearTimeout(bodyLockTimerRef.current);
-      bodyLockTimerRef.current = null;
-    }
-
-    const body = document.body;
-    const html = document.documentElement;
-    if (!body || !html) return;
-
-    // Save original styles only once per lock session
-    if (!bodyLockRef.current) {
-      bodyLockRef.current = {
-        scrollY: window.scrollY || window.pageYOffset || 0,
-        bodyCssText: body.style.cssText || "",
-        htmlCssText: html.style.cssText || "",
-      };
-
-      const y = bodyLockRef.current.scrollY;
-
-      // Lock (brief)
-      body.style.position = "fixed";
-      body.style.top = `-${y}px`;
-      body.style.left = "0";
-      body.style.right = "0";
-      body.style.width = "100%";
-      body.style.overflow = "hidden";
-      // reduce iOS overscroll bounce effects
-      (body.style as any).overscrollBehavior = "none";
-      (html.style as any).overscrollBehavior = "none";
-    }
-
-    bodyLockTimerRef.current = window.setTimeout(() => {
-      const snap = bodyLockRef.current;
-      if (!snap) return;
-
-      const { scrollY, bodyCssText, htmlCssText } = snap;
-
-      // Restore
-      document.body.style.cssText = bodyCssText;
-      document.documentElement.style.cssText = htmlCssText;
-
-      // Restore scroll position
-      window.scrollTo(0, scrollY);
-
-      bodyLockRef.current = null;
-      bodyLockTimerRef.current = null;
-    }, 450);
-  }, []);
-
-  const stabilizeScrollAfterTap = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const x = window.scrollX || 0;
-    const y = window.scrollY || window.pageYOffset || 0;
-
-    const restore = () => {
-      try { window.scrollTo(x, y); } catch {}
-    };
-
-    // Do multiple restores across frames/time to counter iOS WebView "scroll-into-view" jitter
-    restore();
-    requestAnimationFrame(() => {
-      restore();
-      requestAnimationFrame(() => restore());
-    });
-    window.setTimeout(restore, 50);
-    window.setTimeout(restore, 200);
-  }, []);
-
-
   const arenaRef = useRef<HTMLDivElement | null>(null);
-
-  // Attack clarity overlay: show who attacks whom during the lunge (iOS-safe, no text on cards).
-  const [atkLink, setAtkLink] = useState<null | { x1: number; y1: number; x2: number; y2: number; w: number; h: number; key: string }>(null);
 
   const onArenaPointerDownCapture = (ev: React.PointerEvent) => {
     if (!isArenaDebug) return;
@@ -740,7 +637,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     if (!attackerRoot || !targetRoot) {
-return;
+      return;
     }
     if (attackerRoot === targetRoot) return;
 
@@ -838,22 +735,7 @@ return;
     attackerRoot.style.transition = 'none';
     attackerRoot.style.transform = 'translate3d(0px, 0px, 0px)';
 
-    try { attackerRoot.classList.add('is-attack-from'); } catch {}
     try { targetRoot.classList.add('is-attack-to'); } catch {}
-
-    // Draw attack link inside arena (helps player see who hits who).
-    try {
-      const arenaEl = arenaRef.current;
-      const arenaR = arenaEl ? arenaEl.getBoundingClientRect() : null;
-      if (arenaR) {
-        const x1 = (ar.left + ar.width / 2) - arenaR.left;
-        const y1 = (ar.top + ar.height / 2) - arenaR.top;
-        const x2 = (br.left + br.width / 2) - arenaR.left;
-        const y2 = (br.top + br.height / 2) - arenaR.top;
-        setAtkLink({ x1, y1, x2, y2, w: arenaR.width, h: arenaR.height, key: `${fromId}->${toId}:${Date.now()}` });
-      }
-    } catch {}
-
 
     // LUNGE: animate only transform.
     requestAnimationFrame(() => {
@@ -870,13 +752,13 @@ return;
         (attackerRoot.style as any).webkitTransition = `transform ${outMs}ms ${ease}`;
         (attackerRoot.style as any).webkitTransform = `translate3d(${dx}px, ${dy}px, 0px)`;
         try { (window as any).__bbLastLungeAt = Date.now(); } catch {}
-const isIOS =
+        bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_APPLIED ${fromId} -> ${toId}`);
+
+        const isIOS =
           typeof document !== "undefined" && document.documentElement.classList.contains("bb-ios");
 
         const doReturn = () => {
-          try { setAtkLink(null); } catch {}
           try { targetRoot.classList.remove('is-attack-to'); } catch {}
-          try { attackerRoot.classList.remove('is-attack-from'); } catch {}
 
           // RETURN: put the node back where it was, then restore styles.
           try {
@@ -921,7 +803,9 @@ const isIOS =
                 doReturn();
               };
             };
-return;
+
+            bbDbgSet(`#${(window as any).__bbAtkTick || 0} LUNGE_WAAPI ${fromId} -> ${toId}`);
+            return;
           } catch {
             // fall through to CSS path
           }
@@ -998,6 +882,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
+    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for ATTACK events...'); }
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
@@ -1389,73 +1274,35 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   useEffect(() => {
     if (!match) return;
 
-    // Never resolve unless state machine says so.
-    if (battlePhase !== "RESOLVING") return;
-
-    const segStart = Math.max(0, Number(turnGates?.[turnId] ?? 0));
-    const segEnd = Math.min(
-      durationSec,
-      Math.max(segStart, Number(turnGates?.[turnId + 1] ?? durationSec))
-    );
-
     const step = (now: number) => {
-      if (battlePhase !== "RESOLVING") return;
       if (!playing) return;
 
       if (startAtRef.current == null) {
-        // Keep continuity if RESOLVING resumes from a non-zero t.
-        startAtRef.current = now - (((t - segStart) / Math.max(0.0001, rate)) * 1000);
+        startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
       }
 
       const elapsedWall = (now - startAtRef.current) / 1000;
       const elapsed = elapsedWall * rate;
 
-      const nextT = Math.min(segEnd, Math.max(segStart, segStart + elapsed));
+      const nextT = Math.min(durationSec, Math.max(0, elapsed));
       setT(nextT);
 
-      if (nextT >= segEnd - 1e-6) {
-        // End of this turn slice.
-        setResolvedTurnId(turnId);
-
-        const nextTurn = turnId + 1;
-        const isLast = nextTurn >= turnGates.length;
-        const nextOwner = !isLast ? (turnOwnerByIndex?.[nextTurn] ?? null) : null;
-        const shouldPauseForChoice = !isLast && nextOwner === youSide;
-
-        if (isLast) {
-          setPlaying(false);
-          setBattlePhase("FINISHED");
-        } else {
-          setTurnId(nextTurn);
-          setChoiceForTurnId(null);
-          setLastAction(null);
-
-          if (shouldPauseForChoice) {
-            // Pause only on YOUR turns (gesture gate)
-            setPlaying(false);
-            setBattlePhase("AWAIT_CHOICE");
-          } else {
-            // Auto-continue enemy slice without extra clicks
-            setPlaying(true);
-            setBattlePhase("RESOLVING");
-          }
-        }
-
-        startAtRef.current = null;
+      if (nextT >= durationSec) {
+        setPlaying(false);
         return;
       }
 
       rafRef.current = window.requestAnimationFrame(step);
     };
 
-    rafRef.current = window.requestAnimationFrame(step);
+    if (playing) rafRef.current = window.requestAnimationFrame(step);
 
     return () => {
       if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, battlePhase, turnId, turnGates, turnOwnerByIndex, durationSec, rate, t]);
+  }, [match, playing, durationSec, rate]);
 
   useEffect(() => {
     startAtRef.current = null;
@@ -2100,20 +1947,7 @@ const hpPct = useMemo(() => {
     const isActive = !!activeUnit && activeInstance ? activeUnit.instanceId === activeInstance : false;
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
-
-    // Empty slot: render only the slot container (no card faces / no 696 mark / no placeholder text).
-    // This avoids "phantom cards" at battle start and prevents iOS compositing weirdness.
-    if (!renderUnit) {
-      return (
-        <div
-          className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")}
-          data-unit-id={undefined}
-        />
-      );
-    }
-
     return (
-
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
         <div
           data-bb-slot={slotKey}
@@ -2401,9 +2235,6 @@ const hpPct = useMemo(() => {
             onClick={() => setUiDebug((v) => !v)}
             style={{
               padding: "10px 12px",
-              touchAction: "manipulation",
-              WebkitTapHighlightColor: "transparent",
-              userSelect: "none",
               borderRadius: 12,
               border: "1px solid rgba(255,255,255,0.22)",
               background: "rgba(0,0,0,0.7)",
@@ -3097,16 +2928,6 @@ const hpPct = useMemo(() => {
           mix-blend-mode: screen;
           marker-end: url(#atkArrow);
         }
-
-        /* Who-attacks-who clarity (no text, iOS-safe) */
-        .bb-card.is-attack-from .bb-card-inner {
-          box-shadow: 0 0 0 2px rgba(255,255,255,0.55), 0 10px 22px rgba(0,0,0,0.35);
-        }
-        .bb-card.is-attack-to .bb-card-inner {
-          box-shadow: 0 0 0 2px rgba(255,255,255,0.85), 0 10px 22px rgba(0,0,0,0.35);
-        }
-
-
 
         .map-portrait {
           position: absolute;
@@ -3830,35 +3651,6 @@ const hpPct = useMemo(() => {
 
         <section ref={arenaRef as any} onPointerDownCapture={onArenaPointerDownCapture} className={["board", "arena", boardFxClass].join(" ")}>
 
-          {/* Attack link overlay (who hits who) */}
-          {atkLink && (
-            <svg
-              className="atk-path"
-              width="100%"
-              height="100%"
-              viewBox="0 0 100 100"
-              preserveAspectRatio="none"
-              style={{
-                position: "absolute",
-                inset: 0,
-                zIndex: 40,
-                pointerEvents: "none",
-              }}
-            >
-              <defs>
-                <marker id="atkArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-                  <path d="M0,0 L8,4 L0,8 Z" fill="rgba(255,255,255,0.85)" />
-                </marker>
-              </defs>
-              {/* We draw in arena pixel space using an absolute SVG with 100% size; convert to percentages */}
-              <path
-                className="atk-path-core"
-                d={`M ${(atkLink.x1 / (atkLink.w || 1)) * 100} ${(atkLink.y1 / (atkLink.h || 1)) * 100} L ${(atkLink.x2 / (atkLink.w || 1)) * 100} ${(atkLink.y2 / (atkLink.h || 1)) * 100}`}
-              />
-            </svg>
-          )}
-
-
           {isArenaDebug && (
             <div
               style={{
@@ -4212,16 +4004,9 @@ const hpPct = useMemo(() => {
 
 	          <button
 	            type="button"
-              tabIndex={-1}
-              onFocus={(e) => { (e.currentTarget as HTMLButtonElement).blur(); }}
-	            onMouseDown={(e) => { e.preventDefault(); }}
-              onTouchStart={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur?.(); }}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); lockBodyScrollBriefly(); stabilizeScrollAfterTap(); chooseAction("attack"); }}
+	            onClick={() => chooseAction("attack")}
 	            style={{
 	              padding: "10px 12px",
-              touchAction: "manipulation",
-              WebkitTapHighlightColor: "transparent",
-              userSelect: "none",
 	              borderRadius: 14,
 	              border: lastAction === "attack" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
 	              background: lastAction === "attack" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
@@ -4237,11 +4022,7 @@ const hpPct = useMemo(() => {
 	          </button>
 	          <button
 	            type="button"
-              tabIndex={-1}
-              onFocus={(e) => { (e.currentTarget as HTMLButtonElement).blur(); }}
-	            onMouseDown={(e) => { e.preventDefault(); }}
-              onTouchStart={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur?.(); }}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); lockBodyScrollBriefly(); stabilizeScrollAfterTap(); chooseAction("defend"); }}
+	            onClick={() => chooseAction("defend")}
 	            style={{
 	              padding: "10px 12px",
 	              borderRadius: 14,
@@ -4264,91 +4045,6 @@ const hpPct = useMemo(() => {
 }
 
 export default function BattlePage() {
-
-  // iOS tap scroll stabilizer:
-  // Telegram iOS WebView sometimes "jumps" the page on button taps (scroll-into-view / bounce).
-  // We lock body scroll ONLY briefly right after the tap, so the player can still swipe/scroll normally.
-  const tapScrollLockRef = useRef<null | {
-    timer: any;
-    prev: {
-      bodyPosition: string;
-      bodyTop: string;
-      bodyLeft: string;
-      bodyRight: string;
-      bodyWidth: string;
-      bodyOverflow: string;
-      htmlOverscroll: string;
-      bodyOverscroll: string;
-    };
-  }>(null);
-
-  const lockBodyScrollBriefly = useCallback((ms: number = 450) => {
-    if (typeof window === "undefined") return;
-    const body = document.body;
-    const html = document.documentElement;
-    const y = window.scrollY || window.pageYOffset || 0;
-
-    // If already locked, just extend the timer.
-    if (!tapScrollLockRef.current) {
-      tapScrollLockRef.current = {
-        timer: null,
-        prev: {
-          bodyPosition: body.style.position,
-          bodyTop: body.style.top,
-          bodyLeft: body.style.left,
-          bodyRight: body.style.right,
-          bodyWidth: body.style.width,
-          bodyOverflow: body.style.overflow,
-          htmlOverscroll: html.style.overscrollBehavior,
-          bodyOverscroll: body.style.overscrollBehavior,
-        },
-      };
-
-      body.style.position = "fixed";
-      body.style.top = `-${y}px`;
-      body.style.left = "0";
-      body.style.right = "0";
-      body.style.width = "100%";
-      body.style.overflow = "hidden";
-      html.style.overscrollBehavior = "none";
-      body.style.overscrollBehavior = "none";
-    }
-
-    if (tapScrollLockRef.current.timer) window.clearTimeout(tapScrollLockRef.current.timer);
-
-    tapScrollLockRef.current.timer = window.setTimeout(() => {
-      const cur = tapScrollLockRef.current;
-      if (!cur) return;
-
-      body.style.position = cur.prev.bodyPosition;
-      body.style.top = cur.prev.bodyTop;
-      body.style.left = cur.prev.bodyLeft;
-      body.style.right = cur.prev.bodyRight;
-      body.style.width = cur.prev.bodyWidth;
-      body.style.overflow = cur.prev.bodyOverflow;
-      html.style.overscrollBehavior = cur.prev.htmlOverscroll;
-      body.style.overscrollBehavior = cur.prev.bodyOverscroll;
-
-      tapScrollLockRef.current = null;
-
-      // Restore scroll position after unlock.
-      window.scrollTo(0, y);
-    }, ms);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      const cur = tapScrollLockRef.current;
-      if (!cur) return;
-      try {
-        window.clearTimeout(cur.timer);
-      } catch {}
-      tapScrollLockRef.current = null;
-    };
-  }, []);
-
-
-
   // IMPORTANT: Fix React hydration crash (#418) in Telegram WebView.
   // Even though this file is a Client Component, Next.js still pre-renders it on the server.
   // Any client-only differences (viewport/theme, timers, DOM measurements, etc.) can cause
