@@ -674,6 +674,26 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     }, 450);
   }, []);
 
+  const stabilizeScrollAfterTap = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const x = window.scrollX || 0;
+    const y = window.scrollY || window.pageYOffset || 0;
+
+    const restore = () => {
+      try { window.scrollTo(x, y); } catch {}
+    };
+
+    // Do multiple restores across frames/time to counter iOS WebView "scroll-into-view" jitter
+    restore();
+    requestAnimationFrame(() => {
+      restore();
+      requestAnimationFrame(() => restore());
+    });
+    window.setTimeout(restore, 50);
+    window.setTimeout(restore, 200);
+  }, []);
+
+
   const arenaRef = useRef<HTMLDivElement | null>(null);
 
   // Attack clarity overlay: show who attacks whom during the lunge (iOS-safe, no text on cards).
@@ -4192,9 +4212,11 @@ const hpPct = useMemo(() => {
 
 	          <button
 	            type="button"
+              tabIndex={-1}
+              onFocus={(e) => { (e.currentTarget as HTMLButtonElement).blur(); }}
 	            onMouseDown={(e) => { e.preventDefault(); }}
               onTouchStart={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur?.(); }}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); lockBodyScrollBriefly(); chooseAction("attack"); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); lockBodyScrollBriefly(); stabilizeScrollAfterTap(); chooseAction("attack"); }}
 	            style={{
 	              padding: "10px 12px",
               touchAction: "manipulation",
@@ -4215,9 +4237,11 @@ const hpPct = useMemo(() => {
 	          </button>
 	          <button
 	            type="button"
+              tabIndex={-1}
+              onFocus={(e) => { (e.currentTarget as HTMLButtonElement).blur(); }}
 	            onMouseDown={(e) => { e.preventDefault(); }}
               onTouchStart={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur?.(); }}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); lockBodyScrollBriefly(); chooseAction("defend"); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); lockBodyScrollBriefly(); stabilizeScrollAfterTap(); chooseAction("defend"); }}
 	            style={{
 	              padding: "10px 12px",
 	              borderRadius: 14,
