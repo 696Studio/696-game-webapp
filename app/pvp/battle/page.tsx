@@ -574,9 +574,24 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     return null;
   }, [activeInstance, p1UnitsBySlot, p2UnitsBySlot]);
 
+  // Prevent immediate re-pausing on the same choice point right after the user taps ATTACK/DEFEND.
+  // We only pause once per activeInstance/active unit, then allow playback to advance.
+  const resumeGuardRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Clear guard as soon as the active choice point changes.
+    const cur = activeUnitForChoice?.instanceId ?? null;
+    if (resumeGuardRef.current && cur && cur !== resumeGuardRef.current) {
+      resumeGuardRef.current = null;
+    }
+  }, [activeUnitForChoice?.instanceId]);
+
+
+
   useEffect(() => {
     if (!activeUnitForChoice) return;
     if (activeUnitForChoice.side !== youSide) return;
+    if (resumeGuardRef.current === activeUnitForChoice.instanceId) return;
     if (awaitingAction) return;
     if (!playing) return; // don't override manual pause
     // Pause timeline and wait for a real tap (critical for TG iOS WebView painting)
@@ -585,76 +600,30 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     setPlaying(false);
   }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
 
+
+  // Step 1b: iOS TG WebView jump fix — stabilize scroll for a few frames after a tap.
+  const stabilizeScrollAfterTap = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const x = window.scrollX || 0;
+    const y = window.scrollY || 0;
+    // Restore scroll position over several frames/timeouts to defeat iOS "scroll-into-view" bounce.
+    requestAnimationFrame(() => window.scrollTo(x, y));
+    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(x, y)));
+    setTimeout(() => window.scrollTo(x, y), 50);
+    setTimeout(() => window.scrollTo(x, y), 200);
+  }, []);
+
   const chooseAction = useCallback(
     (choice: "attack" | "defend") => {
       setLastAction(choice);
+      // Mark this choice point as "consumed" so the pause effect doesn't instantly re-trigger
+      // before the timeline advances to the next activeInstance.
+      resumeGuardRef.current = activeUnitForChoice?.instanceId ?? null;
       setAwaitingAction(false);
       setPlaying(true);
     },
-    []
+    [activeUnitForChoice?.instanceId]
   );
-
-// iOS Telegram WebView can "jump" the page on tap (scroll-into-view / bounce).
-// We stabilize the scroll position for a few frames right after the user gesture.
-const stabilizeScrollAfterTap = useCallback(() => {
-  if (typeof window === "undefined") return;
-  const x = window.scrollX || 0;
-  const y = window.scrollY || 0;
-
-  // Immediate + a couple of frames + short timeouts catch TG iOS bounce reliably.
-  try { window.scrollTo(x, y); } catch {}
-  requestAnimationFrame(() => { try { window.scrollTo(x, y); } catch {} });
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => { try { window.scrollTo(x, y); } catch {} });
-  });
-  setTimeout(() => { try { window.scrollTo(x, y); } catch {} }, 50);
-  setTimeout(() => { try { window.scrollTo(x, y); } catch {} }, 200);
-}, []);
-
-const choiceHandlerRef = useRef<(choice: "attack" | "defend") => void>(() => {});
-useEffect(() => {
-  choiceHandlerRef.current = (choice) => {
-    // Hard gate: only accept taps when we are awaiting the player's action.
-    if (!awaitingAction) return;
-    chooseAction(choice);
-  };
-}, [awaitingAction, chooseAction]);
-
-useEffect(() => {
-  // Telegram iOS WebView: React onTouchStart can be passive; preventDefault won't reliably stop scroll-into-view.
-  // We attach a native touchstart listener with { passive:false } and event delegation.
-  const onTouchStart = (ev: TouchEvent) => {
-    const target = ev.target as HTMLElement | null;
-    const el = (target?.closest?.('[data-bb-choice]') as HTMLElement | null) ?? null;
-    if (!el) return;
-
-    // Stop TG iOS micro-bounce / scroll-into-view.
-    ev.preventDefault();
-    ev.stopPropagation();
-
-    try { (document.activeElement as HTMLElement | null)?.blur?.(); } catch {}
-
-    const choice = el.getAttribute('data-bb-choice');
-    if (choice === "attack" || choice === "defend") {
-      choiceHandlerRef.current(choice);
-    }
-  };
-
-  document.addEventListener("touchstart", onTouchStart, { passive: false, capture: true });
-
-  return () => {
-    document.removeEventListener("touchstart", onTouchStart, { capture: true } as any);
-  };
-}, []);
-
-const handleChoiceTap = useCallback((choice: "attack" | "defend") => {
-  // Desktop / non-touch fallback.
-  if (!awaitingAction) return;
-  try { (document.activeElement as HTMLElement | null)?.blur?.(); } catch {}
-  chooseAction(choice);
-}, [awaitingAction, chooseAction]);
-
-
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
 
@@ -2235,33 +2204,6 @@ const hpPct = useMemo(() => {
   if (!isTelegramEnv) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 pb-24">
-      
-      {(awaitingAction || playing) && (
-              <div
-                style={{
-                  position: "fixed",
-                  left: "50%",
-                  top: "46%",
-                  transform: "translate(-50%, -50%)",
-                  padding: "10px 14px",
-                  borderRadius: 16,
-                  background: "rgba(0,0,0,0.42)",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  color: "rgba(255,255,255,0.96)",
-                  fontWeight: 900,
-                  letterSpacing: 1.2,
-                  textTransform: "uppercase",
-                  fontSize: 14,
-                  zIndex: 9999,
-                  pointerEvents: "none",
-                  backdropFilter: "blur(6px)",
-                  WebkitBackdropFilter: "blur(6px)",
-                }}
-              >
-                {awaitingAction ? "Твой ход" : "Ход противника"}
-              </div>
-            )}
-      
 {!HIDE_VISUAL_DEBUG && (
       <div
         style={{
@@ -4094,57 +4036,87 @@ const hpPct = useMemo(() => {
 	          </div>
 
 	          <div
-  role="button"
-  tabIndex={-1}
-  data-bb-choice="attack"
-  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleChoiceTap("attack"); }}
-  style={{
-    padding: "10px 12px",
-    borderRadius: 14,
-    border: lastAction === "attack" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
-    background: lastAction === "attack" ? "rgba(255,80,80,0.22)" : "rgba(0,0,0,0.25)",
-    color: "rgba(255,255,255,0.95)",
-    fontWeight: 900,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    cursor: awaitingAction ? "pointer" : "default",
-    userSelect: "none",
-    WebkitUserSelect: "none",
-    WebkitTapHighlightColor: "transparent",
-    touchAction: "manipulation",
-    opacity: awaitingAction ? 1 : 0.45,
-    minWidth: 110,
-    textAlign: "center",
-  }}
->
-  Атака
-</div>
-<div
-  role="button"
-  tabIndex={-1}
-  data-bb-choice="defend"
-  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleChoiceTap("defend"); }}
-  style={{
-    padding: "10px 12px",
-    borderRadius: 14,
-    border: lastAction === "defend" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
-    background: lastAction === "defend" ? "rgba(120,180,255,0.22)" : "rgba(0,0,0,0.25)",
-    color: "rgba(255,255,255,0.95)",
-    fontWeight: 900,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    cursor: awaitingAction ? "pointer" : "default",
-    userSelect: "none",
-    WebkitUserSelect: "none",
-    WebkitTapHighlightColor: "transparent",
-    touchAction: "manipulation",
-    opacity: awaitingAction ? 1 : 0.45,
-    minWidth: 110,
-    textAlign: "center",
-  }}
->
-  Защита
-</div>
+	            role="button"
+	            aria-label="ATTACK"
+	            tabIndex={-1}
+	            onTouchStart={(e) => {
+	              e.preventDefault();
+	              e.stopPropagation();
+	              const ae: any = document.activeElement;
+	              if (ae && typeof ae.blur === "function") ae.blur();
+	              stabilizeScrollAfterTap();
+	              chooseAction("attack");
+	            }}
+	            onMouseDown={(e) => {
+	              e.preventDefault();
+	              e.stopPropagation();
+	              const ae: any = document.activeElement;
+	              if (ae && typeof ae.blur === "function") ae.blur();
+	              stabilizeScrollAfterTap();
+	              chooseAction("attack");
+	            }}
+	            style={{
+	              padding: "10px 12px",
+	              borderRadius: 14,
+	              border: lastAction === "attack" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
+	              background: lastAction === "attack" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
+	              color: "rgba(255,255,255,0.95)",
+	              fontSize: 12,
+	              fontWeight: 1000,
+	              letterSpacing: "0.14em",
+	              textTransform: "uppercase",
+	              minWidth: 110,
+	            
+	              cursor: "pointer",
+	              userSelect: "none",
+	              WebkitTapHighlightColor: "transparent",
+	              WebkitTouchCallout: "none",
+	              touchAction: "manipulation",
+	            }}
+	          >
+	            ATTACK
+	          </div>
+	          <div
+	            role="button"
+	            aria-label="DEFEND"
+	            tabIndex={-1}
+	            onTouchStart={(e) => {
+	              e.preventDefault();
+	              e.stopPropagation();
+	              const ae: any = document.activeElement;
+	              if (ae && typeof ae.blur === "function") ae.blur();
+	              stabilizeScrollAfterTap();
+	              chooseAction("defend");
+	            }}
+	            onMouseDown={(e) => {
+	              e.preventDefault();
+	              e.stopPropagation();
+	              const ae: any = document.activeElement;
+	              if (ae && typeof ae.blur === "function") ae.blur();
+	              stabilizeScrollAfterTap();
+	              chooseAction("defend");
+	            }}
+	            style={{
+	              padding: "10px 12px",
+	              borderRadius: 14,
+	              border: lastAction === "defend" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
+	              background: lastAction === "defend" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
+	              color: "rgba(255,255,255,0.95)",
+	              fontSize: 12,
+	              fontWeight: 1000,
+	              letterSpacing: "0.14em",
+	              textTransform: "uppercase",
+	              minWidth: 110,
+	            
+	              cursor: "pointer",
+	              userSelect: "none",
+	              WebkitTapHighlightColor: "transparent",
+	              WebkitTouchCallout: "none",
+	              touchAction: "manipulation",
+	            }}
+	          >
+	            DEFEND
+	          </div>
 	        </div>
       </div>
     </main>
