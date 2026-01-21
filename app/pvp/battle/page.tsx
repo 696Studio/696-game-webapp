@@ -616,6 +616,64 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     [battlePhase, turnId, resolvedTurnId]
   );
 
+  // iOS TG WebView иногда "подпрыгивает" при тапе (scroll-into-view / overscroll bounce).
+  // Нам нельзя лочить скролл всегда (нужно свайпать к полю), поэтому лочим КОРОТКО после нажатия.
+  const bodyLockRef = useRef<null | { scrollY: number; bodyCssText: string; htmlCssText: string }>(null);
+  const bodyLockTimerRef = useRef<number | null>(null);
+
+  const lockBodyScrollBriefly = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    // cancel previous timer, keep lock window "fresh"
+    if (bodyLockTimerRef.current != null) {
+      window.clearTimeout(bodyLockTimerRef.current);
+      bodyLockTimerRef.current = null;
+    }
+
+    const body = document.body;
+    const html = document.documentElement;
+    if (!body || !html) return;
+
+    // Save original styles only once per lock session
+    if (!bodyLockRef.current) {
+      bodyLockRef.current = {
+        scrollY: window.scrollY || window.pageYOffset || 0,
+        bodyCssText: body.style.cssText || "",
+        htmlCssText: html.style.cssText || "",
+      };
+
+      const y = bodyLockRef.current.scrollY;
+
+      // Lock (brief)
+      body.style.position = "fixed";
+      body.style.top = `-${y}px`;
+      body.style.left = "0";
+      body.style.right = "0";
+      body.style.width = "100%";
+      body.style.overflow = "hidden";
+      // reduce iOS overscroll bounce effects
+      (body.style as any).overscrollBehavior = "none";
+      (html.style as any).overscrollBehavior = "none";
+    }
+
+    bodyLockTimerRef.current = window.setTimeout(() => {
+      const snap = bodyLockRef.current;
+      if (!snap) return;
+
+      const { scrollY, bodyCssText, htmlCssText } = snap;
+
+      // Restore
+      document.body.style.cssText = bodyCssText;
+      document.documentElement.style.cssText = htmlCssText;
+
+      // Restore scroll position
+      window.scrollTo(0, scrollY);
+
+      bodyLockRef.current = null;
+      bodyLockTimerRef.current = null;
+    }, 450);
+  }, []);
+
   const arenaRef = useRef<HTMLDivElement | null>(null);
 
   // Attack clarity overlay: show who attacks whom during the lunge (iOS-safe, no text on cards).
@@ -4136,7 +4194,7 @@ const hpPct = useMemo(() => {
 	            type="button"
 	            onMouseDown={(e) => { e.preventDefault(); }}
               onTouchStart={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur?.(); }}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); chooseAction("attack"); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); lockBodyScrollBriefly(); chooseAction("attack"); }}
 	            style={{
 	              padding: "10px 12px",
               touchAction: "manipulation",
@@ -4159,7 +4217,7 @@ const hpPct = useMemo(() => {
 	            type="button"
 	            onMouseDown={(e) => { e.preventDefault(); }}
               onTouchStart={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur?.(); }}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); chooseAction("defend"); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); lockBodyScrollBriefly(); chooseAction("defend"); }}
 	            style={{
 	              padding: "10px 12px",
 	              borderRadius: 14,
@@ -4182,44 +4240,90 @@ const hpPct = useMemo(() => {
 }
 
 export default function BattlePage() {
-  // 🔒 Hard scroll-lock for Telegram iOS WebView (prevents "screen jump" on taps)
-  useEffect(() => {
+
+  // iOS tap scroll stabilizer:
+  // Telegram iOS WebView sometimes "jumps" the page on button taps (scroll-into-view / bounce).
+  // We lock body scroll ONLY briefly right after the tap, so the player can still swipe/scroll normally.
+  const tapScrollLockRef = useRef<null | {
+    timer: any;
+    prev: {
+      bodyPosition: string;
+      bodyTop: string;
+      bodyLeft: string;
+      bodyRight: string;
+      bodyWidth: string;
+      bodyOverflow: string;
+      htmlOverscroll: string;
+      bodyOverscroll: string;
+    };
+  }>(null);
+
+  const lockBodyScrollBriefly = useCallback((ms: number = 450) => {
+    if (typeof window === "undefined") return;
     const body = document.body;
     const html = document.documentElement;
-    const scrollY = window.scrollY || window.pageYOffset || 0;
+    const y = window.scrollY || window.pageYOffset || 0;
 
-    const prev = {
-      bodyPosition: body.style.position,
-      bodyTop: body.style.top,
-      bodyLeft: body.style.left,
-      bodyRight: body.style.right,
-      bodyWidth: body.style.width,
-      bodyOverflow: body.style.overflow,
-      htmlOverscroll: html.style.overscrollBehavior,
-      bodyOverscroll: body.style.overscrollBehavior,
-    };
+    // If already locked, just extend the timer.
+    if (!tapScrollLockRef.current) {
+      tapScrollLockRef.current = {
+        timer: null,
+        prev: {
+          bodyPosition: body.style.position,
+          bodyTop: body.style.top,
+          bodyLeft: body.style.left,
+          bodyRight: body.style.right,
+          bodyWidth: body.style.width,
+          bodyOverflow: body.style.overflow,
+          htmlOverscroll: html.style.overscrollBehavior,
+          bodyOverscroll: body.style.overscrollBehavior,
+        },
+      };
 
-    body.style.position = "fixed";
-    body.style.top = `-${scrollY}px`;
-    body.style.left = "0";
-    body.style.right = "0";
-    body.style.width = "100%";
-    body.style.overflow = "hidden";
-    html.style.overscrollBehavior = "none";
-    body.style.overscrollBehavior = "none";
+      body.style.position = "fixed";
+      body.style.top = `-${y}px`;
+      body.style.left = "0";
+      body.style.right = "0";
+      body.style.width = "100%";
+      body.style.overflow = "hidden";
+      html.style.overscrollBehavior = "none";
+      body.style.overscrollBehavior = "none";
+    }
 
+    if (tapScrollLockRef.current.timer) window.clearTimeout(tapScrollLockRef.current.timer);
+
+    tapScrollLockRef.current.timer = window.setTimeout(() => {
+      const cur = tapScrollLockRef.current;
+      if (!cur) return;
+
+      body.style.position = cur.prev.bodyPosition;
+      body.style.top = cur.prev.bodyTop;
+      body.style.left = cur.prev.bodyLeft;
+      body.style.right = cur.prev.bodyRight;
+      body.style.width = cur.prev.bodyWidth;
+      body.style.overflow = cur.prev.bodyOverflow;
+      html.style.overscrollBehavior = cur.prev.htmlOverscroll;
+      body.style.overscrollBehavior = cur.prev.bodyOverscroll;
+
+      tapScrollLockRef.current = null;
+
+      // Restore scroll position after unlock.
+      window.scrollTo(0, y);
+    }, ms);
+  }, []);
+
+  useEffect(() => {
     return () => {
-      body.style.position = prev.bodyPosition;
-      body.style.top = prev.bodyTop;
-      body.style.left = prev.bodyLeft;
-      body.style.right = prev.bodyRight;
-      body.style.width = prev.bodyWidth;
-      body.style.overflow = prev.bodyOverflow;
-      html.style.overscrollBehavior = prev.htmlOverscroll;
-      body.style.overscrollBehavior = prev.bodyOverscroll;
-      window.scrollTo(0, scrollY);
+      const cur = tapScrollLockRef.current;
+      if (!cur) return;
+      try {
+        window.clearTimeout(cur.timer);
+      } catch {}
+      tapScrollLockRef.current = null;
     };
   }, []);
+
+
 
   // IMPORTANT: Fix React hydration crash (#418) in Telegram WebView.
   // Even though this file is a Client Component, Next.js still pre-renders it on the server.
