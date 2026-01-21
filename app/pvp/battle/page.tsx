@@ -525,6 +525,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
+  const lastNowRef = useRef<number | null>(null);
 
   const [roundN, setRoundN] = useState(1);
 
@@ -1314,6 +1315,18 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
       }
 
+      // TG iOS WebView can stall RAF for a moment; when it resumes, 'now' jumps forward,
+      // causing time to "skip" and many timeline events to fire at once ("narco" playback).
+      // Clamp large gaps by shifting the start anchor forward, so elapsed advances smoothly.
+      if (lastNowRef.current != null) {
+        const gap = now - lastNowRef.current;
+        if (gap > 120) {
+          // allow at most ~50ms of progress for this frame
+          startAtRef.current += gap - 50;
+        }
+      }
+      lastNowRef.current = now;
+
       const elapsedWall = (now - startAtRef.current) / 1000;
       const elapsed = elapsedWall * rate;
 
@@ -1339,6 +1352,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
   useEffect(() => {
     startAtRef.current = null;
+    lastNowRef.current = null;
   }, [playing, rate]);
 
   const progressPct = useMemo(() => {
