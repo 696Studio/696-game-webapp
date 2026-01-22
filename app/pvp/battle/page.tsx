@@ -525,6 +525,8 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
+  const playheadRef = useRef<number>(0);
+  const lastNowRef = useRef<number | null>(null);
 
   const [roundN, setRoundN] = useState(1);
 
@@ -915,11 +917,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
-    if (!(window as any).__bbDbgReadySet) {
-      (window as any).__bbDbgReadySet = true;
-      // Optional debug hook; keep silent in production
-      try { (window as any).bbDbgSet?.('DBG READY — waiting for ATTACK events...'); } catch {}
-    }
+    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for ATTACK events...'); }
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
@@ -1046,7 +1044,9 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   function seek(nextT: number) {
     const clamped = Math.max(0, Math.min(durationSec, Number(nextT) || 0));
     setT(clamped);
+    playheadRef.current = clamped;
     startAtRef.current = null;
+    lastNowRef.current = null;
   }
 
   useEffect(() => {
@@ -1314,17 +1314,26 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     const step = (now: number) => {
       if (!playing) return;
 
-      if (startAtRef.current == null) {
-        startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
+      // TG iOS WebView can "stall" rAF then resume with a huge time jump.
+      // Do NOT derive timeline from wall-clock (now - startAt). Instead, integrate dt with a clamp.
+      if (lastNowRef.current == null) {
+        lastNowRef.current = now;
+        // Ensure playhead is aligned before starting
+        playheadRef.current = t;
       }
 
-      const elapsedWall = (now - startAtRef.current) / 1000;
-      const elapsed = elapsedWall * rate;
+      let dt = (now - (lastNowRef.current as number)) / 1000;
+      lastNowRef.current = now;
 
-      const nextT = Math.min(durationSec, Math.max(0, elapsed));
-      setT(nextT);
+      // Clamp big gaps so we don't "fast-forward" and trigger many events in one frame.
+      if (!Number.isFinite(dt) || dt < 0) dt = 0;
+      if (dt > 0.09) dt = 0.033; // ~1 frame @ 30fps
 
-      if (nextT >= durationSec) {
+      const next = Math.min(durationSec, Math.max(0, playheadRef.current + dt * rate));
+      playheadRef.current = next;
+      setT(next);
+
+      if (next >= durationSec) {
         setPlaying(false);
         return;
       }
@@ -1332,18 +1341,26 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       rafRef.current = window.requestAnimationFrame(step);
     };
 
-    if (playing) rafRef.current = window.requestAnimationFrame(step);
+    if (playing) {
+      lastNowRef.current = null;
+      rafRef.current = window.requestAnimationFrame(step);
+    }
 
     return () => {
       if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, durationSec, rate]);
+  }, [match, playing, durationSec, rate, t]);
 
   useEffect(() => {
     startAtRef.current = null;
   }, [playing, rate]);
+
+  // Keep playheadRef in sync with stateful t (for RAF stepper)
+  useEffect(() => {
+    playheadRef.current = t;
+  }, [t]);
 
   const progressPct = useMemo(() => {
     if (!durationSec) return 0;
@@ -4012,42 +4029,7 @@ const hpPct = useMemo(() => {
         </section>
 
 	        {/* Semi-auto Action Bar (works on all platforms; critical for iOS gesture) */}
-	        
-	      {(awaitingAction || (playing && activeUnitForChoice && activeUnitForChoice.side !== youSide)) && (
 	        <div
-	          style={{
-	            position: "fixed",
-	            left: 0,
-	            right: 0,
-	            top: 0,
-	            bottom: 0,
-	            display: "flex",
-	            alignItems: "center",
-	            justifyContent: "center",
-	            pointerEvents: "none",
-	            zIndex: 60,
-	          }}
-	        >
-	          <div
-	            style={{
-	              padding: "10px 14px",
-	              borderRadius: 16,
-	              background: "rgba(0,0,0,0.55)",
-	              backdropFilter: "blur(10px)",
-	              WebkitBackdropFilter: "blur(10px)",
-	              fontSize: 18,
-	              fontWeight: 900,
-	              letterSpacing: "0.08em",
-	              textTransform: "uppercase",
-	              color: "white",
-	              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-	            }}
-	          >
-	            {awaitingAction ? "Твой ход" : "Ход противника"}
-	          </div>
-	        </div>
-	      )}
-<div
 	          style={{
 	            position: "fixed",
 	            left: 12,
@@ -4070,13 +4052,13 @@ const hpPct = useMemo(() => {
 	              {awaitingAction ? "ТВОЙ ХОД: ВЫБЕРИ ДЕЙСТВИЕ" : "ДЕЙСТВИЕ"}
 	            </div>
 	            <div style={{ marginTop: 2, fontSize: 12, fontWeight: 800, opacity: 0.92 }}>
-	              Последний выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
+	              Последний выбор: {lastAction ? (lastAction === "attack" ? "ATTACK" : "DEFEND") : "—"}
 	            </div>
 	          </div>
 
 	          <div
 	            role="button"
-	            aria-label="Атака"
+	            aria-label="ATTACK"
 	            tabIndex={-1}
 	            onTouchStart={(e) => {
 	              e.preventDefault();
@@ -4113,11 +4095,11 @@ const hpPct = useMemo(() => {
 	              touchAction: "manipulation",
 	            }}
 	          >
-	            Атака
+	            ATTACK
 	          </div>
 	          <div
 	            role="button"
-	            aria-label="Защита"
+	            aria-label="DEFEND"
 	            tabIndex={-1}
 	            onTouchStart={(e) => {
 	              e.preventDefault();
@@ -4154,7 +4136,7 @@ const hpPct = useMemo(() => {
 	              touchAction: "manipulation",
 	            }}
 	          >
-	            Защита
+	            DEFEND
 	          </div>
 	        </div>
       </div>
