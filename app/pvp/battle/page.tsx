@@ -534,6 +534,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const durationRef = useRef(0);
   const keyTimesRef = useRef<number[]>([]);
   const timelineRef = useRef<TimelineEvent[]>([]);
+  const resolveStopIdxRef = useRef<number | null>(null);
 
   useEffect(() => {
     playingRef.current = !!playing;
@@ -660,6 +661,41 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     setPlaying(false);
   }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
 
+// Enemy auto: when it's the opponent's unit active, we auto-resolve ONE action group at a time.
+// This keeps the battle readable (one lunge/impact sequence per "turn") instead of everything firing at once.
+const enemyAutoTimeoutRef = useRef<number | null>(null);
+useEffect(() => {
+  return () => {
+    if (enemyAutoTimeoutRef.current != null) {
+      window.clearTimeout(enemyAutoTimeoutRef.current);
+      enemyAutoTimeoutRef.current = null;
+    }
+  };
+}, []);
+
+useEffect(() => {
+  if (!activeUnitForChoice) return;
+  if (activeUnitForChoice.side !== enemySide) return;
+  if (awaitingAction) return; // player input has priority
+  if (playing) return; // already resolving
+  if (!durationSec || t >= durationSec - 1e-6) return; // nothing to play
+
+  // Avoid stacking timeouts.
+  if (enemyAutoTimeoutRef.current != null) return;
+
+  enemyAutoTimeoutRef.current = window.setTimeout(() => {
+    enemyAutoTimeoutRef.current = null;
+    setPlaying(true);
+  }, 220);
+
+  return () => {
+    if (enemyAutoTimeoutRef.current != null) {
+      window.clearTimeout(enemyAutoTimeoutRef.current);
+      enemyAutoTimeoutRef.current = null;
+    }
+  };
+}, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, enemySide, awaitingAction, playing, t, durationSec]);
+
 
   // Step 1b: iOS TG WebView jump fix — stabilize scroll for a few frames after a tap.
   const stabilizeScrollAfterTap = useCallback(() => {
@@ -676,10 +712,12 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const chooseAction = useCallback(
     (choice: "attack" | "defend") => {
       setLastAction(choice);
+      resolveStopIdxRef.current = null;
       // Mark this choice point as "consumed" so the pause effect doesn't instantly re-trigger
       // before the timeline advances to the next activeInstance.
       resumeGuardRef.current = activeUnitForChoice?.instanceId ?? null;
       setAwaitingAction(false);
+      resolveStopIdxRef.current = null;
       setPlaying(true);
     },
     [activeUnitForChoice?.instanceId]
@@ -1365,92 +1403,149 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [t, timeline]);
 
   useEffect(() => {
-    if (!match) return;
+  if (!match) return;
 
-    // Stop any running loop when we are paused or waiting for input.
-    if (!playing || awaitingAction) {
-      if (stepTimeoutRef.current != null) {
-        window.clearTimeout(stepTimeoutRef.current);
-        stepTimeoutRef.current = null;
+  // Stop any running loop when we are paused or waiting for input.
+  if (!playing || awaitingAction) {
+    if (stepTimeoutRef.current != null) {
+      window.clearTimeout(stepTimeoutRef.current);
+      stepTimeoutRef.current = null;
+    }
+    resolveStopIdxRef.current = null;
+    return;
+  }
+
+  // If a loop is already running, do nothing.
+  if (stepTimeoutRef.current != null) return;
+
+  const typesAtTime = (time: number) => {
+    const tl = timelineRef.current || [];
+    const set = new Set<string>();
+    for (const e of tl) {
+      if (Number((e as any)?.t) !== time) continue;
+      set.add(String((e as any)?.type || ""));
+    }
+    return set;
+  };
+
+  const delayForNext = (nextTime: number) => {
+    // Default pacing tuned for "Hearthstone-like" readability.
+    let delay = 220;
+
+    const tl = timelineRef.current || [];
+    for (const e of tl) {
+      if (Number((e as any)?.t) !== nextTime) continue;
+      const type = String((e as any)?.type || "");
+      if (type === "attack") delay = Math.max(delay, 420);
+      else if (type === "damage") delay = Math.max(delay, 260);
+      else if (type === "death") delay = Math.max(delay, 360);
+      else if (type === "round_end" || type === "round_start") delay = Math.max(delay, 320);
+    }
+    return delay;
+  };
+
+  const computeStopIdx = (currIdx: number, times: number[]) => {
+    // Goal: resolve exactly ONE "action group" per play:
+    // from first encountered ATTACK (inclusive) through its aftermath (damage/death),
+    // stopping right BEFORE the next ATTACK (or round boundary).
+    if (!times.length) return currIdx;
+
+    // 1) find first timestamp >= next that contains an attack
+    let firstAttackIdx = -1;
+    for (let i = currIdx + 1; i < times.length; i++) {
+      const ty = typesAtTime(times[i]);
+      if (ty.has("attack")) {
+        firstAttackIdx = i;
+        break;
       }
+    }
+    if (firstAttackIdx < 0) return Math.max(0, times.length - 1);
+
+    // 2) find next boundary after that (next attack OR round_end/round_start)
+    let nextBoundaryIdx = -1;
+    for (let i = firstAttackIdx + 1; i < times.length; i++) {
+      const ty = typesAtTime(times[i]);
+      if (ty.has("attack") || ty.has("round_end") || ty.has("round_start")) {
+        nextBoundaryIdx = i;
+        break;
+      }
+    }
+
+    const stopIdx = nextBoundaryIdx > 0 ? Math.max(firstAttackIdx, nextBoundaryIdx - 1) : Math.max(firstAttackIdx, times.length - 1);
+    return Math.max(currIdx + 1, Math.min(stopIdx, times.length - 1));
+  };
+
+  const times = keyTimesRef.current || [];
+  if (!times.length) {
+    setPlaying(false);
+    stepTimeoutRef.current = null;
+    resolveStopIdxRef.current = null;
+    return;
+  }
+
+  // Snapshot current position and compute a stop boundary for this "play burst".
+  const currIdx = Math.max(0, Math.min(times.length - 1, keyIndexRef.current || 0));
+  const dur = Math.max(0, durationRef.current || 0);
+
+  // Skip any timestamps beyond duration.
+  const withinDur = times.filter((tt) => tt <= dur + 1e-9);
+  const safeTimes = withinDur.length ? withinDur : times;
+
+  const safeCurrIdx = Math.max(0, Math.min(safeTimes.length - 1, currIdx));
+  const stopIdx = resolveStopIdxRef.current ?? computeStopIdx(safeCurrIdx, safeTimes);
+  resolveStopIdxRef.current = stopIdx;
+
+  const tick = () => {
+    if (!playingRef.current) {
+      stepTimeoutRef.current = null;
+      resolveStopIdxRef.current = null;
+      return;
+    }
+    if (awaitingRef.current) {
+      stepTimeoutRef.current = null;
+      resolveStopIdxRef.current = null;
       return;
     }
 
-    // If a loop is already running, do nothing.
-    if (stepTimeoutRef.current != null) return;
+    const timesLocal = (keyTimesRef.current || []).filter((tt) => tt <= (durationRef.current || 0) + 1e-9);
+    if (!timesLocal.length) {
+      setPlaying(false);
+      stepTimeoutRef.current = null;
+      resolveStopIdxRef.current = null;
+      return;
+    }
 
-    const delayForNext = (nextTime: number) => {
-      // Default pacing tuned for "Hearthstone-like" readability.
-      let delay = 220;
+    const curr = Math.max(0, Math.min(timesLocal.length - 1, keyIndexRef.current || 0));
+    const next = Math.min(timesLocal.length - 1, curr + 1);
+    const nextTime = timesLocal[next];
 
-      const tl = timelineRef.current || [];
-      for (const e of tl) {
-        if (Number((e as any)?.t) !== nextTime) continue;
-        const type = String((e as any)?.type || "");
-        if (type === "attack") delay = Math.max(delay, 420);
-        else if (type === "damage") delay = Math.max(delay, 260);
-        else if (type === "death") delay = Math.max(delay, 360);
-        else if (type === "round_end" || type === "round_start") delay = Math.max(delay, 320);
-      }
-      return delay;
-    };
+    keyIndexRef.current = next;
+    setT(nextTime);
 
-    const tick = () => {
-      if (!playingRef.current) {
-        stepTimeoutRef.current = null;
-        return;
-      }
-      if (awaitingRef.current) {
-        stepTimeoutRef.current = null;
-        return;
-      }
+    // Stop at end of this action group, or at timeline end.
+    const stop = resolveStopIdxRef.current ?? next;
+    if (next >= stop || nextTime >= (durationRef.current || 0) - 1e-6) {
+      setPlaying(false);
+      stepTimeoutRef.current = null;
+      resolveStopIdxRef.current = null;
+      return;
+    }
 
-      const times = keyTimesRef.current || [];
-      if (!times.length) {
-        setPlaying(false);
-        stepTimeoutRef.current = null;
-        return;
-      }
+    const delay = delayForNext(nextTime);
+    stepTimeoutRef.current = window.setTimeout(tick, delay);
+  };
 
-      const currIdx = Math.max(0, Math.min(times.length - 1, keyIndexRef.current || 0));
-      let nextIdx = currIdx + 1;
+  // Kick off the deterministic stepper loop.
+  stepTimeoutRef.current = window.setTimeout(tick, 0);
 
-      // Skip any timestamps beyond duration.
-      const dur = Math.max(0, durationRef.current || 0);
-      while (nextIdx < times.length && times[nextIdx] > dur + 1e-9) nextIdx++;
-
-      if (nextIdx >= times.length) {
-        setPlaying(false);
-        stepTimeoutRef.current = null;
-        return;
-      }
-
-      const nextTime = times[nextIdx];
-      keyIndexRef.current = nextIdx;
-      setT(nextTime);
-
-      // Stop when we reach the end.
-      if (nextTime >= dur - 1e-6) {
-        setPlaying(false);
-        stepTimeoutRef.current = null;
-        return;
-      }
-
-      const delay = delayForNext(nextTime);
-      stepTimeoutRef.current = window.setTimeout(tick, delay);
-    };
-
-    // Kick off the deterministic stepper loop.
-    stepTimeoutRef.current = window.setTimeout(tick, 0);
-
-    return () => {
-      if (stepTimeoutRef.current != null) {
-        window.clearTimeout(stepTimeoutRef.current);
-        stepTimeoutRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, awaitingAction]);
+  return () => {
+    if (stepTimeoutRef.current != null) {
+      window.clearTimeout(stepTimeoutRef.current);
+      stepTimeoutRef.current = null;
+    }
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [match, playing, awaitingAction]);
 
   useEffect(() => {
     startAtRef.current = null;
