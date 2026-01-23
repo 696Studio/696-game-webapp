@@ -544,12 +544,57 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     } catch {}
 
     // Pause at the beginning so the first tap is guaranteed to be a real gesture.
-    setAwaitingAction(true);
+    setAwaitingAction(false);
     setLastAction(null);
     setPlaying(false);
-          resolvingActiveRef.current = null;
-          lastResolvedAttackIdxRef.current = -1;
+    // Autoplay (Variant A): start step playback after a short paint settle.
+    window.setTimeout(() => setPlaying(true), 450);
+    resolvingActiveRef.current = null;
+    lastResolvedAttackIdxRef.current = -1;
   }, [match?.id, timeline]);
+
+  // Variant A: build a deterministic, mirrored attack order (P1 slot0 → P2 slot0 → P1 slot1 → P2 slot1 → ...)
+  const attackOrder = useMemo(() => {
+    const tl = Array.isArray(timeline) ? timeline : [];
+    const attacks: { idx: number; round: number; side: "p1" | "p2"; slot: number }[] = [];
+
+    for (let i = 0; i < tl.length; i++) {
+      const e: any = tl[i];
+      if (String(e?.type) !== "attack") continue;
+      const from = readUnitRefFromEvent(e, "from") || readUnitRefFromEvent(e, "unit");
+      if (!from) continue;
+      const round = Number(e?.round ?? 1) || 1;
+      attacks.push({ idx: i, round, side: from.side, slot: from.slot });
+    }
+
+    const byRound = new Map<number, typeof attacks>();
+    for (const a of attacks) {
+      if (!byRound.has(a.round)) byRound.set(a.round, []);
+      byRound.get(a.round)!.push(a);
+    }
+    for (const arr of byRound.values()) arr.sort((a, b) => a.idx - b.idx);
+
+    const roundsSorted = Array.from(byRound.keys()).sort((a, b) => a - b);
+    const result: number[] = [];
+    const used = new Set<number>();
+    const maxSlots = 5;
+
+    for (const r of roundsSorted) {
+      const arr = byRound.get(r)!;
+
+      for (let s = 0; s < maxSlots; s++) {
+        const p1 = arr.find(x => x.side === "p1" && x.slot === s && !used.has(x.idx));
+        if (p1) { used.add(p1.idx); result.push(p1.idx); }
+        const p2 = arr.find(x => x.side === "p2" && x.slot === s && !used.has(x.idx));
+        if (p2) { used.add(p2.idx); result.push(p2.idx); }
+      }
+      for (const x of arr) {
+        if (!used.has(x.idx)) { used.add(x.idx); result.push(x.idx); }
+      }
+    }
+
+    return result;
+  }, [timeline]);
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -1425,20 +1470,29 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         const EPS = 1e-4;
         const curT = Number(t ?? 0);
 
-        // Find the next attack by INDEX (not by time) so we never resolve multiple attacks that share the same timestamp.
+        // Find the next attack from the deterministic mirrored order (never by time).
         let lastIdx = lastResolvedAttackIdxRef.current ?? -1;
+
+        // Seek/rewind safety: if we ever jumped behind the last resolved attack, restart from the beginning.
         if (lastIdx >= 0) {
           const lastT = Number((tl[lastIdx] as any)?.t ?? 0);
-          // Seek/rewind safety: if we ever jumped behind the last resolved attack, restart from the beginning.
           if (Number.isFinite(lastT) && lastT > curT + EPS) lastIdx = -1;
         }
 
         let attackIdx = -1;
-        for (let i = Math.max(0, lastIdx + 1); i < tl.length; i++) {
-          if (String((tl[i] as any)?.type) === "attack") { attackIdx = i; break; }
+        let startPos = 0;
+        if (lastIdx >= 0) {
+          const pos = attackOrder.indexOf(lastIdx);
+          startPos = pos >= 0 ? pos + 1 : 0;
         }
-
-        if (attackIdx < 0) {
+        for (let p = startPos; p < attackOrder.length; p++) {
+          const idx = attackOrder[p];
+          if (idx >= 0 && idx < tl.length && String((tl[idx] as any)?.type) === "attack") {
+            attackIdx = idx;
+            break;
+          }
+        }
+if (attackIdx < 0) {
           resolvingActiveRef.current = null;
           setPlaying(false);
           return;
@@ -1459,14 +1513,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           const fromRef = readUnitRefFromEvent(e0, "from") || readUnitRefFromEvent(e0, "unit");
           const fromId = String((fromRef as any)?.instanceId ?? (e0 as any)?.fromId ?? (e0 as any)?.attackerId ?? "");
           if (fromId) resolvingActiveRef.current = fromId;
-          const toRef = readUnitRefFromEvent(e0, "to") || readUnitRefFromEvent(e0, "target");
-          const toId = String((toRef as any)?.instanceId ?? (e0 as any)?.toId ?? (e0 as any)?.targetId ?? "");
-          if (fromId && toId) {
-            const sig = `${Number((e0 as any)?.t ?? actionStartT)}:${fromId}:${toId}`;
-            lastAttackSigRef.current = sig;
-            // Trigger exactly one lunge for this action.
-            lungeByInstanceIds(fromId, toId);
-          }
         } catch {}
 
         const actionMaxT = Number((actionEvents[actionEvents.length - 1] as any)?.t ?? actionStartT) || actionStartT;
@@ -1513,12 +1559,15 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         if (!cancelled) setT(settleT);
         await sleep(80);
 
-        // Pause after one action
+        // Pause after one action (Variant A autoplay: schedule next step)
         if (!cancelled) {
           lastResolvedAttackIdxRef.current = attackIdx;
           setPlaying(false);
+          window.setTimeout(() => {
+            if (!cancelled) setPlaying(true);
+          }, 450);
         }
-      } catch {
+} catch {
         resolvingActiveRef.current = null;
         setPlaying(false);
       }
@@ -1770,8 +1819,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   // Trigger one lunge per new attack event (no TEST button).
   useEffect(() => {
-    // During controlled RESOLVE we trigger lunge manually (single source of truth).
-    if (playing || resolvingActiveRef.current) return;
     if (!recentAttacks || recentAttacks.length === 0) return;
     const last = recentAttacks[recentAttacks.length - 1];
     if (!last?.fromId || !last?.toId) return;
