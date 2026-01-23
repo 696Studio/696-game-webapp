@@ -10,7 +10,7 @@ import CardArt from "../../components/CardArt";
 import BattleFxLayer from './BattleFxLayer';
 
 
-// ===== BB_ATTACK_DEBUG_OVERLAY =====
+// ===== BB_Атака_DEBUG_OVERLAY =====
 function bbDbgEnabled() {
   try {
     if (typeof window === "undefined") return false;
@@ -484,75 +484,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       .sort((a: any, b: any) => a.t - b.t);
   }, [logObj]);
 
-  const [playing, setPlaying] = useState(false);
-  const [t, setT] = useState(0);
-  const [rate, setRate] = useState<0.5 | 1 | 2>(1);
-
-  // Semi-auto (Step 3.x): player action choice gating + visible badge on active card
-  const [awaitingAction, setAwaitingAction] = useState(false);
-  const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
-
-  // Keyframe times for deterministic step-by-step playback (Telegram iOS safe).
-  // We advance between unique timeline timestamps instead of using wall-clock time.
-  const keyTimes = useMemo(() => {
-    const set = new Set<number>();
-    for (const e of timeline) {
-      const tt = Number((e as any)?.t ?? 0);
-      if (Number.isFinite(tt)) set.add(tt);
-    }
-    const arr = Array.from(set).sort((a, b) => a - b);
-    if (!arr.length || arr[0] > 0) arr.unshift(0);
-    return arr;
-  }, [timeline]);
-
-  const keyIndexRef = useRef(0);
-  useEffect(() => {
-    if (!keyTimes.length) {
-      keyIndexRef.current = 0;
-      return;
-    }
-    // Sync index to current t (binary search).
-    let idx = 0;
-    let lo = 0;
-    let hi = keyTimes.length - 1;
-    const target = Number(t) || 0;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (keyTimes[mid] <= target + 1e-9) {
-        idx = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    keyIndexRef.current = idx;
-  }, [t, keyTimes]);
-
-  const stepTimeoutRef = useRef<number | null>(null);
-  const playingRef = useRef(false);
-  const awaitingRef = useRef(false);
-  const durationRef = useRef(0);
-  const keyTimesRef = useRef<number[]>([]);
-  const timelineRef = useRef<TimelineEvent[]>([]);
-  const resolveStopIdxRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    playingRef.current = !!playing;
-  }, [playing]);
-  useEffect(() => {
-    awaitingRef.current = !!awaitingAction;
-  }, [awaitingAction]);
-  useEffect(() => {
-    durationRef.current = Number(durationSec) || 0;
-  }, [durationSec]);
-  useEffect(() => {
-    keyTimesRef.current = keyTimes;
-  }, [keyTimes]);
-  useEffect(() => {
-    timelineRef.current = timeline;
-  }, [timeline]);
-
-
   const rounds = useMemo(() => {
     const rRaw = logObj?.rounds;
     const r = parseMaybeJson(rRaw);
@@ -571,18 +502,52 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     return 3;
   }, [timeline, rounds.length]);
 
-  // Start gate: require a user gesture (ATTACK/DEFEND) before any playback.
+  const [playing, setPlaying] = useState(false);
+  const [t, setT] = useState(0);
+  const [rate, setRate] = useState<0.5 | 1 | 2>(1);
+
+  // Semi-auto (Step 3.x): player action choice gating + visible badge on active card
+  const [awaitingAction, setAwaitingAction] = useState(false);
+  const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
+  const [choiceTimer, setChoiceTimer] = useState<number>(0);
+
+  // Lightweight client-side "buffs" from player choice (UI-first; server sim later)
+  const atkBuffRef = useRef<Record<string, { pct: number }>>({});
+  const hpBuffRef = useRef<Record<string, { pct: number }>>({});
+
+
+
+  // Start gate: require a user gesture (Атака/Защита) before any playback.
   // Critical for Telegram iOS WebView to reliably paint transforms/transitions.
   const didStartGateRef = useRef(false);
   useEffect(() => {
     if (!match) return;
     if (didStartGateRef.current) return;
     didStartGateRef.current = true;
-    // Pause at the very beginning so the first tap is guaranteed to be a real gesture.
+
+    // Start on the first meaningful snapshot so cards are visible immediately (no "appear after tap")
+    try {
+      const tl = Array.isArray(timeline) ? timeline : [];
+      let firstT = 0;
+      for (const e of tl) {
+        const hasUnits =
+          (Array.isArray((e as any)?.p1_units) && (e as any).p1_units.length > 0) ||
+          (Array.isArray((e as any)?.p2_units) && (e as any).p2_units.length > 0);
+        const hasCards =
+          (Array.isArray((e as any)?.p1_cards) && (e as any).p1_cards.length > 0) ||
+          (Array.isArray((e as any)?.p2_cards) && (e as any).p2_cards.length > 0) ||
+          (Array.isArray((e as any)?.p1_cards_full) && (e as any).p1_cards_full.length > 0) ||
+          (Array.isArray((e as any)?.p2_cards_full) && (e as any).p2_cards_full.length > 0);
+        if (hasUnits || hasCards) { firstT = Number((e as any).t ?? 0) || 0; break; }
+      }
+      setT(firstT);
+    } catch {}
+
+    // Pause at the beginning so the first tap is guaranteed to be a real gesture.
     setAwaitingAction(true);
     setLastAction(null);
     setPlaying(false);
-  }, [match?.id]);
+  }, [match?.id, timeline]);
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -627,7 +592,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
-  // Semi-auto gate: pause on YOUR unit turn until player picks ATTACK/DEFEND.
+  // Semi-auto gate: pause on YOUR unit turn until player picks Атака/Защита.
   const activeUnitForChoice = useMemo(() => {
     if (!activeInstance) return null;
     for (const u of Object.values(p1UnitsBySlot)) if (u?.instanceId === activeInstance) return u;
@@ -635,7 +600,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     return null;
   }, [activeInstance, p1UnitsBySlot, p2UnitsBySlot]);
 
-  // Prevent immediate re-pausing on the same choice point right after the user taps ATTACK/DEFEND.
+  // Prevent immediate re-pausing on the same choice point right after the user taps Атака/Защита.
   // We only pause once per activeInstance/active unit, then allow playback to advance.
   const resumeGuardRef = useRef<string | null>(null);
 
@@ -654,50 +619,55 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     if (activeUnitForChoice.side !== youSide) return;
     if (resumeGuardRef.current === activeUnitForChoice.instanceId) return;
     if (awaitingAction) return;
-    if (!playing) return; // don't override manual pause
     // Pause timeline and wait for a real tap (critical for TG iOS WebView painting)
     setAwaitingAction(true);
     setLastAction(null);
     setPlaying(false);
+  }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction]);
+
+
+  
+  // Auto-resolve enemy turns one action at a time.
+  useEffect(() => {
+    if (!activeUnitForChoice) return;
+    if (activeUnitForChoice.side === youSide) return;
+    if (awaitingAction) return;
+    if (playing) return;
+    const tm = window.setTimeout(() => {
+      // Enemy continues automatically
+      setPlaying(true);
+    }, 420);
+    return () => window.clearTimeout(tm);
   }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
 
-// Enemy auto: when it's the opponent's unit active, we auto-resolve ONE action group at a time.
-// This keeps the battle readable (one lunge/impact sequence per "turn") instead of everything firing at once.
-const enemyAutoTimeoutRef = useRef<number | null>(null);
-useEffect(() => {
-  return () => {
-    if (enemyAutoTimeoutRef.current != null) {
-      window.clearTimeout(enemyAutoTimeoutRef.current);
-      enemyAutoTimeoutRef.current = null;
-    }
-  };
-}, []);
+  // 10s timer on your turn. If time expires, auto-pick Атака to keep the match moving.
+  useEffect(() => {
+    if (!awaitingAction) { setChoiceTimer(0); return; }
+    if (!activeUnitForChoice) { setChoiceTimer(0); return; }
+    if (activeUnitForChoice.side !== youSide) { setChoiceTimer(0); return; }
 
-useEffect(() => {
-  if (!activeUnitForChoice) return;
-  if (activeUnitForChoice.side !== enemySide) return;
-  if (awaitingAction) return; // player input has priority
-  if (playing) return; // already resolving
-  if (!durationSec || t >= durationSec - 1e-6) return; // nothing to play
+    setChoiceTimer(10);
+    const iv = window.setInterval(() => {
+      setChoiceTimer((s) => {
+        const next = Math.max(0, (s ?? 0) - 1);
+        return next;
+      });
+    }, 1000);
 
-  // Avoid stacking timeouts.
-  if (enemyAutoTimeoutRef.current != null) return;
+    return () => window.clearInterval(iv);
+  }, [awaitingAction, activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide]);
 
-  enemyAutoTimeoutRef.current = window.setTimeout(() => {
-    enemyAutoTimeoutRef.current = null;
-    setPlaying(true);
-  }, 220);
+  useEffect(() => {
+    if (!awaitingAction) return;
+    if (!activeUnitForChoice) return;
+    if (activeUnitForChoice.side !== youSide) return;
+    if (choiceTimer > 0) return;
+    // Auto-pick
+    if (!awaitingAction) return; if (!awaitingAction) return; chooseAction("attack");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [choiceTimer, awaitingAction, activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide]);
 
-  return () => {
-    if (enemyAutoTimeoutRef.current != null) {
-      window.clearTimeout(enemyAutoTimeoutRef.current);
-      enemyAutoTimeoutRef.current = null;
-    }
-  };
-}, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, enemySide, awaitingAction, playing, t, durationSec]);
-
-
-  // Step 1b: iOS TG WebView jump fix — stabilize scroll for a few frames after a tap.
+// Step 1b: iOS TG WebView jump fix — stabilize scroll for a few frames after a tap.
   const stabilizeScrollAfterTap = useCallback(() => {
     if (typeof window === "undefined") return;
     const x = window.scrollX || 0;
@@ -711,13 +681,25 @@ useEffect(() => {
 
   const chooseAction = useCallback(
     (choice: "attack" | "defend") => {
+      // Client-side choice effects (UI-first): random % bonus
+      const inst = activeUnitForChoice?.instanceId ?? null;
+      const pct = Math.floor(10 + Math.random() * 21); // 10..30%
+      if (inst) {
+        if (choice === "attack") {
+          atkBuffRef.current[inst] = { pct };
+          // clear any old hp buff
+          delete hpBuffRef.current[inst];
+        } else {
+          hpBuffRef.current[inst] = { pct };
+          delete atkBuffRef.current[inst];
+        }
+      }
+
       setLastAction(choice);
-      resolveStopIdxRef.current = null;
       // Mark this choice point as "consumed" so the pause effect doesn't instantly re-trigger
       // before the timeline advances to the next activeInstance.
-      resumeGuardRef.current = activeUnitForChoice?.instanceId ?? null;
+      resumeGuardRef.current = inst;
       setAwaitingAction(false);
-      resolveStopIdxRef.current = null;
       setPlaying(true);
     },
     [activeUnitForChoice?.instanceId]
@@ -751,7 +733,7 @@ useEffect(() => {
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
 
   // =========================================================
-  // REAL ATTACK LUNGE (during battle timeline)
+  // REAL Атака LUNGE (during battle timeline)
   // TG iOS WebView can be flaky with transform, so we animate
   // the CardRoot (data-bb-slot element) via top/left.
   // =========================================================
@@ -766,7 +748,7 @@ useEffect(() => {
     const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     if (!attackerRoot || !targetRoot) {
-      bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}
+      bbDbgSet(`#${(window as any).__bbAtkTick || 0} Атака ${fromId} -> ${toId}
 foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       return;
     }
@@ -1013,7 +995,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
-    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for ATTACK events...'); }
+    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for Атака events...'); }
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
@@ -1395,6 +1377,27 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     setP2Score(s2);
     setRoundWinner(rw);
 
+
+    // Apply lightweight UI buffs from player choice (does not change server sim yet)
+    try {
+      const applyHpBuff = (u: any) => {
+        if (!u?.instanceId) return u;
+        const b = hpBuffRef.current[u.instanceId];
+        if (!b) return u;
+        const pct = Number(b.pct ?? 0);
+        if (!pct) return u;
+        const bonus = Math.max(0, Math.floor((u.maxHp || u.hp || 0) * (pct / 100)));
+        return { ...u, hp: (u.hp || 0) + bonus, maxHp: (u.maxHp || u.hp || 0) + bonus, tags: new Set([...(u.tags || []), `HP+${pct}%`]) };
+      };
+      for (const k of Object.keys(slotMapP1)) {
+        const u = (slotMapP1 as any)[k];
+        if (u) (slotMapP1 as any)[k] = applyHpBuff(u);
+      }
+      for (const k of Object.keys(slotMapP2)) {
+        const u = (slotMapP2 as any)[k];
+        if (u) (slotMapP2 as any)[k] = applyHpBuff(u);
+      }
+    } catch {}
     setActiveInstance(active);
     setP1UnitsBySlot(slotMapP1);
     setP2UnitsBySlot(slotMapP2);
@@ -1403,149 +1406,85 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [t, timeline]);
 
   useEffect(() => {
-  if (!match) return;
+    if (!match) return;
+    if (!playing) return;
 
-  // Stop any running loop when we are paused or waiting for input.
-  if (!playing || awaitingAction) {
-    if (stepTimeoutRef.current != null) {
-      window.clearTimeout(stepTimeoutRef.current);
-      stepTimeoutRef.current = null;
-    }
-    resolveStopIdxRef.current = null;
-    return;
-  }
+    let cancelled = false;
 
-  // If a loop is already running, do nothing.
-  if (stepTimeoutRef.current != null) return;
+    const sleep = (ms: number) => new Promise((res) => window.setTimeout(res, ms));
 
-  const typesAtTime = (time: number) => {
-    const tl = timelineRef.current || [];
-    const set = new Set<string>();
-    for (const e of tl) {
-      if (Number((e as any)?.t) !== time) continue;
-      set.add(String((e as any)?.type || ""));
-    }
-    return set;
-  };
+    const runOneAction = async () => {
+      try {
+        const tl = Array.isArray(timeline) ? timeline : [];
+        const EPS = 1e-4;
+        const curT = Number(t ?? 0);
 
-  const delayForNext = (nextTime: number) => {
-    // Default pacing tuned for "Hearthstone-like" readability.
-    let delay = 220;
+        // Find the next Атака event as an "action boundary"
+        const attackIdx = tl.findIndex((e: any) => String(e?.type) === "attack" && Number(e?.t ?? 0) > curT + EPS);
+        if (attackIdx < 0) {
+          setPlaying(false);
+          return;
+        }
+        const actionStartT = Number(tl[attackIdx].t ?? 0) || curT;
 
-    const tl = timelineRef.current || [];
-    for (const e of tl) {
-      if (Number((e as any)?.t) !== nextTime) continue;
-      const type = String((e as any)?.type || "");
-      if (type === "attack") delay = Math.max(delay, 420);
-      else if (type === "damage") delay = Math.max(delay, 260);
-      else if (type === "death") delay = Math.max(delay, 360);
-      else if (type === "round_end" || type === "round_start") delay = Math.max(delay, 320);
-    }
-    return delay;
-  };
+        // Next attack marks the end of this action window
+        let actionEndT = durationSec;
+        for (let j = attackIdx + 1; j < tl.length; j++) {
+          if (String((tl[j] as any)?.type) === "attack") {
+            actionEndT = Number((tl[j] as any).t ?? actionEndT) || actionEndT;
+            break;
+          }
+        }
 
-  const computeStopIdx = (currIdx: number, times: number[]) => {
-    // Goal: resolve exactly ONE "action group" per play:
-    // from first encountered ATTACK (inclusive) through its aftermath (damage/death),
-    // stopping right BEFORE the next ATTACK (or round boundary).
-    if (!times.length) return currIdx;
+        // Collect key times inside this action window
+        const times = Array.from(
+          new Set(
+            tl
+              .filter((e: any) => {
+                const tt = Number(e?.t ?? 0);
+                return Number.isFinite(tt) && tt >= actionStartT - EPS && tt < actionEndT - EPS;
+              })
+              .map((e: any) => Number(e.t))
+          )
+        ).sort((a, b) => a - b);
 
-    // 1) find first timestamp >= next that contains an attack
-    let firstAttackIdx = -1;
-    for (let i = currIdx + 1; i < times.length; i++) {
-      const ty = typesAtTime(times[i]);
-      if (ty.has("attack")) {
-        firstAttackIdx = i;
-        break;
+        // Ensure we start exactly at the action start
+        if (times.length === 0 || Math.abs(times[0] - actionStartT) > 1e-3) times.unshift(actionStartT);
+
+        for (const tt of times) {
+          if (cancelled) return;
+          setT(tt);
+
+          // Choose delay based on event types at this time
+          const atThis = tl.filter((e: any) => Math.abs(Number(e?.t ?? 0) - tt) < 1e-6);
+          const hasAttack = atThis.some((e: any) => String(e?.type) === "attack");
+          const hasDmg = atThis.some((e: any) => String(e?.type) === "damage" || String(e?.type) === "hit");
+          const hasDeath = atThis.some((e: any) => String(e?.type) === "death");
+
+          let delay = 120;
+          if (hasAttack) delay = 260;
+          else if (hasDeath) delay = 240;
+          else if (hasDmg) delay = 180;
+
+          await sleep(delay);
+        }
+
+        // Pause after one action
+        if (!cancelled) {
+          setPlaying(false);
+        }
+      } catch {
+        setPlaying(false);
       }
-    }
-    if (firstAttackIdx < 0) return Math.max(0, times.length - 1);
+    };
 
-    // 2) find next boundary after that (next attack OR round_end/round_start)
-    let nextBoundaryIdx = -1;
-    for (let i = firstAttackIdx + 1; i < times.length; i++) {
-      const ty = typesAtTime(times[i]);
-      if (ty.has("attack") || ty.has("round_end") || ty.has("round_start")) {
-        nextBoundaryIdx = i;
-        break;
-      }
-    }
+    runOneAction();
 
-    const stopIdx = nextBoundaryIdx > 0 ? Math.max(firstAttackIdx, nextBoundaryIdx - 1) : Math.max(firstAttackIdx, times.length - 1);
-    return Math.max(currIdx + 1, Math.min(stopIdx, times.length - 1));
-  };
-
-  const times = keyTimesRef.current || [];
-  if (!times.length) {
-    setPlaying(false);
-    stepTimeoutRef.current = null;
-    resolveStopIdxRef.current = null;
-    return;
-  }
-
-  // Snapshot current position and compute a stop boundary for this "play burst".
-  const currIdx = Math.max(0, Math.min(times.length - 1, keyIndexRef.current || 0));
-  const dur = Math.max(0, durationRef.current || 0);
-
-  // Skip any timestamps beyond duration.
-  const withinDur = times.filter((tt) => tt <= dur + 1e-9);
-  const safeTimes = withinDur.length ? withinDur : times;
-
-  const safeCurrIdx = Math.max(0, Math.min(safeTimes.length - 1, currIdx));
-  const stopIdx = resolveStopIdxRef.current ?? computeStopIdx(safeCurrIdx, safeTimes);
-  resolveStopIdxRef.current = stopIdx;
-
-  const tick = () => {
-    if (!playingRef.current) {
-      stepTimeoutRef.current = null;
-      resolveStopIdxRef.current = null;
-      return;
-    }
-    if (awaitingRef.current) {
-      stepTimeoutRef.current = null;
-      resolveStopIdxRef.current = null;
-      return;
-    }
-
-    const timesLocal = (keyTimesRef.current || []).filter((tt) => tt <= (durationRef.current || 0) + 1e-9);
-    if (!timesLocal.length) {
-      setPlaying(false);
-      stepTimeoutRef.current = null;
-      resolveStopIdxRef.current = null;
-      return;
-    }
-
-    const curr = Math.max(0, Math.min(timesLocal.length - 1, keyIndexRef.current || 0));
-    const next = Math.min(timesLocal.length - 1, curr + 1);
-    const nextTime = timesLocal[next];
-
-    keyIndexRef.current = next;
-    setT(nextTime);
-
-    // Stop at end of this action group, or at timeline end.
-    const stop = resolveStopIdxRef.current ?? next;
-    if (next >= stop || nextTime >= (durationRef.current || 0) - 1e-6) {
-      setPlaying(false);
-      stepTimeoutRef.current = null;
-      resolveStopIdxRef.current = null;
-      return;
-    }
-
-    const delay = delayForNext(nextTime);
-    stepTimeoutRef.current = window.setTimeout(tick, delay);
-  };
-
-  // Kick off the deterministic stepper loop.
-  stepTimeoutRef.current = window.setTimeout(tick, 0);
-
-  return () => {
-    if (stepTimeoutRef.current != null) {
-      window.clearTimeout(stepTimeoutRef.current);
-      stepTimeoutRef.current = null;
-    }
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [match, playing, awaitingAction]);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [match, playing, timeline, durationSec]);
 
   useEffect(() => {
     startAtRef.current = null;
@@ -4238,16 +4177,16 @@ const hpPct = useMemo(() => {
 	        >
 	          <div style={{ flex: 1, minWidth: 0 }}>
 	            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.9 }}>
-	              {awaitingAction ? "ТВОЙ ХОД: ВЫБЕРИ ДЕЙСТВИЕ" : "ДЕЙСТВИЕ"}
+	              {awaitingAction ? `ТВОЙ ХОД • ${choiceTimer || 10}s` : "ХОД"}
 	            </div>
 	            <div style={{ marginTop: 2, fontSize: 12, fontWeight: 800, opacity: 0.92 }}>
-	              Последний выбор: {lastAction ? (lastAction === "attack" ? "ATTACK" : "DEFEND") : "—"}
+	              Последний выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
 	            </div>
 	          </div>
 
 	          <div
 	            role="button"
-	            aria-label="ATTACK"
+	            aria-label="Атака"
 	            tabIndex={-1}
 	            onTouchStart={(e) => {
 	              e.preventDefault();
@@ -4277,18 +4216,19 @@ const hpPct = useMemo(() => {
 	              textTransform: "uppercase",
 	              minWidth: 110,
 	            
-	              cursor: "pointer",
+	              cursor: awaitingAction ? "pointer" : "default",
+	              opacity: awaitingAction ? 1 : 0.45,
 	              userSelect: "none",
 	              WebkitTapHighlightColor: "transparent",
 	              WebkitTouchCallout: "none",
 	              touchAction: "manipulation",
 	            }}
 	          >
-	            ATTACK
+	            Атака
 	          </div>
 	          <div
 	            role="button"
-	            aria-label="DEFEND"
+	            aria-label="Защита"
 	            tabIndex={-1}
 	            onTouchStart={(e) => {
 	              e.preventDefault();
@@ -4296,7 +4236,7 @@ const hpPct = useMemo(() => {
 	              const ae: any = document.activeElement;
 	              if (ae && typeof ae.blur === "function") ae.blur();
 	              stabilizeScrollAfterTap();
-	              chooseAction("defend");
+	              if (!awaitingAction) return; if (!awaitingAction) return; chooseAction("defend");
 	            }}
 	            onMouseDown={(e) => {
 	              e.preventDefault();
@@ -4318,14 +4258,15 @@ const hpPct = useMemo(() => {
 	              textTransform: "uppercase",
 	              minWidth: 110,
 	            
-	              cursor: "pointer",
+	              cursor: awaitingAction ? "pointer" : "default",
+	              opacity: awaitingAction ? 1 : 0.45,
 	              userSelect: "none",
 	              WebkitTapHighlightColor: "transparent",
 	              WebkitTouchCallout: "none",
 	              touchAction: "manipulation",
 	            }}
 	          >
-	            DEFEND
+	            Защита
 	          </div>
 	        </div>
       </div>
