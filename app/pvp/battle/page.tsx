@@ -506,14 +506,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [t, setT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
 
-  // Semi-auto (Step 3.x): player action choice gating + visible badge on active card
-  const [awaitingAction, setAwaitingAction] = useState(false);
-  const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
-  const [choiceTimer, setChoiceTimer] = useState<number>(0);
-
-  // Lightweight client-side "buffs" from player choice (UI-first; server sim later)
-  const atkBuffRef = useRef<Record<string, { pct: number }>>({});
-  const hpBuffRef = useRef<Record<string, { pct: number }>>({});
+  // Manual action UI (Attack/Defend) has been removed: Variant A autoplay playback.
 
 
 
@@ -543,12 +536,11 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       setT(firstT);
     } catch {}
 
-    // Pause at the beginning so the first tap is guaranteed to be a real gesture.
-    setAwaitingAction(true);
-    setLastAction(null);
+    // Variant A: autoplay playback. Start after a short delay to let TG iOS paint the snapshot.
     setPlaying(false);
-          resolvingActiveRef.current = null;
-          lastResolvedAttackIdxRef.current = -1;
+    resolvingActiveRef.current = null;
+    lastResolvedAttackIdxRef.current = -1;
+    window.setTimeout(() => setPlaying(true), 450);
   }, [match?.id, timeline]);
 
   const startAtRef = useRef<number | null>(null);
@@ -593,120 +585,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
-
-  // Semi-auto gate: pause on YOUR unit turn until player picks Атака/Защита.
-  const activeUnitForChoice = useMemo(() => {
-    if (!activeInstance) return null;
-    for (const u of Object.values(p1UnitsBySlot)) if (u?.instanceId === activeInstance) return u;
-    for (const u of Object.values(p2UnitsBySlot)) if (u?.instanceId === activeInstance) return u;
-    return null;
-  }, [activeInstance, p1UnitsBySlot, p2UnitsBySlot]);
-
-  // Prevent immediate re-pausing on the same choice point right after the user taps Атака/Защита.
-  // We only pause once per activeInstance/active unit, then allow playback to advance.
-  const resumeGuardRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    // Clear guard as soon as the active choice point changes.
-    const cur = activeUnitForChoice?.instanceId ?? null;
-    if (resumeGuardRef.current && cur && cur !== resumeGuardRef.current) {
-      resumeGuardRef.current = null;
-    }
-  }, [activeUnitForChoice?.instanceId]);
-
-
-
-  useEffect(() => {
-    if (!activeUnitForChoice) return;
-    if (activeUnitForChoice.side !== youSide) return;
-    if (resumeGuardRef.current === activeUnitForChoice.instanceId) return;
-    if (awaitingAction) return;
-    if (playing) return;
-    // Pause timeline and wait for a real tap (critical for TG iOS WebView painting)
-    setAwaitingAction(true);
-    setLastAction(null);
-    setPlaying(false);
-  }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
-
-
-  
-  // Auto-resolve enemy turns one action at a time.
-  useEffect(() => {
-    if (!activeUnitForChoice) return;
-    if (activeUnitForChoice.side === youSide) return;
-    if (awaitingAction) return;
-    if (playing) return;
-    const tm = window.setTimeout(() => {
-      // Enemy continues automatically
-      setPlaying(true);
-    }, 420);
-    return () => window.clearTimeout(tm);
-  }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
-
-  // 10s timer on your turn. If time expires, auto-pick Атака to keep the match moving.
-  useEffect(() => {
-    if (!awaitingAction) { setChoiceTimer(0); return; }
-    if (!activeUnitForChoice) { setChoiceTimer(0); return; }
-    if (activeUnitForChoice.side !== youSide) { setChoiceTimer(0); return; }
-
-    setChoiceTimer(10);
-    const iv = window.setInterval(() => {
-      setChoiceTimer((s) => {
-        const next = Math.max(0, (s ?? 0) - 1);
-        return next;
-      });
-    }, 1000);
-
-    return () => window.clearInterval(iv);
-  }, [awaitingAction, activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide]);
-
-  useEffect(() => {
-    if (!awaitingAction) return;
-    if (!activeUnitForChoice) return;
-    if (activeUnitForChoice.side !== youSide) return;
-    if (choiceTimer > 0) return;
-    // Auto-pick
-    if (!awaitingAction) return; if (!awaitingAction) return; chooseAction("attack");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [choiceTimer, awaitingAction, activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide]);
-
-// Step 1b: iOS TG WebView jump fix — stabilize scroll for a few frames after a tap.
-  const stabilizeScrollAfterTap = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const x = window.scrollX || 0;
-    const y = window.scrollY || 0;
-    // Restore scroll position over several frames/timeouts to defeat iOS "scroll-into-view" bounce.
-    requestAnimationFrame(() => window.scrollTo(x, y));
-    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(x, y)));
-    setTimeout(() => window.scrollTo(x, y), 50);
-    setTimeout(() => window.scrollTo(x, y), 200);
-  }, []);
-
-  const chooseAction = useCallback(
-    (choice: "attack" | "defend") => {
-      // Client-side choice effects (UI-first): random % bonus
-      const inst = activeUnitForChoice?.instanceId ?? null;
-      const pct = Math.floor(10 + Math.random() * 21); // 10..30%
-      if (inst) {
-        if (choice === "attack") {
-          atkBuffRef.current[inst] = { pct };
-          // clear any old hp buff
-          delete hpBuffRef.current[inst];
-        } else {
-          hpBuffRef.current[inst] = { pct };
-          delete atkBuffRef.current[inst];
-        }
-      }
-
-      setLastAction(choice);
-      // Mark this choice point as "consumed" so the pause effect doesn't instantly re-trigger
-      // before the timeline advances to the next activeInstance.
-      resumeGuardRef.current = inst;
-      setAwaitingAction(false);
-      setPlaying(true);
-    },
-    [activeUnitForChoice?.instanceId]
-  );
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
 
@@ -1382,28 +1260,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     setP1Score(s1);
     setP2Score(s2);
     setRoundWinner(rw);
-
-
-    // Apply lightweight UI buffs from player choice (does not change server sim yet)
-    try {
-      const applyHpBuff = (u: any) => {
-        if (!u?.instanceId) return u;
-        const b = hpBuffRef.current[u.instanceId];
-        if (!b) return u;
-        const pct = Number(b.pct ?? 0);
-        if (!pct) return u;
-        const bonus = Math.max(0, Math.floor((u.maxHp || u.hp || 0) * (pct / 100)));
-        return { ...u, hp: (u.hp || 0) + bonus, maxHp: (u.maxHp || u.hp || 0) + bonus, tags: new Set([...(u.tags || []), `HP+${pct}%`]) };
-      };
-      for (const k of Object.keys(slotMapP1)) {
-        const u = (slotMapP1 as any)[k];
-        if (u) (slotMapP1 as any)[k] = applyHpBuff(u);
-      }
-      for (const k of Object.keys(slotMapP2)) {
-        const u = (slotMapP2 as any)[k];
-        if (u) (slotMapP2 as any)[k] = applyHpBuff(u);
-      }
-    } catch {}
     setActiveInstance(active);
     setP1UnitsBySlot(slotMapP1);
     setP2UnitsBySlot(slotMapP2);
@@ -1459,26 +1315,61 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           const fromRef = readUnitRefFromEvent(e0, "from") || readUnitRefFromEvent(e0, "unit");
           const fromId = String((fromRef as any)?.instanceId ?? (e0 as any)?.fromId ?? (e0 as any)?.attackerId ?? "");
           if (fromId) resolvingActiveRef.current = fromId;
+          const toRef = readUnitRefFromEvent(e0, "to") || readUnitRefFromEvent(e0, "target");
+          const toId = String((toRef as any)?.instanceId ?? (e0 as any)?.toId ?? (e0 as any)?.targetId ?? "");
+          if (fromId && toId) {
+            const sig = `${Number((e0 as any)?.t ?? actionStartT)}:${fromId}:${toId}`;
+            lastAttackSigRef.current = sig;
+            // Trigger exactly one lunge for this action.
+            lungeByInstanceIds(fromId, toId);
+          }
         } catch {}
 
         const actionMaxT = Number((actionEvents[actionEvents.length - 1] as any)?.t ?? actionStartT) || actionStartT;
 
-// Step-playback simplified (iOS-safe):
-// We do NOT iterate multiple keyframes inside the action window, because that can make several cards
-// appear to "move" in quick succession in Telegram iOS WebView. Instead:
-// 1) jump to the attack time (triggers the lunge/FX once)
-// 2) wait for the lunge to finish
-// 3) jump to the end of this action window so HP/death settles
-if (cancelled) return;
-setT(actionStartT);
-await sleep(320);
+// Collect key times inside this action window (only meaningful combat moments to avoid "everything wiggles")
+        const KEY_TYPES = new Set(["attack", "damage", "hit", "death", "round_end", "end"]);
+        const times = Array.from(
+          new Set(
+            actionEvents
+              .filter((e: any) => {
+                const tt = Number(e?.t ?? 0);
+                const tp = String((e as any)?.type ?? "");
+                if (!Number.isFinite(tt)) return false;
+                if (tt < actionStartT - EPS) return false;
+                if (tt > actionMaxT + EPS) return false;
+                return KEY_TYPES.has(tp);
+              })
+              .map((e: any) => Number(e.t))
+          )
+        ).sort((a, b) => a - b);
+// Ensure we start exactly at the action start
+        if (times.length === 0 || Math.abs(times[0] - actionStartT) > 1e-3) times.unshift(actionStartT);
 
-if (cancelled) return;
-const settleT = Math.max(actionStartT, actionMaxT);
-setT(settleT);
-await sleep(140);
+        for (const tt of times) {
+          if (cancelled) return;
+          setT(tt);
 
-// Pause after one action
+          // Choose delay based on event types at this time
+          const atThis = actionEvents.filter((e: any) => Math.abs(Number(e?.t ?? 0) - tt) < 1e-6);
+          const hasAttack = atThis.some((e: any) => String(e?.type) === "attack");
+          const hasDmg = atThis.some((e: any) => String(e?.type) === "damage" || String(e?.type) === "hit");
+          const hasDeath = atThis.some((e: any) => String(e?.type) === "death");
+
+          let delay = 120;
+          if (hasAttack) delay = 260;
+          else if (hasDeath) delay = 240;
+          else if (hasDmg) delay = 180;
+
+          await sleep(delay);
+        }
+
+        // Snap to end of this action window so HP/board settles before we pause.
+        const settleT = Math.max(actionStartT, actionMaxT);
+        if (!cancelled) setT(settleT);
+        await sleep(80);
+
+        // Pause after one action
         if (!cancelled) {
           lastResolvedAttackIdxRef.current = attackIdx;
           setPlaying(false);
@@ -1735,6 +1626,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   // Trigger one lunge per new attack event (no TEST button).
   useEffect(() => {
+    // During controlled RESOLVE we trigger lunge manually (single source of truth).
+    if (playing || resolvingActiveRef.current) return;
     if (!recentAttacks || recentAttacks.length === 0) return;
     const last = recentAttacks[recentAttacks.length - 1];
     if (!last?.fromId || !last?.toId) return;
@@ -4166,122 +4059,8 @@ const hpPct = useMemo(() => {
             )}
           </div>
         </section>
-
-	        {/* Semi-auto Action Bar (works on all platforms; critical for iOS gesture) */}
-	        <div
-	          style={{
-	            position: "fixed",
-	            left: 12,
-	            right: 12,
-	            bottom: `calc(12px + env(safe-area-inset-bottom) + 84px)`,
-	            zIndex: 999999,
-	            pointerEvents: "auto",
-	            display: "flex",
-	            gap: 10,
-	            alignItems: "center",
-	            justifyContent: "center",
-	            padding: "10px 12px",
-	            borderRadius: 16,
-	            border: "1px solid rgba(255,255,255,0.16)",
-	            background: "rgba(0,0,0,0.55)",
-	          }}
-	        >
-	          <div style={{ flex: 1, minWidth: 0 }}>
-	            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.9 }}>
-	              {awaitingAction ? `ТВОЙ ХОД • ${choiceTimer || 10}s` : "ХОД"}
-	            </div>
-	            <div style={{ marginTop: 2, fontSize: 12, fontWeight: 800, opacity: 0.92 }}>
-	              Последний выбор: {lastAction ? (lastAction === "attack" ? "Атака" : "Защита") : "—"}
-	            </div>
-	          </div>
-
-	          <div
-	            role="button"
-	            aria-label="Атака"
-	            tabIndex={-1}
-	            onTouchStart={(e) => {
-	              e.preventDefault();
-	              e.stopPropagation();
-	              const ae: any = document.activeElement;
-	              if (ae && typeof ae.blur === "function") ae.blur();
-	              stabilizeScrollAfterTap();
-	              chooseAction("attack");
-	            }}
-	            onMouseDown={(e) => {
-	              e.preventDefault();
-	              e.stopPropagation();
-	              const ae: any = document.activeElement;
-	              if (ae && typeof ae.blur === "function") ae.blur();
-	              stabilizeScrollAfterTap();
-	              chooseAction("attack");
-	            }}
-	            style={{
-	              padding: "10px 12px",
-	              borderRadius: 14,
-	              border: lastAction === "attack" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
-	              background: lastAction === "attack" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
-	              color: "rgba(255,255,255,0.95)",
-	              fontSize: 12,
-	              fontWeight: 1000,
-	              letterSpacing: "0.14em",
-	              textTransform: "uppercase",
-	              minWidth: 110,
-	            
-	              cursor: awaitingAction ? "pointer" : "default",
-	              opacity: awaitingAction ? 1 : 0.45,
-	              userSelect: "none",
-	              WebkitTapHighlightColor: "transparent",
-	              WebkitTouchCallout: "none",
-	              touchAction: "manipulation",
-	            }}
-	          >
-	            Атака
-	          </div>
-	          <div
-	            role="button"
-	            aria-label="Защита"
-	            tabIndex={-1}
-	            onTouchStart={(e) => {
-	              e.preventDefault();
-	              e.stopPropagation();
-	              const ae: any = document.activeElement;
-	              if (ae && typeof ae.blur === "function") ae.blur();
-	              stabilizeScrollAfterTap();
-	              if (!awaitingAction) return; if (!awaitingAction) return; chooseAction("defend");
-	            }}
-	            onMouseDown={(e) => {
-	              e.preventDefault();
-	              e.stopPropagation();
-	              const ae: any = document.activeElement;
-	              if (ae && typeof ae.blur === "function") ae.blur();
-	              stabilizeScrollAfterTap();
-	              chooseAction("defend");
-	            }}
-	            style={{
-	              padding: "10px 12px",
-	              borderRadius: 14,
-	              border: lastAction === "defend" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
-	              background: lastAction === "defend" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
-	              color: "rgba(255,255,255,0.95)",
-	              fontSize: 12,
-	              fontWeight: 1000,
-	              letterSpacing: "0.14em",
-	              textTransform: "uppercase",
-	              minWidth: 110,
-	            
-	              cursor: awaitingAction ? "pointer" : "default",
-	              opacity: awaitingAction ? 1 : 0.45,
-	              userSelect: "none",
-	              WebkitTapHighlightColor: "transparent",
-	              WebkitTouchCallout: "none",
-	              touchAction: "manipulation",
-	            }}
-	          >
-	            Защита
-	          </div>
-	        </div>
-      </div>
-    </main>
+        </div>
+      </main>
   );
 }
 
