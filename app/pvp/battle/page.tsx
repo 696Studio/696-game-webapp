@@ -484,6 +484,50 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       .sort((a: any, b: any) => a.t - b.t);
   }, [logObj]);
 
+  const attackOrder: number[] = useMemo(() => {
+    const tl = Array.isArray(timeline) ? timeline : [];
+    const attacks: { idx: number; round: number; side: "p1" | "p2"; slot: number }[] = [];
+
+    for (let i = 0; i < tl.length; i++) {
+      const e: any = tl[i];
+      if (String(e?.type) !== "attack") continue;
+      const from = readUnitRefFromEvent(e, "from") || readUnitRefFromEvent(e, "unit");
+      if (!from) continue;
+      const round = Number(e?.round ?? 1) || 1;
+      attacks.push({ idx: i, round, side: from.side, slot: from.slot });
+    }
+
+    const byRound = new Map<number, typeof attacks>();
+    for (const a of attacks) {
+      if (!byRound.has(a.round)) byRound.set(a.round, []);
+      byRound.get(a.round)!.push(a);
+    }
+    for (const arr of byRound.values()) arr.sort((a, b) => a.idx - b.idx);
+
+    const roundsSorted = Array.from(byRound.keys()).sort((a, b) => a - b);
+    const result: number[] = [];
+    const used = new Set<number>();
+    const maxSlots = 5;
+
+    for (const r of roundsSorted) {
+      const arr = byRound.get(r)!;
+      for (let s = 0; s < maxSlots; s++) {
+        const p1 = arr.find((x) => x.side === "p1" && x.slot === s && !used.has(x.idx));
+        if (p1) { used.add(p1.idx); result.push(p1.idx); }
+        const p2 = arr.find((x) => x.side === "p2" && x.slot === s && !used.has(x.idx));
+        if (p2) { used.add(p2.idx); result.push(p2.idx); }
+      }
+      for (const x of arr) {
+        if (!used.has(x.idx)) { used.add(x.idx); result.push(x.idx); }
+      }
+    }
+
+    // Fallback: if no rounds present, keep original index order
+    if (!result.length && attacks.length) return attacks.sort((a,b)=>a.idx-b.idx).map(x=>x.idx);
+
+    return result;
+  }, [timeline]);
+
   const rounds = useMemo(() => {
     const rRaw = logObj?.rounds;
     const r = parseMaybeJson(rRaw);
@@ -1281,17 +1325,22 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         const EPS = 1e-4;
         const curT = Number(t ?? 0);
 
-        // Find the next attack by INDEX (not by time) so we never resolve multiple attacks that share the same timestamp.
-        let lastIdx = lastResolvedAttackIdxRef.current ?? -1;
-        if (lastIdx >= 0) {
-          const lastT = Number((tl[lastIdx] as any)?.t ?? 0);
-          // Seek/rewind safety: if we ever jumped behind the last resolved attack, restart from the beginning.
-          if (Number.isFinite(lastT) && lastT > curT + EPS) lastIdx = -1;
+        // Find the next attack using a deterministic precomputed order (mirror by slots) so we never resolve multiple attacks per step.
+        let attackIdx = -1;
+
+        const lastResolved = lastResolvedAttackIdxRef.current ?? -1;
+        let startPos = 0;
+        if (lastResolved >= 0) {
+          const pos = attackOrder.indexOf(lastResolved);
+          startPos = pos >= 0 ? pos + 1 : 0;
         }
 
-        let attackIdx = -1;
-        for (let i = Math.max(0, lastIdx + 1); i < tl.length; i++) {
-          if (String((tl[i] as any)?.type) === "attack") { attackIdx = i; break; }
+        for (let p = startPos; p < attackOrder.length; p++) {
+          const idx = attackOrder[p];
+          if (idx >= 0 && idx < tl.length && String((tl[idx] as any)?.type) === "attack") {
+            attackIdx = idx;
+            break;
+          }
         }
 
         if (attackIdx < 0) {
@@ -1985,12 +2034,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       vanishTimersRef.current.push(
         window.setTimeout(() => setIsVanish(true), 520),
       );
-      vanishTimersRef.current.push(
-        window.setTimeout(() => {
-          setIsHidden(true);
-          setGhostUnit(null);
-        }, 860),
-      );
+      // Keep the dead card in its slot; do not remove from DOM (slots count must stay constant).
     }, [instId, isDying, isDead]);
 
 const hpPct = useMemo(() => {
@@ -2032,7 +2076,7 @@ const hpPct = useMemo(() => {
 
     const isActive = !!activeUnit && activeInstanceUi ? activeUnit.instanceId === activeInstanceUi : false;
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
-    if (isHidden) return null;
+    // Slots must stay constant; never remove card from DOM.
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
         <div
