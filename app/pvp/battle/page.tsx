@@ -561,31 +561,15 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     if (!match) return;
     if (didStartGateRef.current) return;
     didStartGateRef.current = true;
-
-    // Start on the first meaningful snapshot so cards are visible immediately (no "appear after tap")
-    try {
-      const tl = Array.isArray(timeline) ? timeline : [];
-      let firstT = 0;
-      for (const e of tl) {
-        const hasUnits =
-          (Array.isArray((e as any)?.p1_units) && (e as any).p1_units.length > 0) ||
-          (Array.isArray((e as any)?.p2_units) && (e as any).p2_units.length > 0);
-        const hasCards =
-          (Array.isArray((e as any)?.p1_cards) && (e as any).p1_cards.length > 0) ||
-          (Array.isArray((e as any)?.p2_cards) && (e as any).p2_cards.length > 0) ||
-          (Array.isArray((e as any)?.p1_cards_full) && (e as any).p1_cards_full.length > 0) ||
-          (Array.isArray((e as any)?.p2_cards_full) && (e as any).p2_cards_full.length > 0);
-        if (hasUnits || hasCards) { firstT = Number((e as any).t ?? 0) || 0; break; }
-      }
-      setT(firstT);
-    } catch {}
+    // Variant A: always start from t=0 snapshot to avoid pre-applying damage/deaths.
+    try { setT(0); } catch {}
 
     // Variant A: autoplay playback. Start after a short delay to let TG iOS paint the snapshot.
     setPlaying(false);
     resolvingActiveRef.current = null;
     lastResolvedAttackIdxRef.current = -1;
     window.setTimeout(() => setPlaying(true), 450);
-  }, [match?.id, timeline]);
+  }, [match?.id]);
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
