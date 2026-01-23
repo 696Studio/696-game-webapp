@@ -1418,12 +1418,24 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         if (!cancelled) setT(settleT);
         await sleep(80);
 
-        // Pause after one action
+        // Pause after one action, then automatically continue to the next one (autoplay)
         if (!cancelled) {
           lastResolvedAttackIdxRef.current = attackIdx;
           setPlaying(false);
+
+          // If there is another attack remaining in the deterministic order, schedule the next step.
+          const pos = attackOrder.indexOf(attackIdx);
+          const hasNext = pos >= 0 && pos + 1 < attackOrder.length;
+          if (hasNext) {
+            window.setTimeout(() => {
+              if (!cancelled) setPlaying(true);
+            }, 450);
+          } else {
+            // No more attacks -> stop
+            resolvingActiveRef.current = null;
+          }
         }
-      } catch {
+} catch {
         resolvingActiveRef.current = null;
         setPlaying(false);
       }
