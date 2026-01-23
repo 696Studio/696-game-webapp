@@ -547,6 +547,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     setAwaitingAction(true);
     setLastAction(null);
     setPlaying(false);
+          resolvingActiveRef.current = null;
   }, [match?.id, timeline]);
 
   const startAtRef = useRef<number | null>(null);
@@ -619,11 +620,12 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     if (activeUnitForChoice.side !== youSide) return;
     if (resumeGuardRef.current === activeUnitForChoice.instanceId) return;
     if (awaitingAction) return;
+    if (playing) return;
     // Pause timeline and wait for a real tap (critical for TG iOS WebView painting)
     setAwaitingAction(true);
     setLastAction(null);
     setPlaying(false);
-  }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction]);
+  }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
 
 
   
@@ -738,6 +740,8 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // the CardRoot (data-bb-slot element) via top/left.
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
+const resolvingActiveRef = useRef<string | null>(null);
+  const activeInstanceUi = (playing && resolvingActiveRef.current) ? resolvingActiveRef.current : activeInstance;
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
     // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
@@ -1422,10 +1426,19 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         // Find the next Атака event as an "action boundary"
         const attackIdx = tl.findIndex((e: any) => String(e?.type) === "attack" && Number(e?.t ?? 0) > curT + EPS);
         if (attackIdx < 0) {
+          resolvingActiveRef.current = null;
           setPlaying(false);
           return;
         }
         const actionStartT = Number(tl[attackIdx].t ?? 0) || curT;
+
+        // Lock UI "active highlight" to the attacker during this action (prevents many cards flashing active)
+        try {
+          const e0: any = tl[attackIdx] as any;
+          const fromRef = readUnitRefFromEvent(e0, "from") || readUnitRefFromEvent(e0, "unit");
+          const fromId = String((fromRef as any)?.instanceId ?? (e0 as any)?.fromId ?? (e0 as any)?.attackerId ?? "");
+          if (fromId) resolvingActiveRef.current = fromId;
+        } catch {}
 
         // Next attack marks the end of this action window
         let actionEndT = durationSec;
@@ -1436,19 +1449,23 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           }
         }
 
-        // Collect key times inside this action window
+        // Collect key times inside this action window (only meaningful combat moments to avoid "everything wiggles")
+        const KEY_TYPES = new Set(["attack", "damage", "hit", "death", "round_end", "end"]);
         const times = Array.from(
           new Set(
             tl
               .filter((e: any) => {
                 const tt = Number(e?.t ?? 0);
-                return Number.isFinite(tt) && tt >= actionStartT - EPS && tt < actionEndT - EPS;
+                const tp = String((e as any)?.type ?? "");
+                if (!Number.isFinite(tt)) return false;
+                if (tt < actionStartT - EPS) return false;
+                if (tt >= actionEndT - EPS) return false;
+                return KEY_TYPES.has(tp);
               })
               .map((e: any) => Number(e.t))
           )
         ).sort((a, b) => a - b);
-
-        // Ensure we start exactly at the action start
+// Ensure we start exactly at the action start
         if (times.length === 0 || Math.abs(times[0] - actionStartT) > 1e-3) times.unshift(actionStartT);
 
         for (const tt of times) {
@@ -1469,11 +1486,17 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           await sleep(delay);
         }
 
+        // Snap to end of this action window so HP/board settles before we pause.
+        const settleT = Math.max(actionStartT, actionEndT - EPS);
+        if (!cancelled) setT(settleT);
+        await sleep(80);
+
         // Pause after one action
         if (!cancelled) {
           setPlaying(false);
         }
       } catch {
+        resolvingActiveRef.current = null;
         setPlaying(false);
       }
     };
@@ -2126,7 +2149,7 @@ const hpPct = useMemo(() => {
       return arr.slice(0, 3);
     }, [activeUnit?.instanceId]);
 
-    const isActive = !!activeUnit && activeInstance ? activeUnit.instanceId === activeInstance : false;
+    const isActive = !!activeUnit && activeInstanceUi ? activeUnit.instanceId === activeInstanceUi : false;
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
     return (
