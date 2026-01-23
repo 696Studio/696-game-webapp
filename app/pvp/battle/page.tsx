@@ -786,6 +786,12 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // the CardRoot (data-bb-slot element) via top/left.
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
+  // === Variant A2: FX-lock (single source of truth) ===
+  const isStepAnimatingRef = useRef<boolean>(false);
+  const currentStepSigRef = useRef<string>("");
+  const stepFxClearTimerRef = useRef<number | null>(null);
+  const [stepFxEvents, setStepFxEvents] = useState<{ type: "attack"; id: string; attackerId: string; targetId: string }[]>([]);
+
 const resolvingActiveRef = useRef<string | null>(null);
   const lastResolvedAttackIdxRef = useRef<number>(-1);
   const activeInstanceUi = (playing && resolvingActiveRef.current) ? resolvingActiveRef.current : activeInstance;
@@ -1515,6 +1521,40 @@ if (attackIdx < 0) {
           if (fromId) resolvingActiveRef.current = fromId;
         } catch {}
 
+
+        // (A2) Single-source FX + Lunge trigger for THIS step only
+        try {
+          const e0: any = tl[attackIdx] as any;
+          const fromRef = readUnitRefFromEvent(e0, "from") || readUnitRefFromEvent(e0, "unit");
+          const toRef = readUnitRefFromEvent(e0, "to") || readUnitRefFromEvent(e0, "target");
+          const fromId = String((fromRef as any)?.instanceId ?? (e0 as any)?.fromId ?? (e0 as any)?.attackerId ?? "");
+          const toId = String((toRef as any)?.instanceId ?? (e0 as any)?.toId ?? (e0 as any)?.targetId ?? "");
+          if (fromId && toId) {
+            const sig = `${attackIdx}:${fromId}:${toId}`;
+            currentStepSigRef.current = sig;
+            // update FX layer (one event per step)
+            setStepFxEvents([{ type: "attack", id: sig, attackerId: fromId, targetId: toId }]);
+
+            // trigger lunge exactly once per step (hard lock)
+            if (sig !== lastAttackSigRef.current) {
+              lastAttackSigRef.current = sig;
+              if (!isStepAnimatingRef.current) {
+                isStepAnimatingRef.current = true;
+                // clear old timer
+                if (stepFxClearTimerRef.current) {
+                  window.clearTimeout(stepFxClearTimerRef.current);
+                  stepFxClearTimerRef.current = null;
+                }
+                lungeByInstanceIds(fromId, toId);
+                // unlock after animation window (iOS-safe)
+                stepFxClearTimerRef.current = window.setTimeout(() => {
+                  isStepAnimatingRef.current = false;
+                  stepFxClearTimerRef.current = null;
+                }, 1100);
+              }
+            }
+          }
+        } catch {}
         const actionMaxT = Number((actionEvents[actionEvents.length - 1] as any)?.t ?? actionStartT) || actionStartT;
 
 // Collect key times inside this action window (only meaningful combat moments to avoid "everything wiggles")
@@ -1816,39 +1856,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     // Keep chronological order (oldest -> newest) since we scanned backwards.
     return arr.reverse();
   }, [timeline, t]);
+  // (A2) Lunge is triggered ONLY from the current step action (runOneAction), not from recentAttacks.
+  // (A2) FX events are driven ONLY by the current step action (single event per step).
+  const fxEvents = stepFxEvents;
 
-  // Trigger one lunge per new attack event (no TEST button).
-  useEffect(() => {
-    if (!recentAttacks || recentAttacks.length === 0) return;
-    const last = recentAttacks[recentAttacks.length - 1];
-    if (!last?.fromId || !last?.toId) return;
-    const sig = `${last.t}:${last.fromId}:${last.toId}`;
-    if (sig === lastAttackSigRef.current) return;
-    lastAttackSigRef.current = sig;
-    lungeByInstanceIds(last.fromId, last.toId);
-  }, [recentAttacks, lungeByInstanceIds]);
-
-  // FX events derived from recent attacks (used by BattleFxLayer).
-  const fxEvents = useMemo(() => {
-    // Auto-FX: build attack events from the full timeline so BattleFxLayer can animate each attack once.
-    const out: { type: "attack"; id: string; attackerId: string; targetId: string }[] = [];
-    const tl: any[] = (timeline as any[]) || [];
-    for (let i = 0; i < tl.length; i++) {
-      const e: any = tl[i];
-      if (!e || e.type !== "attack") continue;
-
-      const fromRef = readUnitRefFromEvent(e, "from") || readUnitRefFromEvent(e, "unit");
-      const toRef = readUnitRefFromEvent(e, "to") || readUnitRefFromEvent(e, "target");
-
-      const attackerId = String(fromRef?.instanceId ?? (e?.from && e.from.instanceId) ?? e?.fromId ?? e?.attackerId ?? "");
-      const targetId = String(toRef?.instanceId ?? (e?.to && e.to.instanceId) ?? e?.toId ?? e?.targetId ?? "");
-      if (!attackerId || !targetId) continue;
-
-      const baseId = String(e.id ?? e.uid ?? `${e.t ?? ""}:${attackerId}:${targetId}`);
-      out.push({ type: "attack", id: `atk:${baseId}:${i}`, attackerId, targetId });
-    }
-    return out;
-  }, [timeline]);
 
 
   const spawnFxByInstance = useMemo(() => {
