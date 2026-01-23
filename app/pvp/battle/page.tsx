@@ -4267,7 +4267,8 @@ const hpPct = useMemo(() => {
         </section>
 
 	        {/* Semi-auto Action Bar (works on all platforms; critical for iOS gesture) */}
-	        <div
+	        {ENABLE_MANUAL_ACTIONS && (
+<div
 	          style={{
 	            position: "fixed",
 	            left: 12,
@@ -4381,6 +4382,7 @@ const hpPct = useMemo(() => {
 	            Защита
 	          </div>
 	        </div>
+)}
       </div>
     </main>
   );
