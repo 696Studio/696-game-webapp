@@ -548,6 +548,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     setLastAction(null);
     setPlaying(false);
           resolvingActiveRef.current = null;
+          lastResolvedAttackIdxRef.current = -1;
   }, [match?.id, timeline]);
 
   const startAtRef = useRef<number | null>(null);
@@ -741,6 +742,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
 const resolvingActiveRef = useRef<string | null>(null);
+  const lastResolvedAttackIdxRef = useRef<number>(-1);
   const activeInstanceUi = (playing && resolvingActiveRef.current) ? resolvingActiveRef.current : activeInstance;
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
@@ -1423,14 +1425,33 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         const EPS = 1e-4;
         const curT = Number(t ?? 0);
 
-        // Find the next Атака event as an "action boundary"
-        const attackIdx = tl.findIndex((e: any) => String(e?.type) === "attack" && Number(e?.t ?? 0) > curT + EPS);
+        // Find the next attack by INDEX (not by time) so we never resolve multiple attacks that share the same timestamp.
+        let lastIdx = lastResolvedAttackIdxRef.current ?? -1;
+        if (lastIdx >= 0) {
+          const lastT = Number((tl[lastIdx] as any)?.t ?? 0);
+          // Seek/rewind safety: if we ever jumped behind the last resolved attack, restart from the beginning.
+          if (Number.isFinite(lastT) && lastT > curT + EPS) lastIdx = -1;
+        }
+
+        let attackIdx = -1;
+        for (let i = Math.max(0, lastIdx + 1); i < tl.length; i++) {
+          if (String((tl[i] as any)?.type) === "attack") { attackIdx = i; break; }
+        }
+
         if (attackIdx < 0) {
           resolvingActiveRef.current = null;
           setPlaying(false);
           return;
         }
-        const actionStartT = Number(tl[attackIdx].t ?? 0) || curT;
+
+        const actionStartT = Number((tl[attackIdx] as any)?.t ?? curT) || curT;
+
+        // Next attack INDEX marks the end of this action slice.
+        let nextAttackIdx = tl.length;
+        for (let j = attackIdx + 1; j < tl.length; j++) {
+          if (String((tl[j] as any)?.type) === "attack") { nextAttackIdx = j; break; }
+        }
+        const actionEvents = tl.slice(attackIdx, nextAttackIdx);
 
         // Lock UI "active highlight" to the attacker during this action (prevents many cards flashing active)
         try {
@@ -1440,26 +1461,19 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           if (fromId) resolvingActiveRef.current = fromId;
         } catch {}
 
-        // Next attack marks the end of this action window
-        let actionEndT = durationSec;
-        for (let j = attackIdx + 1; j < tl.length; j++) {
-          if (String((tl[j] as any)?.type) === "attack") {
-            actionEndT = Number((tl[j] as any).t ?? actionEndT) || actionEndT;
-            break;
-          }
-        }
+        const actionMaxT = Number((actionEvents[actionEvents.length - 1] as any)?.t ?? actionStartT) || actionStartT;
 
-        // Collect key times inside this action window (only meaningful combat moments to avoid "everything wiggles")
+// Collect key times inside this action window (only meaningful combat moments to avoid "everything wiggles")
         const KEY_TYPES = new Set(["attack", "damage", "hit", "death", "round_end", "end"]);
         const times = Array.from(
           new Set(
-            tl
+            actionEvents
               .filter((e: any) => {
                 const tt = Number(e?.t ?? 0);
                 const tp = String((e as any)?.type ?? "");
                 if (!Number.isFinite(tt)) return false;
                 if (tt < actionStartT - EPS) return false;
-                if (tt >= actionEndT - EPS) return false;
+                if (tt > actionMaxT + EPS) return false;
                 return KEY_TYPES.has(tp);
               })
               .map((e: any) => Number(e.t))
@@ -1487,12 +1501,13 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         }
 
         // Snap to end of this action window so HP/board settles before we pause.
-        const settleT = Math.max(actionStartT, actionEndT - EPS);
+        const settleT = Math.max(actionStartT, actionMaxT);
         if (!cancelled) setT(settleT);
         await sleep(80);
 
         // Pause after one action
         if (!cancelled) {
+          lastResolvedAttackIdxRef.current = attackIdx;
           setPlaying(false);
         }
       } catch {
