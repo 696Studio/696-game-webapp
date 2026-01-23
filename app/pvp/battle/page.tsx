@@ -484,6 +484,74 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       .sort((a: any, b: any) => a.t - b.t);
   }, [logObj]);
 
+  const [playing, setPlaying] = useState(false);
+  const [t, setT] = useState(0);
+  const [rate, setRate] = useState<0.5 | 1 | 2>(1);
+
+  // Semi-auto (Step 3.x): player action choice gating + visible badge on active card
+  const [awaitingAction, setAwaitingAction] = useState(false);
+  const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
+
+  // Keyframe times for deterministic step-by-step playback (Telegram iOS safe).
+  // We advance between unique timeline timestamps instead of using wall-clock time.
+  const keyTimes = useMemo(() => {
+    const set = new Set<number>();
+    for (const e of timeline) {
+      const tt = Number((e as any)?.t ?? 0);
+      if (Number.isFinite(tt)) set.add(tt);
+    }
+    const arr = Array.from(set).sort((a, b) => a - b);
+    if (!arr.length || arr[0] > 0) arr.unshift(0);
+    return arr;
+  }, [timeline]);
+
+  const keyIndexRef = useRef(0);
+  useEffect(() => {
+    if (!keyTimes.length) {
+      keyIndexRef.current = 0;
+      return;
+    }
+    // Sync index to current t (binary search).
+    let idx = 0;
+    let lo = 0;
+    let hi = keyTimes.length - 1;
+    const target = Number(t) || 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (keyTimes[mid] <= target + 1e-9) {
+        idx = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    keyIndexRef.current = idx;
+  }, [t, keyTimes]);
+
+  const stepTimeoutRef = useRef<number | null>(null);
+  const playingRef = useRef(false);
+  const awaitingRef = useRef(false);
+  const durationRef = useRef(0);
+  const keyTimesRef = useRef<number[]>([]);
+  const timelineRef = useRef<TimelineEvent[]>([]);
+
+  useEffect(() => {
+    playingRef.current = !!playing;
+  }, [playing]);
+  useEffect(() => {
+    awaitingRef.current = !!awaitingAction;
+  }, [awaitingAction]);
+  useEffect(() => {
+    durationRef.current = Number(durationSec) || 0;
+  }, [durationSec]);
+  useEffect(() => {
+    keyTimesRef.current = keyTimes;
+  }, [keyTimes]);
+  useEffect(() => {
+    timelineRef.current = timeline;
+  }, [timeline]);
+
+
   const rounds = useMemo(() => {
     const rRaw = logObj?.rounds;
     const r = parseMaybeJson(rRaw);
@@ -502,14 +570,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     return 3;
   }, [timeline, rounds.length]);
 
-  const [playing, setPlaying] = useState(false);
-  const [t, setT] = useState(0);
-  const [rate, setRate] = useState<0.5 | 1 | 2>(1);
-
-  // Semi-auto (Step 3.x): player action choice gating + visible badge on active card
-  const [awaitingAction, setAwaitingAction] = useState(false);
-  const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
-
   // Start gate: require a user gesture (ATTACK/DEFEND) before any playback.
   // Critical for Telegram iOS WebView to reliably paint transforms/transitions.
   const didStartGateRef = useRef(false);
@@ -525,8 +585,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
-  const playheadRef = useRef<number>(0);
-  const lastNowRef = useRef<number | null>(null);
 
   const [roundN, setRoundN] = useState(1);
 
@@ -1044,9 +1102,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   function seek(nextT: number) {
     const clamped = Math.max(0, Math.min(durationSec, Number(nextT) || 0));
     setT(clamped);
-    playheadRef.current = clamped;
     startAtRef.current = null;
-    lastNowRef.current = null;
   }
 
   useEffect(() => {
@@ -1311,56 +1367,94 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   useEffect(() => {
     if (!match) return;
 
-    const step = (now: number) => {
-      if (!playing) return;
-
-      // TG iOS WebView can "stall" rAF then resume with a huge time jump.
-      // Do NOT derive timeline from wall-clock (now - startAt). Instead, integrate dt with a clamp.
-      if (lastNowRef.current == null) {
-        lastNowRef.current = now;
-        // Ensure playhead is aligned before starting
-        playheadRef.current = t;
+    // Stop any running loop when we are paused or waiting for input.
+    if (!playing || awaitingAction) {
+      if (stepTimeoutRef.current != null) {
+        window.clearTimeout(stepTimeoutRef.current);
+        stepTimeoutRef.current = null;
       }
+      return;
+    }
 
-      let dt = (now - (lastNowRef.current as number)) / 1000;
-      lastNowRef.current = now;
+    // If a loop is already running, do nothing.
+    if (stepTimeoutRef.current != null) return;
 
-      // Clamp big gaps so we don't "fast-forward" and trigger many events in one frame.
-      if (!Number.isFinite(dt) || dt < 0) dt = 0;
-      if (dt > 0.09) dt = 0.033; // ~1 frame @ 30fps
+    const delayForNext = (nextTime: number) => {
+      // Default pacing tuned for "Hearthstone-like" readability.
+      let delay = 220;
 
-      const next = Math.min(durationSec, Math.max(0, playheadRef.current + dt * rate));
-      playheadRef.current = next;
-      setT(next);
+      const tl = timelineRef.current || [];
+      for (const e of tl) {
+        if (Number((e as any)?.t) !== nextTime) continue;
+        const type = String((e as any)?.type || "");
+        if (type === "attack") delay = Math.max(delay, 420);
+        else if (type === "damage") delay = Math.max(delay, 260);
+        else if (type === "death") delay = Math.max(delay, 360);
+        else if (type === "round_end" || type === "round_start") delay = Math.max(delay, 320);
+      }
+      return delay;
+    };
 
-      if (next >= durationSec) {
-        setPlaying(false);
+    const tick = () => {
+      if (!playingRef.current) {
+        stepTimeoutRef.current = null;
+        return;
+      }
+      if (awaitingRef.current) {
+        stepTimeoutRef.current = null;
         return;
       }
 
-      rafRef.current = window.requestAnimationFrame(step);
+      const times = keyTimesRef.current || [];
+      if (!times.length) {
+        setPlaying(false);
+        stepTimeoutRef.current = null;
+        return;
+      }
+
+      const currIdx = Math.max(0, Math.min(times.length - 1, keyIndexRef.current || 0));
+      let nextIdx = currIdx + 1;
+
+      // Skip any timestamps beyond duration.
+      const dur = Math.max(0, durationRef.current || 0);
+      while (nextIdx < times.length && times[nextIdx] > dur + 1e-9) nextIdx++;
+
+      if (nextIdx >= times.length) {
+        setPlaying(false);
+        stepTimeoutRef.current = null;
+        return;
+      }
+
+      const nextTime = times[nextIdx];
+      keyIndexRef.current = nextIdx;
+      setT(nextTime);
+
+      // Stop when we reach the end.
+      if (nextTime >= dur - 1e-6) {
+        setPlaying(false);
+        stepTimeoutRef.current = null;
+        return;
+      }
+
+      const delay = delayForNext(nextTime);
+      stepTimeoutRef.current = window.setTimeout(tick, delay);
     };
 
-    if (playing) {
-      lastNowRef.current = null;
-      rafRef.current = window.requestAnimationFrame(step);
-    }
+    // Kick off the deterministic stepper loop.
+    stepTimeoutRef.current = window.setTimeout(tick, 0);
 
     return () => {
-      if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
+      if (stepTimeoutRef.current != null) {
+        window.clearTimeout(stepTimeoutRef.current);
+        stepTimeoutRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, durationSec, rate, t]);
+  }, [match, playing, awaitingAction]);
 
   useEffect(() => {
     startAtRef.current = null;
   }, [playing, rate]);
-
-  // Keep playheadRef in sync with stateful t (for RAF stepper)
-  useEffect(() => {
-    playheadRef.current = t;
-  }, [t]);
 
   const progressPct = useMemo(() => {
     if (!durationSec) return 0;
