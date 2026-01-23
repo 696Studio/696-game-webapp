@@ -10,7 +10,7 @@ import CardArt from "../../components/CardArt";
 import BattleFxLayer from './BattleFxLayer';
 
 
-// ===== BB_Атака_DEBUG_OVERLAY =====
+// ===== BB_ATTACK_DEBUG_OVERLAY =====
 function bbDbgEnabled() {
   try {
     if (typeof window === "undefined") return false;
@@ -24,17 +24,10 @@ function bbDbgEnabled() {
     if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
     if (ls === "1" || ss === "1") return true;
 
-    // URL toggle (works on iOS where console is hard to open):
-    //   ?dbg=1
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      if (sp.get("dbg") === "1") return true;
-    } catch {}
-
-    // Default OFF (no overlays unless explicitly enabled)
-    return false;
+    // Default ON for now (so you always see it in Telegram). Remove later when animation is stable.
+    return true;
   } catch {
-    return false;
+    return true;
   }
 }
 function bbDbgSet(msg: string) {
@@ -484,50 +477,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       .sort((a: any, b: any) => a.t - b.t);
   }, [logObj]);
 
-  const attackOrder: number[] = useMemo(() => {
-    const tl = Array.isArray(timeline) ? timeline : [];
-    const attacks: { idx: number; round: number; side: "p1" | "p2"; slot: number }[] = [];
-
-    for (let i = 0; i < tl.length; i++) {
-      const e: any = tl[i];
-      if (String(e?.type) !== "attack") continue;
-      const from = readUnitRefFromEvent(e, "from") || readUnitRefFromEvent(e, "unit");
-      if (!from) continue;
-      const round = Number(e?.round ?? 1) || 1;
-      attacks.push({ idx: i, round, side: from.side, slot: from.slot });
-    }
-
-    const byRound = new Map<number, typeof attacks>();
-    for (const a of attacks) {
-      if (!byRound.has(a.round)) byRound.set(a.round, []);
-      byRound.get(a.round)!.push(a);
-    }
-    for (const arr of byRound.values()) arr.sort((a, b) => a.idx - b.idx);
-
-    const roundsSorted = Array.from(byRound.keys()).sort((a, b) => a - b);
-    const result: number[] = [];
-    const used = new Set<number>();
-    const maxSlots = 5;
-
-    for (const r of roundsSorted) {
-      const arr = byRound.get(r)!;
-      for (let s = 0; s < maxSlots; s++) {
-        const p1 = arr.find((x) => x.side === "p1" && x.slot === s && !used.has(x.idx));
-        if (p1) { used.add(p1.idx); result.push(p1.idx); }
-        const p2 = arr.find((x) => x.side === "p2" && x.slot === s && !used.has(x.idx));
-        if (p2) { used.add(p2.idx); result.push(p2.idx); }
-      }
-      for (const x of arr) {
-        if (!used.has(x.idx)) { used.add(x.idx); result.push(x.idx); }
-      }
-    }
-
-    // Fallback: if no rounds present, keep original index order
-    if (!result.length && attacks.length) return attacks.sort((a,b)=>a.idx-b.idx).map(x=>x.idx);
-
-    return result;
-  }, [timeline]);
-
   const rounds = useMemo(() => {
     const rRaw = logObj?.rounds;
     const r = parseMaybeJson(rRaw);
@@ -546,30 +495,9 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     return 3;
   }, [timeline, rounds.length]);
 
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(true);
   const [t, setT] = useState(0);
   const [rate, setRate] = useState<0.5 | 1 | 2>(1);
-
-  // Manual action UI (Attack/Defend) has been removed: Variant A autoplay playback.
-
-
-
-  // Start gate: require a user gesture (Атака/Защита) before any playback.
-  // Critical for Telegram iOS WebView to reliably paint transforms/transitions.
-  const didStartGateRef = useRef(false);
-  useEffect(() => {
-    if (!match) return;
-    if (didStartGateRef.current) return;
-    didStartGateRef.current = true;
-    // Variant A: always start from t=0 snapshot to avoid pre-applying damage/deaths.
-    try { setT(0); } catch {}
-
-    // Variant A: autoplay playback. Start after a short delay to let TG iOS paint the snapshot.
-    setPlaying(false);
-    resolvingActiveRef.current = null;
-    lastResolvedAttackIdxRef.current = -1;
-    window.setTimeout(() => setPlaying(true), 450);
-  }, [match?.id]);
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -579,14 +507,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [p1Cards, setP1Cards] = useState<string[]>([]);
   const [p2Cards, setP2Cards] = useState<string[]>([]);
 
-  // Which side is "you" in this match (p1 or p2). Used by the semi-auto turn gate.
-  const youSide: "p1" | "p2" = useMemo(() => {
-    if (!match) return "p1";
-    if (myUserId && myUserId === match.p2_user_id) return "p2";
-    return "p1";
-  }, [match, myUserId]);
-
-  const enemySide: "p1" | "p2" = youSide === "p1" ? "p2" : "p1";
   const [p1CardsFull, setP1CardsFull] = useState<CardMeta[]>([]);
   const [p2CardsFull, setP2CardsFull] = useState<CardMeta[]>([]);
 
@@ -642,14 +562,11 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const unitElByIdRef = useRef<Record<string, HTMLDivElement | null>>({});
 
   // =========================================================
-  // REAL Атака LUNGE (during battle timeline)
+  // REAL ATTACK LUNGE (during battle timeline)
   // TG iOS WebView can be flaky with transform, so we animate
   // the CardRoot (data-bb-slot element) via top/left.
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
-const resolvingActiveRef = useRef<string | null>(null);
-  const lastResolvedAttackIdxRef = useRef<number>(-1);
-  const activeInstanceUi = (playing && resolvingActiveRef.current) ? resolvingActiveRef.current : activeInstance;
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
     // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
@@ -660,7 +577,7 @@ const resolvingActiveRef = useRef<string | null>(null);
     const attackerRoot = (fromCard ? (fromCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     const targetRoot = (toCard ? (toCard.closest('[data-bb-slot]') as HTMLElement | null) : null);
     if (!attackerRoot || !targetRoot) {
-      bbDbgSet(`#${(window as any).__bbAtkTick || 0} Атака ${fromId} -> ${toId}
+      bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}
 foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
       return;
     }
@@ -907,7 +824,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   // - hp drops from >0 to <=0
   // - or instance disappears from slots (removal)
   useEffect(() => {
-    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for Атака events...'); }
+    if (!(window as any).__bbDbgReadySet) { (window as any).__bbDbgReadySet = true; bbDbgSet('DBG READY — waiting for ATTACK events...'); }
     const current: Record<string, number> = {};
     const present = new Set<string>();
 
@@ -1104,6 +1021,14 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     };
   }, [match?.p1_user_id, match?.p2_user_id]);
 
+  const youSide: "p1" | "p2" = useMemo(() => {
+    if (!match) return "p1";
+    if (myUserId && myUserId === match.p2_user_id) return "p2";
+    return "p1";
+  }, [match, myUserId]);
+
+  const enemySide: "p1" | "p2" = youSide === "p1" ? "p2" : "p1";
+
   useEffect(() => {
     if (!timeline.length) return;
 
@@ -1288,6 +1213,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     setP1Score(s1);
     setP2Score(s2);
     setRoundWinner(rw);
+
     setActiveInstance(active);
     setP1UnitsBySlot(slotMapP1);
     setP2UnitsBySlot(slotMapP2);
@@ -1297,141 +1223,36 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
   useEffect(() => {
     if (!match) return;
-    if (!playing) return;
 
-    let cancelled = false;
+    const step = (now: number) => {
+      if (!playing) return;
 
-    const sleep = (ms: number) => new Promise((res) => window.setTimeout(res, ms));
-
-    const runOneAction = async () => {
-      try {
-        const tl = Array.isArray(timeline) ? timeline : [];
-        const EPS = 1e-4;
-        const curT = Number(t ?? 0);
-
-        // Find the next attack using a deterministic precomputed order (mirror by slots) so we never resolve multiple attacks per step.
-        let attackIdx = -1;
-
-        const lastResolved = lastResolvedAttackIdxRef.current ?? -1;
-        let startPos = 0;
-        if (lastResolved >= 0) {
-          const pos = attackOrder.indexOf(lastResolved);
-          startPos = pos >= 0 ? pos + 1 : 0;
-        }
-
-        for (let p = startPos; p < attackOrder.length; p++) {
-          const idx = attackOrder[p];
-          if (idx >= 0 && idx < tl.length && String((tl[idx] as any)?.type) === "attack") {
-            attackIdx = idx;
-            break;
-          }
-        }
-
-        if (attackIdx < 0) {
-          resolvingActiveRef.current = null;
-          setPlaying(false);
-          return;
-        }
-
-        const actionStartT = Number((tl[attackIdx] as any)?.t ?? curT) || curT;
-
-        // Next attack INDEX marks the end of this action slice.
-        let nextAttackIdx = tl.length;
-        for (let j = attackIdx + 1; j < tl.length; j++) {
-          if (String((tl[j] as any)?.type) === "attack") { nextAttackIdx = j; break; }
-        }
-        const actionEvents = tl.slice(attackIdx, nextAttackIdx);
-
-        // Lock UI "active highlight" to the attacker during this action (prevents many cards flashing active)
-        try {
-          const e0: any = tl[attackIdx] as any;
-          const fromRef = readUnitRefFromEvent(e0, "from") || readUnitRefFromEvent(e0, "unit");
-          const fromId = String((fromRef as any)?.instanceId ?? (e0 as any)?.fromId ?? (e0 as any)?.attackerId ?? "");
-          if (fromId) resolvingActiveRef.current = fromId;
-          const toRef = readUnitRefFromEvent(e0, "to") || readUnitRefFromEvent(e0, "target");
-          const toId = String((toRef as any)?.instanceId ?? (e0 as any)?.toId ?? (e0 as any)?.targetId ?? "");
-          if (fromId && toId) {
-            const sig = `${Number((e0 as any)?.t ?? actionStartT)}:${fromId}:${toId}`;
-            lastAttackSigRef.current = sig;
-            // Trigger exactly one lunge for this action.
-            lungeByInstanceIds(fromId, toId);
-          }
-        } catch {}
-
-        const actionMaxT = Number((actionEvents[actionEvents.length - 1] as any)?.t ?? actionStartT) || actionStartT;
-
-// Collect key times inside this action window (only meaningful combat moments to avoid "everything wiggles")
-        const KEY_TYPES = new Set(["attack", "damage", "hit", "death", "round_end", "end"]);
-        const times = Array.from(
-          new Set(
-            actionEvents
-              .filter((e: any) => {
-                const tt = Number(e?.t ?? 0);
-                const tp = String((e as any)?.type ?? "");
-                if (!Number.isFinite(tt)) return false;
-                if (tt < actionStartT - EPS) return false;
-                if (tt > actionMaxT + EPS) return false;
-                return KEY_TYPES.has(tp);
-              })
-              .map((e: any) => Number(e.t))
-          )
-        ).sort((a, b) => a - b);
-// Ensure we start exactly at the action start
-        if (times.length === 0 || Math.abs(times[0] - actionStartT) > 1e-3) times.unshift(actionStartT);
-
-        for (const tt of times) {
-          if (cancelled) return;
-          setT(tt);
-
-          // Choose delay based on event types at this time
-          const atThis = actionEvents.filter((e: any) => Math.abs(Number(e?.t ?? 0) - tt) < 1e-6);
-          const hasAttack = atThis.some((e: any) => String(e?.type) === "attack");
-          const hasDmg = atThis.some((e: any) => String(e?.type) === "damage" || String(e?.type) === "hit");
-          const hasDeath = atThis.some((e: any) => String(e?.type) === "death");
-
-          let delay = 120;
-          if (hasAttack) delay = 260;
-          else if (hasDeath) delay = 240;
-          else if (hasDmg) delay = 180;
-
-          await sleep(delay);
-        }
-
-        // Snap to end of this action window so HP/board settles before we pause.
-        const settleT = Math.max(actionStartT, actionMaxT);
-        if (!cancelled) setT(settleT);
-        await sleep(80);
-
-        // Pause after one action, then automatically continue to the next one (autoplay)
-        if (!cancelled) {
-          lastResolvedAttackIdxRef.current = attackIdx;
-          setPlaying(false);
-
-          // If there is another attack remaining in the deterministic order, schedule the next step.
-          const pos = attackOrder.indexOf(attackIdx);
-          const hasNext = pos >= 0 && pos + 1 < attackOrder.length;
-          if (hasNext) {
-            window.setTimeout(() => {
-              if (!cancelled) setPlaying(true);
-            }, 450);
-          } else {
-            // No more attacks -> stop
-            resolvingActiveRef.current = null;
-          }
-        }
-} catch {
-        resolvingActiveRef.current = null;
-        setPlaying(false);
+      if (startAtRef.current == null) {
+        startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
       }
+
+      const elapsedWall = (now - startAtRef.current) / 1000;
+      const elapsed = elapsedWall * rate;
+
+      const nextT = Math.min(durationSec, Math.max(0, elapsed));
+      setT(nextT);
+
+      if (nextT >= durationSec) {
+        setPlaying(false);
+        return;
+      }
+
+      rafRef.current = window.requestAnimationFrame(step);
     };
 
-    runOneAction();
+    if (playing) rafRef.current = window.requestAnimationFrame(step);
 
     return () => {
-      cancelled = true;
+      if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, timeline, durationSec]);
+  }, [match, playing, durationSec, rate]);
 
   useEffect(() => {
     startAtRef.current = null;
@@ -1671,8 +1492,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   // Trigger one lunge per new attack event (no TEST button).
   useEffect(() => {
-    // During controlled RESOLVE we trigger lunge manually (single source of truth).
-    if (playing || resolvingActiveRef.current) return;
     if (!recentAttacks || recentAttacks.length === 0) return;
     const last = recentAttacks[recentAttacks.length - 1];
     if (!last?.fromId || !last?.toId) return;
@@ -2030,7 +1849,12 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       vanishTimersRef.current.push(
         window.setTimeout(() => setIsVanish(true), 520),
       );
-      // Keep the dead card in its slot; do not remove from DOM (slots count must stay constant).
+      vanishTimersRef.current.push(
+        window.setTimeout(() => {
+          setIsHidden(true);
+          setGhostUnit(null);
+        }, 860),
+      );
     }, [instId, isDying, isDead]);
 
 const hpPct = useMemo(() => {
@@ -2070,9 +1894,9 @@ const hpPct = useMemo(() => {
       return arr.slice(0, 3);
     }, [activeUnit?.instanceId]);
 
-    const isActive = !!activeUnit && activeInstanceUi ? activeUnit.instanceId === activeInstanceUi : false;
+    const isActive = !!activeUnit && activeInstance ? activeUnit.instanceId === activeInstance : false;
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
-    // Slots must stay constant; never remove card from DOM.
+    if (isHidden) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
         <div
@@ -2119,10 +1943,6 @@ const hpPct = useMemo(() => {
               shield={unit?.shield ?? 0}
               showCorner={false}
             />
-
-            {/* Choice badge on card removed (iOS WebView can mirror/glitch text inside transformed layers).
-                Choice remains in the bottom action panel only. */}
-
             {renderUnit && (
               <div className="bb-fx">
                 {spawned && <div key={`spawn-${spawned.t}-${renderUnit.instanceId}`} className="bb-spawn" />}
@@ -2437,6 +2257,8 @@ const hpPct = useMemo(() => {
             fontSize: 12,
             lineHeight: "16px",
             pointerEvents: "none",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
           }}
         >
           <div style={{ fontWeight: 700, marginBottom: 4 }}>Layout Debug</div>
@@ -4072,6 +3894,7 @@ const hpPct = useMemo(() => {
                   right: 14,
                   bottom: 14,
                   background: "rgba(0,0,0,0.32)",
+                  backdropFilter: "blur(10px)",
                   zIndex: 6,
                 }}
               >
@@ -4099,8 +3922,8 @@ const hpPct = useMemo(() => {
             )}
           </div>
         </section>
-        </div>
-      </main>
+      </div>
+    </main>
   );
 }
 
