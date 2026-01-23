@@ -511,10 +511,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
   const [choiceTimer, setChoiceTimer] = useState<number>(0);
 
-  // Variant A (Autoplay/Playback): manual action buttons are disabled (kept only for UI display).
-  const ENABLE_MANUAL_ACTIONS = false;
-
-
   // Lightweight client-side "buffs" from player choice (UI-first; server sim later)
   const atkBuffRef = useRef<Record<string, { pct: number }>>({});
   const hpBuffRef = useRef<Record<string, { pct: number }>>({});
@@ -547,15 +543,12 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       setT(firstT);
     } catch {}
 
-    // Variant A: autoplay after snapshot. Keep a short delay so iOS has time to paint the initial layout.
-    setAwaitingAction(false);
+    // Pause at the beginning so the first tap is guaranteed to be a real gesture.
+    setAwaitingAction(true);
     setLastAction(null);
     setPlaying(false);
-    resolvingActiveRef.current = null;
-    lastResolvedAttackIdxRef.current = -1;
-    window.setTimeout(() => {
-      try { setPlaying(true); } catch {}
-    }, 450);
+          resolvingActiveRef.current = null;
+          lastResolvedAttackIdxRef.current = -1;
   }, [match?.id, timeline]);
 
   const startAtRef = useRef<number | null>(null);
@@ -691,7 +684,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const chooseAction = useCallback(
     (choice: "attack" | "defend") => {
-      if (!ENABLE_MANUAL_ACTIONS) return;
       // Client-side choice effects (UI-first): random % bonus
       const inst = activeUnitForChoice?.instanceId ?? null;
       const pct = Math.floor(10 + Math.random() * 21); // 10..30%
@@ -752,48 +744,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 const resolvingActiveRef = useRef<string | null>(null);
   const lastResolvedAttackIdxRef = useRef<number>(-1);
   const activeInstanceUi = (playing && resolvingActiveRef.current) ? resolvingActiveRef.current : activeInstance;
-
-  // Variant A: deterministic mirror order (left->right) for attacks: P1 slot0 -> P2 slot0 -> P1 slot1 -> P2 slot1 -> ...
-  const attackOrder = useMemo(() => {
-    const tl = Array.isArray(timeline) ? timeline : [];
-    const attacks: { idx: number; round: number; side: "p1" | "p2"; slot: number }[] = [];
-    for (let i = 0; i < tl.length; i++) {
-      const e: any = tl[i] as any;
-      if (String(e?.type) !== "attack") continue;
-      const from = readUnitRefFromEvent(e, "from") || readUnitRefFromEvent(e, "unit");
-      const side = (from as any)?.side;
-      const slot = Number((from as any)?.slot);
-      if ((side !== "p1" && side !== "p2") || !Number.isFinite(slot)) continue;
-      const round = Number(e?.round ?? 1) || 1;
-      attacks.push({ idx: i, round, side, slot });
-    }
-    const byRound = new Map<number, typeof attacks>();
-    for (const a of attacks) {
-      if (!byRound.has(a.round)) byRound.set(a.round, []);
-      byRound.get(a.round)!.push(a);
-    }
-    for (const arr of byRound.values()) arr.sort((a, b) => a.idx - b.idx);
-
-    const roundsSorted = Array.from(byRound.keys()).sort((a, b) => a - b);
-    const result: number[] = [];
-    const used = new Set<number>();
-    const maxSlots = 5;
-
-    for (const r of roundsSorted) {
-      const arr = byRound.get(r)!;
-      for (let s = 0; s < maxSlots; s++) {
-        const p1 = arr.find((x) => x.side === "p1" && x.slot === s && !used.has(x.idx));
-        if (p1) { used.add(p1.idx); result.push(p1.idx); }
-        const p2 = arr.find((x) => x.side === "p2" && x.slot === s && !used.has(x.idx));
-        if (p2) { used.add(p2.idx); result.push(p2.idx); }
-      }
-      for (const x of arr) {
-        if (!used.has(x.idx)) { used.add(x.idx); result.push(x.idx); }
-      }
-    }
-    return result;
-  }, [timeline]);
-
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
     // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
@@ -1484,20 +1434,11 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         }
 
         let attackIdx = -1;
+        for (let i = Math.max(0, lastIdx + 1); i < tl.length; i++) {
+          if (String((tl[i] as any)?.type) === "attack") { attackIdx = i; break; }
+        }
 
-        // Variant A: pick next attack by deterministic mirror order (not by time, not by raw index scan)
-        const order = Array.isArray(attackOrder) ? attackOrder : [];
-        let startPos = 0;
-        const lastResolved = lastResolvedAttackIdxRef.current ?? -1;
-        if (lastResolved >= 0) {
-          const pos = order.indexOf(lastResolved);
-          startPos = pos >= 0 ? pos + 1 : 0;
-        }
-        for (let p = startPos; p < order.length; p++) {
-          const idx = order[p];
-          if (idx >= 0 && idx < tl.length && String((tl[idx] as any)?.type) === "attack") { attackIdx = idx; break; }
-        }
-if (attackIdx < 0) {
+        if (attackIdx < 0) {
           resolvingActiveRef.current = null;
           setPlaying(false);
           return;
@@ -1518,67 +1459,29 @@ if (attackIdx < 0) {
           const fromRef = readUnitRefFromEvent(e0, "from") || readUnitRefFromEvent(e0, "unit");
           const fromId = String((fromRef as any)?.instanceId ?? (e0 as any)?.fromId ?? (e0 as any)?.attackerId ?? "");
           if (fromId) resolvingActiveRef.current = fromId;
-          const toRef = readUnitRefFromEvent(e0, "to") || readUnitRefFromEvent(e0, "target");
-          const toId = String((toRef as any)?.instanceId ?? (e0 as any)?.toId ?? (e0 as any)?.targetId ?? "");
-          if (fromId && toId) {
-            const sig = `${Number((e0 as any)?.t ?? actionStartT)}:${fromId}:${toId}`;
-            lastAttackSigRef.current = sig;
-            // Trigger exactly one lunge for this action.
-            lungeByInstanceIds(fromId, toId);
-          }
         } catch {}
 
         const actionMaxT = Number((actionEvents[actionEvents.length - 1] as any)?.t ?? actionStartT) || actionStartT;
 
-// Collect key times inside this action window (only meaningful combat moments to avoid "everything wiggles")
-        const KEY_TYPES = new Set(["attack", "damage", "hit", "death", "round_end", "end"]);
-        const times = Array.from(
-          new Set(
-            actionEvents
-              .filter((e: any) => {
-                const tt = Number(e?.t ?? 0);
-                const tp = String((e as any)?.type ?? "");
-                if (!Number.isFinite(tt)) return false;
-                if (tt < actionStartT - EPS) return false;
-                if (tt > actionMaxT + EPS) return false;
-                return KEY_TYPES.has(tp);
-              })
-              .map((e: any) => Number(e.t))
-          )
-        ).sort((a, b) => a - b);
-// Ensure we start exactly at the action start
-        if (times.length === 0 || Math.abs(times[0] - actionStartT) > 1e-3) times.unshift(actionStartT);
+// Step-playback simplified (iOS-safe):
+// We do NOT iterate multiple keyframes inside the action window, because that can make several cards
+// appear to "move" in quick succession in Telegram iOS WebView. Instead:
+// 1) jump to the attack time (triggers the lunge/FX once)
+// 2) wait for the lunge to finish
+// 3) jump to the end of this action window so HP/death settles
+if (cancelled) return;
+setT(actionStartT);
+await sleep(320);
 
-        for (const tt of times) {
-          if (cancelled) return;
-          setT(tt);
+if (cancelled) return;
+const settleT = Math.max(actionStartT, actionMaxT);
+setT(settleT);
+await sleep(140);
 
-          // Choose delay based on event types at this time
-          const atThis = actionEvents.filter((e: any) => Math.abs(Number(e?.t ?? 0) - tt) < 1e-6);
-          const hasAttack = atThis.some((e: any) => String(e?.type) === "attack");
-          const hasDmg = atThis.some((e: any) => String(e?.type) === "damage" || String(e?.type) === "hit");
-          const hasDeath = atThis.some((e: any) => String(e?.type) === "death");
-
-          let delay = 120;
-          if (hasAttack) delay = 260;
-          else if (hasDeath) delay = 240;
-          else if (hasDmg) delay = 180;
-
-          await sleep(delay);
-        }
-
-        // Snap to end of this action window so HP/board settles before we pause.
-        const settleT = Math.max(actionStartT, actionMaxT);
-        if (!cancelled) setT(settleT);
-        await sleep(80);
-
-        // Pause after one action
+// Pause after one action
         if (!cancelled) {
           lastResolvedAttackIdxRef.current = attackIdx;
           setPlaying(false);
-          window.setTimeout(() => {
-            try { if (!cancelled) setPlaying(true); } catch {}
-          }, 450);
         }
       } catch {
         resolvingActiveRef.current = null;
@@ -1592,7 +1495,7 @@ if (attackIdx < 0) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, timeline, attackOrder, durationSec]);
+  }, [match, playing, timeline, durationSec]);
 
   useEffect(() => {
     startAtRef.current = null;
@@ -1832,8 +1735,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   // Trigger one lunge per new attack event (no TEST button).
   useEffect(() => {
-    // During controlled RESOLVE we trigger lunge manually (single source of truth).
-    if (playing || resolvingActiveRef.current) return;
     if (!recentAttacks || recentAttacks.length === 0) return;
     const last = recentAttacks[recentAttacks.length - 1];
     if (!last?.fromId || !last?.toId) return;
@@ -4267,8 +4168,7 @@ const hpPct = useMemo(() => {
         </section>
 
 	        {/* Semi-auto Action Bar (works on all platforms; critical for iOS gesture) */}
-	        {ENABLE_MANUAL_ACTIONS && (
-<div
+	        <div
 	          style={{
 	            position: "fixed",
 	            left: 12,
@@ -4317,8 +4217,6 @@ const hpPct = useMemo(() => {
 	            }}
 	            style={{
 	              padding: "10px 12px",
-	              pointerEvents: ENABLE_MANUAL_ACTIONS ? "auto" : "none",
-              opacity: ENABLE_MANUAL_ACTIONS ? (awaitingAction ? 1 : 0.45) : 0.35,
 	              borderRadius: 14,
 	              border: lastAction === "attack" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
 	              background: lastAction === "attack" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
@@ -4330,6 +4228,7 @@ const hpPct = useMemo(() => {
 	              minWidth: 110,
 	            
 	              cursor: awaitingAction ? "pointer" : "default",
+	              opacity: awaitingAction ? 1 : 0.45,
 	              userSelect: "none",
 	              WebkitTapHighlightColor: "transparent",
 	              WebkitTouchCallout: "none",
@@ -4360,8 +4259,6 @@ const hpPct = useMemo(() => {
 	            }}
 	            style={{
 	              padding: "10px 12px",
-	              pointerEvents: ENABLE_MANUAL_ACTIONS ? "auto" : "none",
-	              opacity: ENABLE_MANUAL_ACTIONS ? (awaitingAction ? 1 : 0.45) : 0.35,
 	              borderRadius: 14,
 	              border: lastAction === "defend" ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
 	              background: lastAction === "defend" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)",
@@ -4373,6 +4270,7 @@ const hpPct = useMemo(() => {
 	              minWidth: 110,
 	            
 	              cursor: awaitingAction ? "pointer" : "default",
+	              opacity: awaitingAction ? 1 : 0.45,
 	              userSelect: "none",
 	              WebkitTapHighlightColor: "transparent",
 	              WebkitTouchCallout: "none",
@@ -4382,7 +4280,6 @@ const hpPct = useMemo(() => {
 	            Защита
 	          </div>
 	        </div>
-)}
       </div>
     </main>
   );
