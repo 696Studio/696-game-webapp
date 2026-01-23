@@ -529,6 +529,9 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const resolveLockRef = useRef(false);
   const engineBootRef = useRef<string>("");
 
+  // Legacy timeline/playback engine is disabled (TG iOS deterministic turn resolver)
+  const USE_LEGACY_TIMELINE = false;
+
   const cardMetaByIdRef = useRef<Record<string, CardMeta>>({});
   const [fxEventsState, setFxEventsState] = useState<{ type: "attack"; id: string; attackerId: string; targetId: string }[]>([]);
 
@@ -617,6 +620,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // Critical for Telegram iOS WebView to reliably paint transforms/transitions.
   const didStartGateRef = useRef(false);
   useEffect(() => {
+    if (!USE_LEGACY_TIMELINE) return;
     if (!match) return;
     if (didStartGateRef.current) return;
     didStartGateRef.current = true;
@@ -868,14 +872,9 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       return;
     }
 
-    if (activeTurn.side === youSide) {
-      setAwaitingAction(true);
-      setChoiceTimer(10);
-      setBattlePhase("AWAIT_CHOICE");
-    } else {
-      setAwaitingAction(false);
-      setChoiceTimer(0);
-    }
+    setAwaitingAction(true);
+    setChoiceTimer(10);
+    setBattlePhase("AWAIT_CHOICE");
   }, [battlePhase, activeTurn?.side, activeTurn?.slot, youSide, getUnit, isGameOver]);
 
 
@@ -884,8 +883,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     // ✅ FSM timer: only during AWAIT_CHOICE on YOUR turn
     if (battlePhase !== "AWAIT_CHOICE") return;
     if (!activeTurn) return;
-    if (activeTurn.side !== youSide) return;
-
+    
     setChoiceTimer(10);
 
     const iv = window.setInterval(() => {
@@ -1701,11 +1699,11 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       } else {
         setPendingChoice(null);
         setLastAction(null);
-        setAwaitingAction(first.side === youSide);
-        setChoiceTimer(first.side === youSide ? 10 : 0);
+        setAwaitingAction(true);
+        setChoiceTimer(10);
         const u = getLocal(first.side, first.slot);
         setActiveInstance(u?.instanceId ?? null);
-        setBattlePhase(first.side === youSide ? "AWAIT_CHOICE" : "ENEMY_RESOLVE_ONE_ACTION");
+        setBattlePhase("AWAIT_CHOICE");
       }
     } catch {}
 
@@ -1714,6 +1712,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [match?.id, timeline]);
 
   useEffect(() => {
+    if (!USE_LEGACY_TIMELINE) return;
     if (!match) return;
     if (!playing) return;
 
