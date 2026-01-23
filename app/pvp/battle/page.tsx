@@ -707,19 +707,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     }
   }, [activeUnitForChoice?.instanceId]);
 
-
-
-  useEffect(() => {
-    if (!activeUnitForChoice) return;
-    if (activeUnitForChoice.side !== youSide) return;
-    if (resumeGuardRef.current === activeUnitForChoice.instanceId) return;
-    if (awaitingAction) return;
-    if (playing) return;
-    // Pause timeline and wait for a real tap (critical for TG iOS WebView painting)
-    setAwaitingAction(true);
-    setLastAction(null);
-    setPlaying(false);
-  }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
+  // (disabled) legacy timeline pause effect — FSM drives awaitingAction/choice
 
 
   
@@ -734,7 +722,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       // Enemy always attacks for now. This only sets the choice; the resolver effect executes exactly one action.
       setPendingChoice("attack");
       setLastAction("attack");
-      setBattlePhase("ENEMY_RESOLVE_ONE_ACTION");
     }, 220);
 
     return () => window.clearTimeout(tm);
@@ -792,7 +779,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
           return;
         }
 
-        // Attack: pick a random alive target from the opposite side.
+        // Attack: mirror target by slot index (left-to-right duel). If mirrored slot is dead/empty, pick nearest alive.
         const opp: "p1" | "p2" = side === "p1" ? "p2" : "p1";
         const aliveTargets = getAliveSlots(opp);
         if (!aliveTargets.length) {
@@ -801,7 +788,21 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
           setBattlePhase("GAME_OVER");
           return;
         }
-        const targetSlot = aliveTargets[Math.floor(Math.random() * aliveTargets.length)];
+
+        const preferred = slot;
+        let targetSlot: number | null = null;
+
+        if (aliveTargets.includes(preferred)) {
+          targetSlot = preferred;
+        } else {
+          for (let d = 1; d < 5 && targetSlot == null; d++) {
+            const a = preferred - d;
+            const b = preferred + d;
+            if (a >= 0 && aliveTargets.includes(a)) targetSlot = a;
+            else if (b < 5 && aliveTargets.includes(b)) targetSlot = b;
+          }
+          if (targetSlot == null) targetSlot = aliveTargets[0];
+        }
         const target = getUnit(opp, targetSlot);
         if (!target) {
           setPendingChoice(null);
@@ -874,46 +875,44 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     } else {
       setAwaitingAction(false);
       setChoiceTimer(0);
-      setBattlePhase("ENEMY_RESOLVE_ONE_ACTION");
     }
   }, [battlePhase, activeTurn?.side, activeTurn?.slot, youSide, getUnit, isGameOver]);
 
 
   // 10s timer on your turn. If time expires, auto-pick Атака to keep the match moving.
   useEffect(() => {
-    // ✅ FSM timer: only during AWAIT_CHOICE on your turn
+    // ✅ FSM timer: only during AWAIT_CHOICE on YOUR turn
+    if (battlePhase !== "AWAIT_CHOICE") return;
+    if (!activeTurn) return;
+    if (activeTurn.side !== youSide) return;
+
     setChoiceTimer(10);
 
     const iv = window.setInterval(() => {
       setChoiceTimer((s) => {
-        const next = Math.max(0, (Number(s) || 0) - 1);
+        const cur = Number(s) || 0;
+        const next = Math.max(0, cur - 1);
+
         if (next <= 0) {
-          // Auto-pick attack when time runs out
+          // Auto-pick attack when time runs out (only if still waiting on the same turn)
           window.setTimeout(() => {
             if (resolveLockRef.current) return;
-            setPendingChoice("attack");
+            setPendingChoice((pc) => pc ?? "attack");
             setLastAction("attack");
             setAwaitingAction(false);
             setBattlePhase("RESOLVE_ONE_ACTION");
           }, 0);
         }
+
         return next;
       });
     }, 1000);
 
     return () => window.clearInterval(iv);
   }, [battlePhase, activeTurn?.side, activeTurn?.slot, youSide]);
+    // (disabled) legacy auto-pick effect — FSM handles timer/autopick
 
 
-  useEffect(() => {
-    if (!awaitingAction) return;
-    if (!activeUnitForChoice) return;
-    if (activeUnitForChoice.side !== youSide) return;
-    if (choiceTimer > 0) return;
-    // Auto-pick
-    if (!awaitingAction) return; if (!awaitingAction) return; chooseAction("attack");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [choiceTimer, awaitingAction, activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide]);
 
 // Step 1b: iOS TG WebView jump fix — stabilize scroll for a few frames after a tap.
   const stabilizeScrollAfterTap = useCallback(() => {
@@ -4562,7 +4561,8 @@ const hpPct = useMemo(() => {
 	              const ae: any = document.activeElement;
 	              if (ae && typeof ae.blur === "function") ae.blur();
 	              stabilizeScrollAfterTap();
-	              if (!awaitingAction) return; if (!awaitingAction) return; chooseAction("defend");
+                  if (!awaitingAction) return;
+                  chooseAction("defend");
 	            }}
 	            onMouseDown={(e) => {
 	              e.preventDefault();
