@@ -511,6 +511,102 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [lastAction, setLastAction] = useState<"attack" | "defend" | null>(null);
   const [choiceTimer, setChoiceTimer] = useState<number>(0);
 
+
+  // ============================================
+  // ✅ Step A: Deterministic 1-turn = 1-action FSM
+  // No timeline/playback for actions (TG iOS safe)
+  // ============================================
+  type BattlePhase = "INIT" | "AWAIT_CHOICE" | "RESOLVE_ONE_ACTION" | "ENEMY_RESOLVE_ONE_ACTION" | "TURN_ADVANCE" | "GAME_OVER";
+  const [battlePhase, setBattlePhase] = useState<BattlePhase>("INIT");
+  const [activeTurn, setActiveTurn] = useState<{ side: "p1" | "p2"; slot: number } | null>(null);
+  const [pendingChoice, setPendingChoice] = useState<"attack" | "defend" | null>(null);
+
+
+  const [activeInstance, setActiveInstance] = useState<string | null>(null);
+  const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
+  const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
+
+  const resolveLockRef = useRef(false);
+  const engineBootRef = useRef<string>("");
+
+  const cardMetaByIdRef = useRef<Record<string, CardMeta>>({});
+  const [fxEventsState, setFxEventsState] = useState<{ type: "attack"; id: string; attackerId: string; targetId: string }[]>([]);
+
+  const getUnit = useCallback(
+    (side: "p1" | "p2", slot: number) => {
+      const map = side === "p1" ? p1UnitsBySlot : p2UnitsBySlot;
+      const u = (map as any)?.[slot] ?? null;
+      return u && u.alive !== false ? u : u; // allow dead check by caller
+    },
+    [p1UnitsBySlot, p2UnitsBySlot]
+  );
+
+  const getAliveSlots = useCallback(
+    (side: "p1" | "p2") => {
+      const map = side === "p1" ? p1UnitsBySlot : p2UnitsBySlot;
+      const out: number[] = [];
+      for (let i = 0; i < 5; i++) {
+        const u = (map as any)?.[i];
+        if (u && u.alive !== false && (u.hp ?? 0) > 0) out.push(i);
+      }
+      return out;
+    },
+    [p1UnitsBySlot, p2UnitsBySlot]
+  );
+
+  const isGameOver = useCallback(() => {
+    const a1 = getAliveSlots("p1").length;
+    const a2 = getAliveSlots("p2").length;
+    return a1 === 0 || a2 === 0;
+  }, [getAliveSlots]);
+
+  const computeNextTurn = useCallback(
+    (cur: { side: "p1" | "p2"; slot: number } | null) => {
+      // Order: p1 s0 -> p2 s0 -> p1 s1 -> p2 s1 -> ...
+      // We treat (slot, sideIndex) as a single linear cursor.
+      const toIndex = (t: { side: "p1" | "p2"; slot: number }) => t.slot * 2 + (t.side === "p2" ? 1 : 0);
+      const fromIndex = (idx: number) => ({ slot: Math.floor(idx / 2), side: idx % 2 === 1 ? ("p2" as const) : ("p1" as const) });
+
+      let startIdx = cur ? toIndex(cur) + 1 : 0;
+      for (let step = 0; step < 10; step++) {
+        const idx = (startIdx + step) % 10;
+        const cand = fromIndex(idx);
+        const u = getUnit(cand.side, cand.slot);
+        if (u && u.alive !== false && (u.hp ?? 0) > 0) return cand;
+      }
+      return null;
+    },
+    [getUnit]
+  );
+
+  const ensureTurn = useCallback(
+    (turn: { side: "p1" | "p2"; slot: number } | null) => {
+      if (!turn) return null;
+      const u = getUnit(turn.side, turn.slot);
+      if (u && u.alive !== false && (u.hp ?? 0) > 0) return turn;
+      // If current slot is empty/dead, move forward.
+      return computeNextTurn(turn);
+    },
+    [getUnit, computeNextTurn]
+  );
+
+  const advanceTurn = useCallback(() => {
+    setPendingChoice(null);
+    setLastAction(null);
+    setAwaitingAction(false);
+    setChoiceTimer(0);
+
+    if (isGameOver()) {
+      setBattlePhase("GAME_OVER");
+      return;
+    }
+
+    setBattlePhase("TURN_ADVANCE");
+    setActiveTurn((prev) => {
+      const next = ensureTurn(computeNextTurn(prev));
+      return next;
+    });
+  }, [computeNextTurn, ensureTurn, isGameOver]);
   // Lightweight client-side "buffs" from player choice (UI-first; server sim later)
   const atkBuffRef = useRef<Record<string, { pct: number }>>({});
   const hpBuffRef = useRef<Record<string, { pct: number }>>({});
@@ -590,9 +686,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const prevEndSigRef = useRef<string>("");
 
-  const [activeInstance, setActiveInstance] = useState<string | null>(null);
-  const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
-  const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
   // Semi-auto gate: pause on YOUR unit turn until player picks Атака/Защита.
   const activeUnitForChoice = useMemo(() => {
@@ -630,35 +723,187 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
 
   
-  // Auto-resolve enemy turns one action at a time.
+  // Auto-resolve enemy turns one action at a time (Step A: always "attack").
   useEffect(() => {
-    if (!activeUnitForChoice) return;
-    if (activeUnitForChoice.side === youSide) return;
-    if (awaitingAction) return;
-    if (playing) return;
+    if (battlePhase !== "ENEMY_RESOLVE_ONE_ACTION") return;
+    if (!activeTurn) return;
+    if (activeTurn.side === youSide) return;
+    if (resolveLockRef.current) return;
+
     const tm = window.setTimeout(() => {
-      // Enemy continues automatically
-      setPlaying(true);
-    }, 420);
+      // Enemy always attacks for now. This only sets the choice; the resolver effect executes exactly one action.
+      setPendingChoice("attack");
+      setLastAction("attack");
+      setBattlePhase("ENEMY_RESOLVE_ONE_ACTION");
+    }, 220);
+
     return () => window.clearTimeout(tm);
-  }, [activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide, awaitingAction, playing]);
+  }, [battlePhase, activeTurn?.side, activeTurn?.slot, youSide]);
+  useEffect(() => {
+    // ✅ FSM: execute exactly ONE action, then STOP and advance.
+    const isResolvePhase = battlePhase === "RESOLVE_ONE_ACTION" || battlePhase === "ENEMY_RESOLVE_ONE_ACTION";
+    if (!isResolvePhase) return;
+    if (!activeTurn) return;
+
+    // On your turn, we wait for an explicit (or auto) choice.
+    const needChoice = activeTurn.side === youSide;
+    if (needChoice && !pendingChoice) return;
+
+    // Enemy turn: pendingChoice is set automatically (attack) by effect above.
+    if (!needChoice && !pendingChoice) return;
+
+    if (resolveLockRef.current) return;
+    resolveLockRef.current = true;
+
+    const sleep = (ms: number) => new Promise((res) => window.setTimeout(res, ms));
+
+    (async () => {
+      try {
+        const side = activeTurn.side;
+        const slot = activeTurn.slot;
+
+        const attacker = getUnit(side, slot);
+        if (!attacker || attacker.alive === false || (attacker.hp ?? 0) <= 0) {
+          setPendingChoice(null);
+          resolveLockRef.current = false;
+          advanceTurn();
+          return;
+        }
+
+        // Make sure UI highlights exactly this unit
+        setActiveInstance(attacker.instanceId);
+
+        const choice: "attack" | "defend" = (pendingChoice || "attack") as any;
+
+        if (choice === "defend") {
+          // Defend consumes the turn: gives temporary shield (pct), consumed on next incoming hit.
+          const pct = Math.floor(10 + Math.random() * 21); // 10..30
+          const apply = (u: any) => ({ ...u, shield: Math.max(0, Math.min(90, pct)), tags: new Set([...(u.tags || []), `SHIELD+${pct}%`]) });
+
+          if (side === "p1") setP1UnitsBySlot((m: any) => ({ ...m, [slot]: apply(m?.[slot]) }));
+          else setP2UnitsBySlot((m: any) => ({ ...m, [slot]: apply(m?.[slot]) }));
+
+          // small settle so the player sees the result
+          await sleep(180);
+
+          setPendingChoice(null);
+          resolveLockRef.current = false;
+          advanceTurn();
+          return;
+        }
+
+        // Attack: pick a random alive target from the opposite side.
+        const opp: "p1" | "p2" = side === "p1" ? "p2" : "p1";
+        const aliveTargets = getAliveSlots(opp);
+        if (!aliveTargets.length) {
+          setPendingChoice(null);
+          resolveLockRef.current = false;
+          setBattlePhase("GAME_OVER");
+          return;
+        }
+        const targetSlot = aliveTargets[Math.floor(Math.random() * aliveTargets.length)];
+        const target = getUnit(opp, targetSlot);
+        if (!target) {
+          setPendingChoice(null);
+          resolveLockRef.current = false;
+          advanceTurn();
+          return;
+        }
+
+        // Damage calc (simple, deterministic per action)
+        const meta = cardMetaByIdRef.current[String(attacker.card_id)] as any;
+        const base = Number(meta?.base_power ?? 10);
+        const buff = atkBuffRef.current?.[attacker.instanceId]?.pct ?? Math.floor(10 + Math.random() * 21);
+        const rawDmg = Math.max(1, Math.floor(base * (1 + Number(buff) / 100)));
+
+        const shieldPct = Math.max(0, Math.min(90, Number((target as any).shield ?? 0)));
+        const finalDmg = shieldPct > 0 ? Math.max(1, Math.floor(rawDmg * (1 - shieldPct / 100))) : rawDmg;
+
+        // Trigger one lunge + one FX event (single source of truth)
+        try {
+          lungeByInstanceIds(attacker.instanceId, target.instanceId);
+        } catch {}
+
+        try {
+          const id = `fx_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+          setFxEventsState([{ type: "attack", id, attackerId: attacker.instanceId, targetId: target.instanceId }]);
+        } catch {}
+
+        // Apply damage and consume shield
+        const applyTarget = (u: any) => {
+          const nextHp = Math.max(0, (u?.hp ?? 0) - finalDmg);
+          return { ...u, hp: nextHp, alive: nextHp > 0, shield: 0 };
+        };
+
+        if (opp === "p1") setP1UnitsBySlot((m: any) => ({ ...m, [targetSlot]: applyTarget(m?.[targetSlot]) }));
+        else setP2UnitsBySlot((m: any) => ({ ...m, [targetSlot]: applyTarget(m?.[targetSlot]) }));
+
+        // small settle to ensure no "piling" on iOS
+        await sleep(260);
+
+        setPendingChoice(null);
+        resolveLockRef.current = false;
+        advanceTurn();
+      } catch {
+        setPendingChoice(null);
+        resolveLockRef.current = false;
+        advanceTurn();
+      }
+    })();
+  }, [battlePhase, activeTurn?.side, activeTurn?.slot, pendingChoice, youSide, getUnit, getAliveSlots, advanceTurn]);
+
+  useEffect(() => {
+    // ✅ FSM: when activeTurn changes (after TURN_ADVANCE), enter the correct phase.
+    if (!activeTurn) return;
+    if (battlePhase !== "TURN_ADVANCE") return;
+
+    const u = getUnit(activeTurn.side, activeTurn.slot);
+    setActiveInstance(u?.instanceId ?? null);
+
+    if (isGameOver()) {
+      setBattlePhase("GAME_OVER");
+      setAwaitingAction(false);
+      setChoiceTimer(0);
+      return;
+    }
+
+    if (activeTurn.side === youSide) {
+      setAwaitingAction(true);
+      setChoiceTimer(10);
+      setBattlePhase("AWAIT_CHOICE");
+    } else {
+      setAwaitingAction(false);
+      setChoiceTimer(0);
+      setBattlePhase("ENEMY_RESOLVE_ONE_ACTION");
+    }
+  }, [battlePhase, activeTurn?.side, activeTurn?.slot, youSide, getUnit, isGameOver]);
+
 
   // 10s timer on your turn. If time expires, auto-pick Атака to keep the match moving.
   useEffect(() => {
-    if (!awaitingAction) { setChoiceTimer(0); return; }
-    if (!activeUnitForChoice) { setChoiceTimer(0); return; }
-    if (activeUnitForChoice.side !== youSide) { setChoiceTimer(0); return; }
-
+    // ✅ FSM timer: only during AWAIT_CHOICE on your turn
     setChoiceTimer(10);
+
     const iv = window.setInterval(() => {
       setChoiceTimer((s) => {
-        const next = Math.max(0, (s ?? 0) - 1);
+        const next = Math.max(0, (Number(s) || 0) - 1);
+        if (next <= 0) {
+          // Auto-pick attack when time runs out
+          window.setTimeout(() => {
+            if (resolveLockRef.current) return;
+            setPendingChoice("attack");
+            setLastAction("attack");
+            setAwaitingAction(false);
+            setBattlePhase("RESOLVE_ONE_ACTION");
+          }, 0);
+        }
         return next;
       });
     }, 1000);
 
     return () => window.clearInterval(iv);
-  }, [awaitingAction, activeUnitForChoice?.instanceId, activeUnitForChoice?.side, youSide]);
+  }, [battlePhase, activeTurn?.side, activeTurn?.slot, youSide]);
+
 
   useEffect(() => {
     if (!awaitingAction) return;
@@ -684,13 +929,14 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const chooseAction = useCallback(
     (choice: "attack" | "defend") => {
+      stabilizeScrollAfterTap();
+
       // Client-side choice effects (UI-first): random % bonus
       const inst = activeUnitForChoice?.instanceId ?? null;
       const pct = Math.floor(10 + Math.random() * 21); // 10..30%
       if (inst) {
         if (choice === "attack") {
           atkBuffRef.current[inst] = { pct };
-          // clear any old hp buff
           delete hpBuffRef.current[inst];
         } else {
           hpBuffRef.current[inst] = { pct };
@@ -699,14 +945,16 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       }
 
       setLastAction(choice);
-      // Mark this choice point as "consumed" so the pause effect doesn't instantly re-trigger
-      // before the timeline advances to the next activeInstance.
-      resumeGuardRef.current = inst;
       setAwaitingAction(false);
-      setPlaying(true);
+      setChoiceTimer(0);
+
+      // ✅ FSM: resolve exactly ONE action, no timeline playback.
+      setPendingChoice(choice);
+      setBattlePhase("RESOLVE_ONE_ACTION");
     },
-    [activeUnitForChoice?.instanceId]
+    [activeUnitForChoice?.instanceId, stabilizeScrollAfterTap]
   );
+
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
 
@@ -1199,7 +1447,20 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [match?.p1_user_id, match?.p2_user_id]);
 
   useEffect(() => {
+    if (!match?.id) return;
     if (!timeline.length) return;
+
+    // ✅ Init once per match: build snapshot board from timeline, then FSM owns the rest.
+    const bootKey = `${match.id}::${timeline.length}`;
+    if (engineBootRef.current === bootKey) return;
+    engineBootRef.current = bootKey;
+
+    // Snapshot time: take everything up to the first turn_start (or before first attack).
+    let snapshotT = 0;
+    for (const e of timeline) {
+      if ((e as any)?.type === "turn_start") { snapshotT = Number((e as any)?.t ?? 0) || 0; break; }
+      if ((e as any)?.type === "attack") { snapshotT = Math.max(0, (Number((e as any)?.t ?? 0) || 0) - 1e-3); break; }
+    }
 
     let rr = 1;
     let c1: string[] = [];
@@ -1216,7 +1477,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     let active: string | null = null;
 
     for (const e of timeline) {
-      if (e.t > t) break;
+      if (e.t > snapshotT) break;
 
       if (e.type === "round_start") {
         rr = (e as any).round ?? rr;
@@ -1407,9 +1668,51 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     setActiveInstance(active);
     setP1UnitsBySlot(slotMapP1);
     setP2UnitsBySlot(slotMapP2);
+    // Cache card metas for damage calc (base_power)
+    try {
+      const map: Record<string, CardMeta> = {};
+      for (const c of cf1 || []) if (c?.id) map[String(c.id)] = c as any;
+      for (const c of cf2 || []) if (c?.id) map[String(c.id)] = c as any;
+      cardMetaByIdRef.current = map;
+    } catch {}
+
+    // ✅ FSM start: deterministic order begins at p1 slot0.
+    try {
+      const isAliveLocal = (u: any) => !!u && u.alive !== false && (u.hp ?? 0) > 0;
+      const getLocal = (side: "p1" | "p2", slot: number) => (side === "p1" ? slotMapP1[slot] : slotMapP2[slot]);
+      const ensureLocal = (turn: { side: "p1" | "p2"; slot: number } | null) => {
+        if (!turn) return null;
+        if (isAliveLocal(getLocal(turn.side, turn.slot))) return turn;
+        // advance from current
+        const toIndex = (t: any) => t.slot * 2 + (t.side === "p2" ? 1 : 0);
+        const fromIndex = (idx: number) => ({ slot: Math.floor(idx / 2), side: idx % 2 === 1 ? ("p2" as const) : ("p1" as const) });
+        let startIdx = toIndex(turn) + 1;
+        for (let step = 0; step < 10; step++) {
+          const idx = (startIdx + step) % 10;
+          const cand = fromIndex(idx);
+          if (isAliveLocal(getLocal(cand.side, cand.slot))) return cand;
+        }
+        return null;
+      };
+
+      const first = ensureLocal({ side: "p1", slot: 0 }) || ensureLocal({ side: "p2", slot: 0 });
+      setActiveTurn(first);
+      if (!first) {
+        setBattlePhase("GAME_OVER");
+      } else {
+        setPendingChoice(null);
+        setLastAction(null);
+        setAwaitingAction(first.side === youSide);
+        setChoiceTimer(first.side === youSide ? 10 : 0);
+        const u = getLocal(first.side, first.slot);
+        setActiveInstance(u?.instanceId ?? null);
+        setBattlePhase(first.side === youSide ? "AWAIT_CHOICE" : "ENEMY_RESOLVE_ONE_ACTION");
+      }
+    } catch {}
+
 
     setLayoutTick((x) => x + 1);
-  }, [t, timeline]);
+  }, [match?.id, timeline]);
 
   useEffect(() => {
     if (!match) return;
@@ -1773,25 +2076,9 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
   // FX events derived from recent attacks (used by BattleFxLayer).
   const fxEvents = useMemo(() => {
-    // Auto-FX: build attack events from the full timeline so BattleFxLayer can animate each attack once.
-    const out: { type: "attack"; id: string; attackerId: string; targetId: string }[] = [];
-    const tl: any[] = (timeline as any[]) || [];
-    for (let i = 0; i < tl.length; i++) {
-      const e: any = tl[i];
-      if (!e || e.type !== "attack") continue;
-
-      const fromRef = readUnitRefFromEvent(e, "from") || readUnitRefFromEvent(e, "unit");
-      const toRef = readUnitRefFromEvent(e, "to") || readUnitRefFromEvent(e, "target");
-
-      const attackerId = String(fromRef?.instanceId ?? (e?.from && e.from.instanceId) ?? e?.fromId ?? e?.attackerId ?? "");
-      const targetId = String(toRef?.instanceId ?? (e?.to && e.to.instanceId) ?? e?.toId ?? e?.targetId ?? "");
-      if (!attackerId || !targetId) continue;
-
-      const baseId = String(e.id ?? e.uid ?? `${e.t ?? ""}:${attackerId}:${targetId}`);
-      out.push({ type: "attack", id: `atk:${baseId}:${i}`, attackerId, targetId });
-    }
-    return out;
-  }, [timeline]);
+    // ✅ FSM: only emit FX for the single action we are resolving now.
+    return fxEventsState;
+  }, [fxEventsState]);
 
 
   const spawnFxByInstance = useMemo(() => {
@@ -3854,7 +4141,8 @@ const hpPct = useMemo(() => {
               </button>
               <button
                 onClick={() => {
-                  setPlaying(true);
+                  setPlaying(false); // disabled: deterministic FSM owns resolving
+                  
                   seek(0);
                 }}
                 className="ui-btn ui-btn-ghost"
