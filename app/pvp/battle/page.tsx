@@ -948,13 +948,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return { enemy, you };
   }, [arenaBox]);
 
-  // Board rect inside arena (used for centering overlays relative to the actual board image, not the full container)
-  const boardRect = useMemo(() => {
-    if (!arenaBox) return null;
-    return coverMapRect(0, 0, 1, 1, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-  }, [arenaBox]);
-
-
   function seek(nextT: number) {
     const clamped = Math.max(0, Math.min(durationSec, Number(nextT) || 0));
     setT(clamped);
@@ -3068,15 +3061,19 @@ const hpPct = useMemo(() => {
         .round-banner {
           position: absolute;
           left: 50%;
-          top: 52%;
+          top: 50%;
           transform: translate(-50%, -50%);
           padding: 12px 14px;
           border-radius: 18px;
           border: 1px solid rgba(255,255,255,0.20);
           background: rgba(0,0,0,0.42);
           backdrop-filter: blur(10px);
-          min-width: min(520px, calc(100% - 28px));
-          text-align: center;
+          width: calc(100% - 28px);
+          max-width: 520px;
+          box-sizing: border-box;
+          white-space: normal;
+          overflow-wrap: anywhere;
+text-align: center;
           box-shadow: 0 12px 40px rgba(0,0,0,0.35);
           animation: bannerIn 320ms var(--ease-out) both;
           pointer-events: none;
@@ -3819,11 +3816,6 @@ const hpPct = useMemo(() => {
             <div
               key={roundBanner.tick}
               className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
-              style={
-                boardRect
-                  ? { left: boardRect.left + boardRect.width / 2, top: boardRect.top + boardRect.height / 2 }
-                  : undefined
-              }
             >
               <div className="title">ROUND END</div>
               <div className="sub">{roundBanner.text}</div>
