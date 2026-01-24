@@ -1180,6 +1180,21 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       } else if (e.type === "round_end") {
         rr = (e as any).round ?? rr;
         rw = (e as any).winner ?? null;
+
+        // 🔒 HARD SYNC (UI): if engine declared a winner, we must reflect that
+        // by forcing the losing side units to "dead" so the round doesn't visually
+        // end while "alive" cards remain on the board.
+        if (rw === "p1" || rw === "p2") {
+          const losingSide: "p1" | "p2" = rw === "p1" ? "p2" : "p1";
+          for (const u of units.values()) {
+            if (u.side !== losingSide) continue;
+            // Do not re-trigger if already dead.
+            if (!u.alive && u.hp <= 0) continue;
+            u.alive = false;
+            u.hp = 0;
+            u.dyingAt = (e as any).t ?? u.dyingAt ?? Date.now();
+          }
+        }
       }
     }
 
