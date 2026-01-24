@@ -529,8 +529,8 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   }>({ visible: false, tick: 0, text: "", tone: "draw" });
 
   const prevEndSigRef = useRef<string>("");
-  const hideBannerTimeoutRef = useRef<number | null>(null);
   const prevPhaseRef = useRef<null | string>(null);
+  const roundBannerTimeoutRef = useRef<number | null>(null);
 
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
@@ -1285,51 +1285,56 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [timeline, roundN, t]);
 
   useEffect(() => {
-    // Show "End of round" banner exactly once per round_end event.
-    // Important: roundWinner may be computed AFTER the timeline already entered the "end" phase,
-    // so we must not depend on "entering end" only.
-    const anyRevealSeen = timeline.some((e) => e.type === "reveal");
-    if (!anyRevealSeen) return; // avoid any flash on initial mount / pre-start
-
-    // Find the latest round_end event that has already happened.
-    let lastEnd: any = null;
-    for (const e of timeline) {
-      if (e.type !== "round_end") continue;
-      if (e.t > t) break;
-      lastEnd = e;
+    // Hide immediately when leaving end phase (prevents banner sticking into next round)
+    if (phase === "end") return;
+    if (roundBannerTimeoutRef.current != null) {
+      window.clearTimeout(roundBannerTimeoutRef.current);
+      roundBannerTimeoutRef.current = null;
     }
-    if (!lastEnd) return;
+    setRoundBanner((b) => (b.visible ? { ...b, visible: false } : b));
+  }, [phase]);
+
+  useEffect(() => {
+    // Avoid initial mount flash
+    if (prevPhaseRef.current === null) {
+      prevPhaseRef.current = phase;
+      return;
+    }
+
+    // We only show when we are currently in end phase
+    prevPhaseRef.current = phase;
+    if (phase !== "end") return;
     if (!roundWinner) return;
 
-    const sig = `${(lastEnd as any).round ?? roundN}:${roundWinner}:${youSide}:${(lastEnd as any).t}`;
+    // If winner arrives slightly after phase becomes "end", this still fires
+    const sig = `${roundN}:${roundWinner}:${youSide}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
     let tone: "p1" | "p2" | "draw" = "draw";
-    let label = "DRAW";
+    let textLabel = "DRAW";
 
     if (roundWinner === "draw") {
       tone = "draw";
-      label = "DRAW";
+      textLabel = "DRAW";
     } else if (roundWinner === youSide) {
       tone = "p1";
-      label = "YOU WIN ROUND";
+      textLabel = "YOU WIN ROUND";
     } else {
       tone = "p2";
-      label = "ENEMY WIN ROUND";
+      textLabel = "ENEMY WIN ROUND";
     }
 
-    setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text: label, tone }));
+    setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text: textLabel, tone }));
 
-        if (hideBannerTimeoutRef.current != null) {
-      window.clearTimeout(hideBannerTimeoutRef.current);
-      hideBannerTimeoutRef.current = null;
-    }
-    hideBannerTimeoutRef.current = window.setTimeout(
-      () => setRoundBanner((b) => ({ ...b, visible: false })),
-      900
-    );
-  }, [timeline, t, roundWinner, roundN, youSide]);
+    // Reset any previous timeout and always schedule hide
+    if (roundBannerTimeoutRef.current != null) window.clearTimeout(roundBannerTimeoutRef.current);
+    roundBannerTimeoutRef.current = window.setTimeout(() => {
+      setRoundBanner((b) => ({ ...b, visible: false }));
+      roundBannerTimeoutRef.current = null;
+    }, 900);
+  }, [phase, roundWinner, roundN, youSide]);
+
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
