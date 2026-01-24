@@ -501,6 +501,8 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
+  const pauseUntilRef = useRef<number | null>(null);
+  const pauseStartedAtRef = useRef<number | null>(null);
 
   const [roundN, setRoundN] = useState(1);
 
@@ -1255,6 +1257,21 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
       }
 
+
+      // Round-end pause: keep time frozen without skipping ahead.
+      if (pauseUntilRef.current != null && pauseStartedAtRef.current != null) {
+        if (now < pauseUntilRef.current) {
+          rafRef.current = window.requestAnimationFrame(step);
+          return;
+        }
+        // Pause finished → compensate startAtRef so the animation doesn't jump.
+        if (startAtRef.current != null) {
+          startAtRef.current += now - pauseStartedAtRef.current;
+        }
+        pauseUntilRef.current = null;
+        pauseStartedAtRef.current = null;
+      }
+
       const elapsedWall = (now - startAtRef.current) / 1000;
       const elapsed = elapsedWall * rate;
 
@@ -1300,11 +1317,11 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       if (e.type === "round_end") hasEnd = true;
     }
 
-    if (hasEnd && roundWinner) return "end";
+    if (roundWinner) return "end";
     if (hasScore) return "score";
     if (hasReveal) return "reveal";
     return "start";
-  }, [timeline, roundN, t]);
+  }, [timeline, roundN, t, roundWinner]);
 
   useEffect(() => {
     if (phase !== "end") return;
@@ -1313,6 +1330,11 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     const sig = `${roundN}:${roundWinner}:${youSide}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
+
+    // Freeze the timeline briefly so the end-of-round banner is actually visible.
+    const pauseNow = Date.now();
+    pauseStartedAtRef.current = pauseNow;
+    pauseUntilRef.current = pauseNow + 950;
 
     let tone: "p1" | "p2" | "draw" = "draw";
     let text = "DRAW";
