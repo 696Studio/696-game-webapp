@@ -1282,21 +1282,30 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return "start";
   }, [timeline, roundN, t]);
 
-  useEffect(() => {
-    if (phase !== "end") return;
-    if (!roundWinner) return;
+  
+  const lastRoundEnd = useMemo(() => {
+    let last: any = null;
+    for (const e of timeline as any[]) {
+      if (!e) continue;
+      if (e.type === "round_end" && typeof e.t === "number" && e.t <= t) last = e;
+    }
+    return last as any | null;
+  }, [timeline, t]);
 
-    const sig = `${roundN}:${roundWinner}:${youSide}`;
+useEffect(() => {
+    if (!lastRoundEnd) return;
+
+    const sig = `${lastRoundEnd.round}:${lastRoundEnd.winner}:${lastRoundEnd.t}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
     let tone: "p1" | "p2" | "draw" = "draw";
     let text = "DRAW";
 
-    if (roundWinner === "draw") {
+    if (lastRoundEnd.winner === "draw") {
       tone = "draw";
       text = "DRAW";
-    } else if (roundWinner === youSide) {
+    } else if (lastRoundEnd.winner === youSide) {
       tone = "p1";
       text = "YOU WIN ROUND";
     } else {
@@ -1308,7 +1317,8 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     const to = window.setTimeout(() => setRoundBanner((b) => ({ ...b, visible: false })), 900);
     return () => window.clearTimeout(to);
-  }, [phase, roundWinner, roundN, youSide]);
+  }, [lastRoundEnd, youSide]);
+
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -3060,11 +3070,10 @@ const hpPct = useMemo(() => {
 
         .round-banner-wrap {
           position: absolute;
-          inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0 14px;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          width: min(520px, calc(100% - 28px));
           pointer-events: none;
           z-index: 9999;
         }
