@@ -1284,36 +1284,45 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [timeline, roundN, t]);
 
   useEffect(() => {
-    // Fire banner only when we ENTER the end phase (avoid flash on initial mount)
-    if (prevPhaseRef.current === null) { prevPhaseRef.current = phase; return; }
-    const enteredEnd = prevPhaseRef.current !== "end" && phase === "end";
-    prevPhaseRef.current = phase;
-    if (!enteredEnd) return;
+    // Show "End of round" banner exactly once per round_end event.
+    // Important: roundWinner may be computed AFTER the timeline already entered the "end" phase,
+    // so we must not depend on "entering end" only.
+    const anyRevealSeen = timeline.some((e) => e.type === "reveal");
+    if (!anyRevealSeen) return; // avoid any flash on initial mount / pre-start
+
+    // Find the latest round_end event that has already happened.
+    let lastEnd: any = null;
+    for (const e of timeline) {
+      if (e.type !== "round_end") continue;
+      if (e.t > t) break;
+      lastEnd = e;
+    }
+    if (!lastEnd) return;
     if (!roundWinner) return;
 
-    const sig = `${roundN}:${roundWinner}:${youSide}`;
+    const sig = `${(lastEnd as any).round ?? roundN}:${roundWinner}:${youSide}:${(lastEnd as any).t}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
     let tone: "p1" | "p2" | "draw" = "draw";
-    let text = "DRAW";
+    let label = "DRAW";
 
     if (roundWinner === "draw") {
       tone = "draw";
-      text = "DRAW";
+      label = "DRAW";
     } else if (roundWinner === youSide) {
       tone = "p1";
-      text = "YOU WIN ROUND";
+      label = "YOU WIN ROUND";
     } else {
       tone = "p2";
-      text = "ENEMY WIN ROUND";
+      label = "ENEMY WIN ROUND";
     }
 
-    setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
+    setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text: label, tone }));
 
     const to = window.setTimeout(() => setRoundBanner((b) => ({ ...b, visible: false })), 900);
     return () => window.clearTimeout(to);
-  }, [phase, roundWinner, roundN, youSide]);
+  }, [timeline, t, roundWinner, roundN, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
