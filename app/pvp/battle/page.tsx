@@ -1281,15 +1281,12 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     if (hasReveal) return "reveal";
     return "start";
   }, [timeline, roundN, t]);
+
   useEffect(() => {
-    // Show END-OF-ROUND banner exactly once per round number.
     if (phase !== "end") return;
     if (!roundWinner) return;
 
-    // Guard: avoid any accidental flash right at match start.
-    if (t < 0.2) return;
-
-    const sig = String(roundN); // once per round, regardless of winner changes/desyncs
+    const sig = `${roundN}:${roundWinner}:${youSide}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
@@ -1311,8 +1308,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     const to = window.setTimeout(() => setRoundBanner((b) => ({ ...b, visible: false })), 900);
     return () => window.clearTimeout(to);
-  }, [phase, roundWinner, roundN, youSide, t]);
-
+  }, [phase, roundWinner, roundN, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
