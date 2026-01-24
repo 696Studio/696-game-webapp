@@ -1182,6 +1182,30 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       }
     }
 
+    // ===== ROUND END GUARD (client-side) =====
+    // Some logs can contain an early round_end event while units are still alive.
+    // We treat the battlefield state as the source of truth:
+    // Round may end ONLY when all units of one side are dead.
+    const p1Units = Array.from(units.values()).filter((u) => u.side === "p1");
+    const p2Units = Array.from(units.values()).filter((u) => u.side === "p2");
+    const p1HasAny = p1Units.length > 0;
+    const p2HasAny = p2Units.length > 0;
+    const p1Alive = p1Units.some((u) => u.alive && u.hp > 0);
+    const p2Alive = p2Units.some((u) => u.alive && u.hp > 0);
+
+    // If timeline says round_end but both sides still have alive units — ignore it.
+    if (rw && p1Alive && p2Alive) {
+      rw = null;
+    }
+
+    // If one side is fully dead, but winner missing — derive winner from alive state.
+    // (This keeps UX correct even if round_end event is missing or malformed.)
+    if (!rw && (p1HasAny || p2HasAny)) {
+      if (p1HasAny && !p1Alive && p2Alive) rw = "p2";
+      else if (p2HasAny && !p2Alive && p1Alive) rw = "p1";
+      else if ((p1HasAny && !p1Alive) && (p2HasAny && !p2Alive)) rw = "draw";
+    }
+
     const sigLeft = (cf1?.map((x) => x?.id).join("|") || c1.join("|")) ?? "";
     const sigRight = (cf2?.map((x) => x?.id).join("|") || c2.join("|")) ?? "";
     const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
@@ -1276,7 +1300,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       if (e.type === "round_end") hasEnd = true;
     }
 
-    if (hasEnd) return "end";
+    if (hasEnd && roundWinner) return "end";
     if (hasScore) return "score";
     if (hasReveal) return "reveal";
     return "start";
