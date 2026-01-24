@@ -1282,30 +1282,21 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return "start";
   }, [timeline, roundN, t]);
 
-  
-  const lastRoundEnd = useMemo(() => {
-    let last: any = null;
-    for (const e of timeline as any[]) {
-      if (!e) continue;
-      if (e.type === "round_end" && typeof e.t === "number" && e.t <= t) last = e;
-    }
-    return last as any | null;
-  }, [timeline, t]);
+  useEffect(() => {
+    if (phase !== "end") return;
+    if (!roundWinner) return;
 
-useEffect(() => {
-    if (!lastRoundEnd) return;
-
-    const sig = `${lastRoundEnd.round}:${lastRoundEnd.winner}:${lastRoundEnd.t}`;
+    const sig = `${roundN}:${roundWinner}:${youSide}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
     let tone: "p1" | "p2" | "draw" = "draw";
     let text = "DRAW";
 
-    if (lastRoundEnd.winner === "draw") {
+    if (roundWinner === "draw") {
       tone = "draw";
       text = "DRAW";
-    } else if (lastRoundEnd.winner === youSide) {
+    } else if (roundWinner === youSide) {
       tone = "p1";
       text = "YOU WIN ROUND";
     } else {
@@ -1317,8 +1308,7 @@ useEffect(() => {
 
     const to = window.setTimeout(() => setRoundBanner((b) => ({ ...b, visible: false })), 900);
     return () => window.clearTimeout(to);
-  }, [lastRoundEnd, youSide]);
-
+  }, [phase, roundWinner, roundN, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -3080,7 +3070,7 @@ const hpPct = useMemo(() => {
 
         .round-banner {
           position: relative;
-          left: auto;
+        left: auto;
           top: auto;
           transform: none;
           padding: 12px 14px;
