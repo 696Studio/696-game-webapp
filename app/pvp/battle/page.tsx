@@ -529,6 +529,8 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   }>({ visible: false, tick: 0, text: "", tone: "draw" });
 
   const prevEndSigRef = useRef<string>("");
+  const prevPhaseRef = useRef<null | string>(null);
+  const roundBannerTimeoutRef = useRef<number | null>(null);
 
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
@@ -1283,6 +1285,24 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [timeline, roundN, t]);
 
   useEffect(() => {
+    // Hide immediately when leaving end phase (prevents banner sticking into next round)
+    if (phase === "end") return;
+    if (roundBannerTimeoutRef.current != null) {
+      window.clearTimeout(roundBannerTimeoutRef.current);
+      roundBannerTimeoutRef.current = null;
+    }
+    setRoundBanner((b) => (b.visible ? { ...b, visible: false } : b));
+  }, [phase]);
+
+  useEffect(() => {
+    // Avoid initial mount flash
+    if (prevPhaseRef.current === null) {
+      prevPhaseRef.current = phase;
+      return;
+    }
+
+    // We only show when we are currently in end phase
+    prevPhaseRef.current = phase;
     if (phase !== "end") return;
     if (!roundWinner) return;
 
@@ -1306,8 +1326,12 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
 
-    const to = window.setTimeout(() => setRoundBanner((b) => ({ ...b, visible: false })), 900);
-    return () => window.clearTimeout(to);
+    // Reset any previous timeout and always schedule hide
+    if (roundBannerTimeoutRef.current != null) window.clearTimeout(roundBannerTimeoutRef.current);
+    roundBannerTimeoutRef.current = window.setTimeout(() => {
+      setRoundBanner((b) => ({ ...b, visible: false }));
+      roundBannerTimeoutRef.current = null;
+    }, 900);
   }, [phase, roundWinner, roundN, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
@@ -3058,35 +3082,22 @@ const hpPct = useMemo(() => {
         }
         .corner-info .line b { font-weight: 900; }
 
-        .round-banner-wrap {
-          position: absolute;
-          inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0 14px;
-          pointer-events: none;
-          z-index: 9999;
-        }
-
         .round-banner {
-          position: relative;
-          left: auto;
-          top: auto;
-          transform: none;
+          position: absolute;
+          left: 50%;
+          top: 52%;
+          transform: translate(-50%, -50%);
           padding: 12px 14px;
           border-radius: 18px;
           border: 1px solid rgba(255,255,255,0.20);
           background: rgba(0,0,0,0.42);
           backdrop-filter: blur(10px);
-          width: 100%;
-          max-width: 520px;
-          box-sizing: border-box;
-          white-space: normal;
-          overflow-wrap: anywhere;
+          min-width: min(520px, calc(100% - 28px));
           text-align: center;
           box-shadow: 0 12px 40px rgba(0,0,0,0.35);
           animation: bannerIn 320ms var(--ease-out) both;
+          pointer-events: none;
+          z-index: 7;
         }
         .arena .round-banner { z-index: 7; }
         .round-banner::before {
@@ -3822,13 +3833,12 @@ const hpPct = useMemo(() => {
           <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={bottomTeam.hp} hpMax={bottomTeam.hpMax} score={scored ? bottomScore : null} isHit={bottomHit} />
 
           {roundBanner.visible && (
-            <div key={roundBanner.tick} className="round-banner-wrap">
-              <div
-                className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
-              >
-                <div className="title">ROUND END</div>
-                <div className="sub">{roundBanner.text}</div>
-              </div>
+            <div
+              key={roundBanner.tick}
+              className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
+            >
+              <div className="title">ROUND END</div>
+              <div className="sub">{roundBanner.text}</div>
             </div>
           )}
 
