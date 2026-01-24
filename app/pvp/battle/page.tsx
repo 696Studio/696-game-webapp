@@ -529,6 +529,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   }>({ visible: false, tick: 0, text: "", tone: "draw" });
 
   const prevEndSigRef = useRef<string>("");
+  const hideBannerTimeoutRef = useRef<number | null>(null);
   const prevPhaseRef = useRef<null | string>(null);
 
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
@@ -1180,21 +1181,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       } else if (e.type === "round_end") {
         rr = (e as any).round ?? rr;
         rw = (e as any).winner ?? null;
-
-        // 🔒 HARD SYNC (UI): if engine declared a winner, we must reflect that
-        // by forcing the losing side units to "dead" so the round doesn't visually
-        // end while "alive" cards remain on the board.
-        if (rw === "p1" || rw === "p2") {
-          const losingSide: "p1" | "p2" = rw === "p1" ? "p2" : "p1";
-          for (const u of units.values()) {
-            if (u.side !== losingSide) continue;
-            // Do not re-trigger if already dead.
-            if (!u.alive && u.hp <= 0) continue;
-            u.alive = false;
-            u.hp = 0;
-            u.dyingAt = (e as any).t ?? u.dyingAt ?? Date.now();
-          }
-        }
       }
     }
 
@@ -1335,8 +1321,14 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text: label, tone }));
 
-    const to = window.setTimeout(() => setRoundBanner((b) => ({ ...b, visible: false })), 900);
-    return () => window.clearTimeout(to);
+        if (hideBannerTimeoutRef.current != null) {
+      window.clearTimeout(hideBannerTimeoutRef.current);
+      hideBannerTimeoutRef.current = null;
+    }
+    hideBannerTimeoutRef.current = window.setTimeout(
+      () => setRoundBanner((b) => ({ ...b, visible: false })),
+      900
+    );
   }, [timeline, t, roundWinner, roundN, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
