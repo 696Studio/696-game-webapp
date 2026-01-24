@@ -1295,28 +1295,35 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [phase]);
 
   useEffect(() => {
-    // Avoid initial mount flash
-    if (prevPhaseRef.current === null) {
-      prevPhaseRef.current = phase;
-      return;
+    // Banner must be driven strictly by the timeline round_end event (not derived phase/roundWinner),
+    // otherwise it can "skip" or appear at the wrong moment due to state ordering.
+    if (revealTick <= 0) return; // anti-flash on initial mount / before the battle is revealed
+
+    let lastEnd: any = null;
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const e: any = timeline[i];
+      if (e?.type === "round_end" && typeof e.t === "number" && e.t <= t) {
+        lastEnd = e;
+        break;
+      }
     }
+    if (!lastEnd) return;
 
-    // We only show when we are currently in end phase
-    prevPhaseRef.current = phase;
-    if (phase !== "end") return;
-    if (!roundWinner) return;
+    const r = (lastEnd.round ?? roundN) as any;
+    const w = (lastEnd.winner ?? null) as any;
+    if (!w) return;
 
-    const sig = `${roundN}:${roundWinner}:${youSide}`;
+    const sig = `${r}:${w}:${lastEnd.t}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
     let tone: "p1" | "p2" | "draw" = "draw";
     let text = "DRAW";
 
-    if (roundWinner === "draw") {
+    if (w === "draw") {
       tone = "draw";
       text = "DRAW";
-    } else if (roundWinner === youSide) {
+    } else if (w === youSide) {
       tone = "p1";
       text = "YOU WIN ROUND";
     } else {
@@ -1326,13 +1333,13 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
 
-    // Reset any previous timeout and always schedule hide
+    // Reset any previous timeout and always schedule hide (do NOT tie this to every tick elsewhere)
     if (roundBannerTimeoutRef.current != null) window.clearTimeout(roundBannerTimeoutRef.current);
     roundBannerTimeoutRef.current = window.setTimeout(() => {
       setRoundBanner((b) => ({ ...b, visible: false }));
       roundBannerTimeoutRef.current = null;
     }, 900);
-  }, [phase, roundWinner, roundN, youSide]);
+  }, [t, timeline, youSide, revealTick, roundN]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
