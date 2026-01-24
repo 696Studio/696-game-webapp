@@ -24,8 +24,8 @@ function bbDbgEnabled() {
     if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
     if (ls === "1" || ss === "1") return true;
 
-    // Default ON for now (so you always see it in Telegram). Remove later when animation is stable.
-    return true;
+    // Default OFF: debug overlay hidden unless explicitly enabled
+    return false;
   } catch {
     return true;
   }
@@ -54,7 +54,7 @@ function bbDbgSet(msg: string) {
   el.textContent = msg;
 }
 
-const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
+const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (forced OFF)
 
 type MatchRow = {
   id: string;
