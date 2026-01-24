@@ -899,6 +899,14 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     };
   }, [arenaBox]);
 
+
+  // Round-end banner should be centered on the BOARD coordinate space (not "screen center").
+  // Using coverMapPoint keeps the banner pinned to the board even if arena size/aspect changes.
+  const roundBannerPos = useMemo(() => {
+    if (!arenaBox) return null;
+    return coverMapPoint(0.5, 0.5, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+  }, [arenaBox]);
+
   // DEBUG GRID (A/B MIRROR)
   // Top half = "A" (0% at top edge, 100% at midline)
   // Bottom half = "B" (0% at bottom edge, 100% at midline)
@@ -1295,35 +1303,28 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [phase]);
 
   useEffect(() => {
-    // Banner must be driven strictly by the timeline round_end event (not derived phase/roundWinner),
-    // otherwise it can "skip" or appear at the wrong moment due to state ordering.
-    if (revealTick <= 0) return; // anti-flash on initial mount / before the battle is revealed
-
-    let lastEnd: any = null;
-    for (let i = timeline.length - 1; i >= 0; i--) {
-      const e: any = timeline[i];
-      if (e?.type === "round_end" && typeof e.t === "number" && e.t <= t) {
-        lastEnd = e;
-        break;
-      }
+    // Avoid initial mount flash
+    if (prevPhaseRef.current === null) {
+      prevPhaseRef.current = phase;
+      return;
     }
-    if (!lastEnd) return;
 
-    const r = (lastEnd.round ?? roundN) as any;
-    const w = (lastEnd.winner ?? null) as any;
-    if (!w) return;
+    // We only show when we are currently in end phase
+    prevPhaseRef.current = phase;
+    if (phase !== "end") return;
+    if (!roundWinner) return;
 
-    const sig = `${r}:${w}:${lastEnd.t}`;
+    const sig = `${roundN}:${roundWinner}:${youSide}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
     let tone: "p1" | "p2" | "draw" = "draw";
     let text = "DRAW";
 
-    if (w === "draw") {
+    if (roundWinner === "draw") {
       tone = "draw";
       text = "DRAW";
-    } else if (w === youSide) {
+    } else if (roundWinner === youSide) {
       tone = "p1";
       text = "YOU WIN ROUND";
     } else {
@@ -1333,13 +1334,13 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
 
-    // Reset any previous timeout and always schedule hide (do NOT tie this to every tick elsewhere)
+    // Reset any previous timeout and always schedule hide
     if (roundBannerTimeoutRef.current != null) window.clearTimeout(roundBannerTimeoutRef.current);
     roundBannerTimeoutRef.current = window.setTimeout(() => {
       setRoundBanner((b) => ({ ...b, visible: false }));
       roundBannerTimeoutRef.current = null;
     }, 900);
-  }, [t, timeline, youSide, revealTick, roundN]);
+  }, [phase, roundWinner, roundN, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -3092,14 +3093,18 @@ const hpPct = useMemo(() => {
         .round-banner {
           position: absolute;
           left: 50%;
-          top: 52%;
+          top: 50%;
           transform: translate(-50%, -50%);
           padding: 12px 14px;
           border-radius: 18px;
           border: 1px solid rgba(255,255,255,0.20);
           background: rgba(0,0,0,0.42);
           backdrop-filter: blur(10px);
-          min-width: min(520px, calc(100% - 28px));
+          width: calc(100% - 28px);
+          max-width: 520px;
+          box-sizing: border-box;
+          white-space: normal;
+          overflow-wrap: anywhere;
           text-align: center;
           box-shadow: 0 12px 40px rgba(0,0,0,0.35);
           animation: bannerIn 320ms var(--ease-out) both;
@@ -3843,6 +3848,7 @@ const hpPct = useMemo(() => {
             <div
               key={roundBanner.tick}
               className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
+              style={roundBannerPos ? { left: roundBannerPos.x, top: roundBannerPos.y } : undefined}
             >
               <div className="title">ROUND END</div>
               <div className="sub">{roundBanner.text}</div>
