@@ -24,8 +24,8 @@ function bbDbgEnabled() {
     if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
     if (ls === "1" || ss === "1") return true;
 
-    // Default OFF: debug overlay hidden unless explicitly enabled
-    return false;
+    // Default ON for now (so you always see it in Telegram). Remove later when animation is stable.
+    return true;
   } catch {
     return true;
   }
@@ -54,7 +54,7 @@ function bbDbgSet(msg: string) {
   el.textContent = msg;
 }
 
-const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (forced OFF)
+const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
 
 type MatchRow = {
   id: string;
@@ -1165,7 +1165,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         const ref = readUnitRefFromEvent(e, "unit");
         if (ref?.instanceId) {
           const u = units.get(ref.instanceId);
-          if (!u) continue;
+          if (!u) break;
           u.alive = false;
           u.hp = 0;
           u.dyingAt = e.t ?? Date.now();
@@ -1212,24 +1212,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     setP2CardsFull(cf2);
     setP1Score(s1);
     setP2Score(s2);
-
-    // ===== Round End Guard (single source of truth: unit.alive) =====
-    // Prevent premature round end when timeline/event order is inconsistent.
-    const p1AliveNow = Object.values(slotMapP1).some((u) => u && u.alive);
-    const p2AliveNow = Object.values(slotMapP2).some((u) => u && u.alive);
-
-    let winner = rw;
-    // If log says round_end but both sides still have alive units → ignore as desync.
-    if (winner && p1AliveNow && p2AliveNow) winner = null;
-
-    // If log didn't provide winner yet, but one side is wiped by current t → derive winner.
-    if (!winner) {
-      if (p1AliveNow && !p2AliveNow) winner = "p1";
-      else if (!p1AliveNow && p2AliveNow) winner = "p2";
-      else if (!p1AliveNow && !p2AliveNow) winner = "draw";
-    }
-
-    setRoundWinner(winner);
+    setRoundWinner(rw);
 
     setActiveInstance(active);
     setP1UnitsBySlot(slotMapP1);
@@ -1283,31 +1266,30 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   const phase = useMemo(() => {
     let hasReveal = false;
     let hasScore = false;
+    let hasEnd = false;
 
     for (const e of timeline) {
       if ((e as any).round !== roundN) continue;
       if (e.t > t) break;
       if (e.type === "reveal") hasReveal = true;
       if (e.type === "score") hasScore = true;
+      if (e.type === "round_end") hasEnd = true;
     }
 
-    const p1AliveNow = Object.values(p1UnitsBySlot).some((u) => u && u.alive);
-    const p2AliveNow = Object.values(p2UnitsBySlot).some((u) => u && u.alive);
-
-    // "end" only when we have a winner AND at least one side is fully wiped (or both wiped → draw)
-    const hasRealEnd = !!roundWinner && (!p1AliveNow || !p2AliveNow);
-
-    if (hasRealEnd) return "end";
+    if (hasEnd) return "end";
     if (hasScore) return "score";
     if (hasReveal) return "reveal";
     return "start";
-  }, [timeline, roundN, t, p1UnitsBySlot, p2UnitsBySlot, roundWinner]);
-
+  }, [timeline, roundN, t]);
   useEffect(() => {
+    // Show END-OF-ROUND banner exactly once per round number.
     if (phase !== "end") return;
     if (!roundWinner) return;
 
-    const sig = `${roundN}:${roundWinner}:${youSide}`;
+    // Guard: avoid any accidental flash right at match start.
+    if (t < 0.2) return;
+
+    const sig = String(roundN); // once per round, regardless of winner changes/desyncs
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
@@ -1329,7 +1311,8 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     const to = window.setTimeout(() => setRoundBanner((b) => ({ ...b, visible: false })), 900);
     return () => window.clearTimeout(to);
-  }, [phase, roundWinner, roundN, youSide]);
+  }, [phase, roundWinner, roundN, youSide, t]);
+
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
