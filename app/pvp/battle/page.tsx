@@ -1285,54 +1285,73 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [timeline, roundN, t]);
 
   useEffect(() => {
-    // Hide immediately when leaving end phase (prevents banner sticking into next round)
-    if (phase === "end") return;
-    if (roundBannerTimeoutRef.current != null) {
-      window.clearTimeout(roundBannerTimeoutRef.current);
-      roundBannerTimeoutRef.current = null;
+    // Round-end banner should trigger strictly from timeline `round_end` event (NOT from phase/derived winner).
+    if (!timeline || timeline.length === 0) return;
+
+    // Anti-flash: do not show anything until reveal has actually happened.
+    let hasReveal = false;
+    for (const e of timeline as any[]) {
+      if (e.t > t) break;
+      if (e.type === "reveal") {
+        hasReveal = true;
+        break;
+      }
     }
-    setRoundBanner((b) => (b.visible ? { ...b, visible: false } : b));
-  }, [phase]);
+    if (!hasReveal) return;
 
-  useEffect(() => {
-    // Avoid initial mount flash
-    if (prevPhaseRef.current === null) {
-      prevPhaseRef.current = phase;
-      return;
+    // Find the latest round_end event that already happened by time `t`
+    let lastEnd: any = null;
+    for (const e of timeline as any[]) {
+      if (e.t > t) break;
+      if (e.type === "round_end") lastEnd = e;
     }
+    if (!lastEnd) return;
 
-    // We only show when we are currently in end phase
-    prevPhaseRef.current = phase;
-    if (phase !== "end") return;
-    if (!roundWinner) return;
+    const endT = Number(lastEnd.t ?? 0);
 
-    const sig = `${roundN}:${roundWinner}:${youSide}`;
+    // Winner/round can be stored either top-level or inside payload depending on generator
+    const endRound = (lastEnd.round ?? lastEnd.payload?.round ?? roundN ?? 0) as any;
+
+    const winnerRaw =
+      (lastEnd.winner ??
+        lastEnd.payload?.winner ??
+        lastEnd.payload?.roundWinner ??
+        lastEnd.payload?.side ??
+        "draw") as any;
+
+    const winner =
+      winnerRaw === "p1" || winnerRaw === "p2" || winnerRaw === "draw"
+        ? winnerRaw
+        : (winnerRaw?.side ?? "draw");
+
+    const sig = `${endRound}:${winner}:${endT}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
     let tone: "p1" | "p2" | "draw" = "draw";
-    let text = "DRAW";
+    let label = "DRAW";
 
-    if (roundWinner === "draw") {
+    if (winner === "draw") {
       tone = "draw";
-      text = "DRAW";
-    } else if (roundWinner === youSide) {
+      label = "DRAW";
+    } else if (winner === youSide) {
       tone = "p1";
-      text = "YOU WIN ROUND";
+      label = "YOU WIN ROUND";
     } else {
       tone = "p2";
-      text = "ENEMY WIN ROUND";
+      label = "ENEMY WIN ROUND";
     }
 
-    setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
+    setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text: label, tone }));
 
-    // Reset any previous timeout and always schedule hide
-    if (roundBannerTimeoutRef.current != null) window.clearTimeout(roundBannerTimeoutRef.current);
+    if (roundBannerTimeoutRef.current != null) {
+      window.clearTimeout(roundBannerTimeoutRef.current);
+    }
     roundBannerTimeoutRef.current = window.setTimeout(() => {
-      setRoundBanner((b) => ({ ...b, visible: false }));
+      setRoundBanner((b) => (b.visible ? { ...b, visible: false } : b));
       roundBannerTimeoutRef.current = null;
     }, 900);
-  }, [phase, roundWinner, roundN, youSide]);
+  }, [t, timeline, youSide, roundN]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -3085,7 +3104,7 @@ const hpPct = useMemo(() => {
         .round-banner {
           position: absolute;
           left: 50%;
-          top: 52%;
+          top: 50%;
           transform: translate(-50%, -50%);
           padding: 12px 14px;
           border-radius: 18px;
@@ -3282,7 +3301,7 @@ const hpPct = useMemo(() => {
         .bb-slash {
           position: absolute;
           left: 50%;
-          top: 52%;
+          top: 50%;
           width: 92%;
           height: 4px;
           transform: translate(-50%, -50%) rotate(-18deg);
