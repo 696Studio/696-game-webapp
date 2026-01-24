@@ -529,8 +529,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   }>({ visible: false, tick: 0, text: "", tone: "draw" });
 
   const prevEndSigRef = useRef<string>("");
-  const prevPhaseRef = useRef<null | string>(null);
-  const roundBannerTimeoutRef = useRef<number | null>(null);
 
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
@@ -1285,56 +1283,32 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [timeline, roundN, t]);
 
   useEffect(() => {
-    // Hide immediately when leaving end phase (prevents banner sticking into next round)
-    if (phase === "end") return;
-    if (roundBannerTimeoutRef.current != null) {
-      window.clearTimeout(roundBannerTimeoutRef.current);
-      roundBannerTimeoutRef.current = null;
-    }
-    setRoundBanner((b) => (b.visible ? { ...b, visible: false } : b));
-  }, [phase]);
-
-  useEffect(() => {
-    // Avoid initial mount flash
-    if (prevPhaseRef.current === null) {
-      prevPhaseRef.current = phase;
-      return;
-    }
-
-    // We only show when we are currently in end phase
-    prevPhaseRef.current = phase;
     if (phase !== "end") return;
     if (!roundWinner) return;
 
-    // If winner arrives slightly after phase becomes "end", this still fires
     const sig = `${roundN}:${roundWinner}:${youSide}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
     let tone: "p1" | "p2" | "draw" = "draw";
-    let textLabel = "DRAW";
+    let text = "DRAW";
 
     if (roundWinner === "draw") {
       tone = "draw";
-      textLabel = "DRAW";
+      text = "DRAW";
     } else if (roundWinner === youSide) {
       tone = "p1";
-      textLabel = "YOU WIN ROUND";
+      text = "YOU WIN ROUND";
     } else {
       tone = "p2";
-      textLabel = "ENEMY WIN ROUND";
+      text = "ENEMY WIN ROUND";
     }
 
-    setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text: textLabel, tone }));
+    setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
 
-    // Reset any previous timeout and always schedule hide
-    if (roundBannerTimeoutRef.current != null) window.clearTimeout(roundBannerTimeoutRef.current);
-    roundBannerTimeoutRef.current = window.setTimeout(() => {
-      setRoundBanner((b) => ({ ...b, visible: false }));
-      roundBannerTimeoutRef.current = null;
-    }, 900);
+    const to = window.setTimeout(() => setRoundBanner((b) => ({ ...b, visible: false })), 900);
+    return () => window.clearTimeout(to);
   }, [phase, roundWinner, roundN, youSide]);
-
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -1755,7 +1729,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
           pointerEvents: "none",
         }}
       >
-        <div className="map-xp" style={{ ["--xp" as any]: `${hpPct}` } as React.CSSProperties}>
+        <div className="map-xp" style={{ ["--xp" as any]: `${hpPct}%`, ["--xpHue" as any]: `${Math.round((hpPct / 100) * 120)}` } as React.CSSProperties}>
           <div className="map-xp-fill" />
           <div className="map-xp-knob" />
         </div>
@@ -3086,17 +3060,18 @@ const hpPct = useMemo(() => {
 
         .round-banner-wrap {
           position: absolute;
-          left: 50%;
-          top: 50%;
-          transform: translate(-50%, -50%);
-          width: min(520px, calc(100% - 28px));
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 14px;
           pointer-events: none;
           z-index: 9999;
         }
 
         .round-banner {
           position: relative;
-        left: auto;
+          left: auto;
           top: auto;
           transform: none;
           padding: 12px 14px;
