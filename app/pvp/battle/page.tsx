@@ -24,8 +24,8 @@ function bbDbgEnabled() {
     if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
     if (ls === "1" || ss === "1") return true;
 
-    // Default OFF: debug overlay hidden unless explicitly enabled
-    return false;
+    // Default ON for now (so you always see it in Telegram). Remove later when animation is stable.
+    return true;
   } catch {
     return true;
   }
@@ -54,7 +54,7 @@ function bbDbgSet(msg: string) {
   el.textContent = msg;
 }
 
-const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (forced OFF)
+const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays
 
 type MatchRow = {
   id: string;
@@ -501,8 +501,6 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const startAtRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
-  const pauseUntilRef = useRef<number | null>(null);
-  const pauseStartedAtRef = useRef<number | null>(null);
 
   const [roundN, setRoundN] = useState(1);
 
@@ -1061,9 +1059,9 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         s2 = null;
         rw = null;
 
+        // IMPORTANT: do NOT clear slot maps here. We keep previous round units on board
+        // until the new round spawns overwrite them. This avoids cards disappearing/blinking.
         units.clear();
-        slotMapP1[0] = slotMapP1[1] = slotMapP1[2] = slotMapP1[3] = slotMapP1[4] = null;
-        slotMapP2[0] = slotMapP2[1] = slotMapP2[2] = slotMapP2[3] = slotMapP2[4] = null;
         active = null;
       } else if (e.type === "reveal") {
         rr = (e as any).round ?? rr;
@@ -1182,30 +1180,40 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         rr = (e as any).round ?? rr;
         rw = (e as any).winner ?? null;
       }
-    }
 
-    // ===== ROUND END GUARD (client-side) =====
-    // Some logs can contain an early round_end event while units are still alive.
-    // We treat the battlefield state as the source of truth:
-    // Round may end ONLY when all units of one side are dead.
-    const p1Units = Array.from(units.values()).filter((u) => u.side === "p1");
-    const p2Units = Array.from(units.values()).filter((u) => u.side === "p2");
-    const p1HasAny = p1Units.length > 0;
-    const p2HasAny = p2Units.length > 0;
-    const p1Alive = p1Units.some((u) => u.alive && u.hp > 0);
-    const p2Alive = p2Units.some((u) => u.alive && u.hp > 0);
+    // ===== Round end truth source (UI-safe) =====
+    const p1Alive = Object.values(slotMapP1).some((u) => u && u.alive && u.hp > 0);
+    const p2Alive = Object.values(slotMapP2).some((u) => u && u.alive && u.hp > 0);
 
-    // If timeline says round_end but both sides still have alive units — ignore it.
+    // If log says round_end but both sides still have alive units, ignore it (desync in log).
     if (rw && p1Alive && p2Alive) {
       rw = null;
     }
 
-    // If one side is fully dead, but winner missing — derive winner from alive state.
-    // (This keeps UX correct even if round_end event is missing or malformed.)
-    if (!rw && (p1HasAny || p2HasAny)) {
-      if (p1HasAny && !p1Alive && p2Alive) rw = "p2";
-      else if (p2HasAny && !p2Alive && p1Alive) rw = "p1";
-      else if ((p1HasAny && !p1Alive) && (p2HasAny && !p2Alive)) rw = "draw";
+    // If no explicit winner but one side is wiped, infer winner.
+    if (!rw) {
+      if (!p1Alive && p2Alive) rw = "p2";
+      else if (!p2Alive && p1Alive) rw = "p1";
+      else if (!p1Alive && !p2Alive) rw = "draw";
+    }
+
+    // When winner is known, force losing side units into dead state for a clean end-of-round snapshot.
+    if (rw === "p1") {
+      for (const u of Object.values(slotMapP2)) {
+        if (u) { u.alive = false; u.hp = 0; u.dyingAt = u.dyingAt ?? (Date.now()); }
+      }
+    } else if (rw === "p2") {
+      for (const u of Object.values(slotMapP1)) {
+        if (u) { u.alive = false; u.hp = 0; u.dyingAt = u.dyingAt ?? (Date.now()); }
+      }
+    } else if (rw === "draw") {
+      for (const u of Object.values(slotMapP1)) {
+        if (u) { u.alive = false; u.hp = 0; u.dyingAt = u.dyingAt ?? (Date.now()); }
+      }
+      for (const u of Object.values(slotMapP2)) {
+        if (u) { u.alive = false; u.hp = 0; u.dyingAt = u.dyingAt ?? (Date.now()); }
+      }
+    }
     }
 
     const sigLeft = (cf1?.map((x) => x?.id).join("|") || c1.join("|")) ?? "";
@@ -1257,21 +1265,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
       }
 
-
-      // Round-end pause: keep time frozen without skipping ahead.
-      if (pauseUntilRef.current != null && pauseStartedAtRef.current != null) {
-        if (now < pauseUntilRef.current) {
-          rafRef.current = window.requestAnimationFrame(step);
-          return;
-        }
-        // Pause finished → compensate startAtRef so the animation doesn't jump.
-        if (startAtRef.current != null) {
-          startAtRef.current += now - pauseStartedAtRef.current;
-        }
-        pauseUntilRef.current = null;
-        pauseStartedAtRef.current = null;
-      }
-
       const elapsedWall = (now - startAtRef.current) / 1000;
       const elapsed = elapsedWall * rate;
 
@@ -1317,24 +1310,18 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       if (e.type === "round_end") hasEnd = true;
     }
 
-    if (roundWinner) return "end";
+    if (hasEnd) return "end";
     if (hasScore) return "score";
     if (hasReveal) return "reveal";
     return "start";
-  }, [timeline, roundN, t, roundWinner]);
+  }, [timeline, roundN, t]);
 
   useEffect(() => {
-    if (phase !== "end") return;
     if (!roundWinner) return;
 
     const sig = `${roundN}:${roundWinner}:${youSide}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
-
-    // Freeze the timeline briefly so the end-of-round banner is actually visible.
-    const pauseNow = Date.now();
-    pauseStartedAtRef.current = pauseNow;
-    pauseUntilRef.current = pauseNow + 950;
 
     let tone: "p1" | "p2" | "draw" = "draw";
     let text = "DRAW";
@@ -1354,7 +1341,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     const to = window.setTimeout(() => setRoundBanner((b) => ({ ...b, visible: false })), 900);
     return () => window.clearTimeout(to);
-  }, [phase, roundWinner, roundN, youSide]);
+  }, [roundWinner, roundN, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -3854,17 +3841,17 @@ const hpPct = useMemo(() => {
           <MapPortrait where="top" tone="enemy" name={enemyName} avatar={enemyAvatar} hp={topTeam.hp} hpMax={topTeam.hpMax} score={scored ? topScore : null} isHit={topHit} />
           <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={bottomTeam.hp} hpMax={bottomTeam.hpMax} score={scored ? bottomScore : null} isHit={bottomHit} />
 
-          {roundBanner.visible && (
-            <div
-              key={roundBanner.tick}
-              className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
-            >
-              <div className="title">ROUND END</div>
-              <div className="sub">{roundBanner.text}</div>
-            </div>
-          )}
-
           <div className="lane">
+            {roundBanner.visible && (
+              <div
+                key={roundBanner.tick}
+                className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
+              >
+                <div className="title">ROUND END</div>
+                <div className="sub">{roundBanner.text}</div>
+              </div>
+            )}
+
             <div
               className="row"
               style={
