@@ -1046,11 +1046,32 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     const slotMapP2: Record<number, UnitView | null> = { 0: null, 1: null, 2: null, 3: null, 4: null };
     let active: string | null = null;
 
+    // Timeline can contain early/incorrect round_end / round_start markers.
+    // We only allow a round to end when one side has 0 alive units (or both => draw).
+    let roundEnded = true; // before first round_start, we allow initialization
+
+    const countAlive = (side: "p1" | "p2") => {
+      let n = 0;
+      for (const u of units.values()) {
+        if (u.side !== side) continue;
+        if (u.alive && u.hp > 0) n++;
+      }
+      return n;
+    };
+
     for (const e of timeline) {
       if (e.t > t) break;
 
       if (e.type === "round_start") {
-        rr = (e as any).round ?? rr;
+        const nextR = (e as any).round ?? rr;
+
+        // Only start/reset a new round if the previous round was actually ended.
+        // This prevents "new round" from starting while units are still alive.
+        if (!roundEnded && units.size > 0 && nextR !== rr) {
+          continue;
+        }
+
+        rr = nextR;
         c1 = [];
         c2 = [];
         cf1 = [];
@@ -1063,6 +1084,8 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         slotMapP1[0] = slotMapP1[1] = slotMapP1[2] = slotMapP1[3] = slotMapP1[4] = null;
         slotMapP2[0] = slotMapP2[1] = slotMapP2[2] = slotMapP2[3] = slotMapP2[4] = null;
         active = null;
+
+        roundEnded = false;
       } else if (e.type === "reveal") {
         rr = (e as any).round ?? rr;
         c1 = toStringArray((e as any).p1_cards ?? c1);
@@ -1178,7 +1201,32 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         s2 = Number((e as any).p2 ?? 0);
       } else if (e.type === "round_end") {
         rr = (e as any).round ?? rr;
-        rw = (e as any).winner ?? null;
+
+        const a1 = countAlive("p1");
+        const a2 = countAlive("p2");
+
+        // Accept round end ONLY when one side has 0 alive units (or both => draw).
+        if (a1 === 0 || a2 === 0) {
+          const w = (e as any).winner ?? null;
+          if (w) {
+            rw = w;
+          } else {
+            rw = a1 === 0 && a2 === 0 ? "draw" : a1 === 0 ? "p2" : "p1";
+          }
+          roundEnded = true;
+        } else {
+          // Ignore bogus round_end marker while both sides still have alive units.
+          continue;
+        }
+      }
+    }
+
+    // Safety: if the log missed `round_end`, still end the round when one side has no alive units.
+    if (!rw) {
+      const a1 = countAlive("p1");
+      const a2 = countAlive("p2");
+      if (a1 === 0 || a2 === 0) {
+        rw = a1 === 0 && a2 === 0 ? "draw" : a1 === 0 ? "p2" : "p1";
       }
     }
 
@@ -1264,23 +1312,24 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [t, durationSec]);
 
   const phase = useMemo(() => {
+    // IMPORTANT: treat the derived roundWinner as the only source of truth for "round ended".
+    // We intentionally ignore raw `round_end` events if the units on board are still alive.
+    if (roundWinner) return "end";
+
     let hasReveal = false;
     let hasScore = false;
-    let hasEnd = false;
 
     for (const e of timeline) {
       if ((e as any).round !== roundN) continue;
       if (e.t > t) break;
       if (e.type === "reveal") hasReveal = true;
       if (e.type === "score") hasScore = true;
-      if (e.type === "round_end") hasEnd = true;
     }
 
-    if (hasEnd) return "end";
     if (hasScore) return "score";
     if (hasReveal) return "reveal";
     return "start";
-  }, [timeline, roundN, t]);
+  }, [timeline, roundN, t, roundWinner]);
 
   useEffect(() => {
     if (phase !== "end") return;
