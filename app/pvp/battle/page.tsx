@@ -882,8 +882,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     const top = coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
     const bot = coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
 
-    const center = coverMapPoint(0.5, 0.5, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-
     return {
       arenaW: arenaBox.w,
       arenaH: arenaBox.h,
@@ -898,8 +896,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       topY: top.y,
       botX: bot.x,
       botY: bot.y,
-      centerX: center.x,
-      centerY: center.y,
     };
   }, [arenaBox]);
 
@@ -1185,6 +1181,23 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       } else if (e.type === "round_end") {
         rr = (e as any).round ?? rr;
         rw = (e as any).winner ?? null;
+
+        // ✅ Strict end-state sync:
+        // If backend ended the round but some units are still alive on the losing side,
+        // force them to dead so that "round ends only when one[group] side is dead" holds visually.
+        // (Keeps DOM slots stable: we never remove cards, only mark dead.)
+        const winner = rw as any;
+        if (winner === "p1" || winner === "p2") {
+          const losingSide: "p1" | "p2" = winner === "p1" ? "p2" : "p1";
+          for (const u of units.values()) {
+            if (u.side !== losingSide) continue;
+            if (u.alive && (u.hp ?? 0) > 0) {
+              u.alive = false;
+              u.hp = 0;
+              u.dyingAt = e.t ?? Date.now();
+            }
+          }
+        }
       }
     }
 
@@ -2689,9 +2702,9 @@ const hpPct = useMemo(() => {
           100% { transform: translate3d(0,0,0); }
         }
         @keyframes bannerIn {
-          0% { transform: translate(-50%, -50%) translateY(10px) scale(0.98); opacity: 0; }
-          60% { transform: translate(-50%, -50%) translateY(0) scale(1.02); opacity: 1; }
-          100% { transform: translate(-50%, -50%) translateY(0) scale(1); opacity: 1; }
+          0% { transform: translateY(10px) scale(0.98); opacity: 0; }
+          60% { transform: translateY(0) scale(1.02); opacity: 1; }
+          100% { transform: translateY(0) scale(1); opacity: 1; }
         }
         @keyframes bannerGlow {
           0% { opacity: 0.0; transform: scale(0.96); }
@@ -3089,7 +3102,7 @@ const hpPct = useMemo(() => {
         .round-banner {
           position: absolute;
           left: 50%;
-          top: 50%;
+          top: 52%;
           transform: translate(-50%, -50%);
           padding: 12px 14px;
           border-radius: 18px;
