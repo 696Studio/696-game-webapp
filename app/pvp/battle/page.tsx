@@ -536,6 +536,16 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
+  const p1AliveCount = useMemo(() => {
+    return Object.values(p1UnitsBySlot).reduce((acc, u) => acc + (u && u.alive ? 1 : 0), 0);
+  }, [p1UnitsBySlot]);
+
+  const p2AliveCount = useMemo(() => {
+    return Object.values(p2UnitsBySlot).reduce((acc, u) => acc + (u && u.alive ? 1 : 0), 0);
+  }, [p2UnitsBySlot]);
+
+  const anySideHasAlive = (p1AliveCount > 0 && p2AliveCount > 0);
+
   const arenaRef = useRef<HTMLDivElement | null>(null);
 
   const onArenaPointerDownCapture = (ev: React.PointerEvent) => {
@@ -899,6 +909,12 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     };
   }, [arenaBox]);
 
+
+  const roundBannerPos = useMemo(() => {
+    if (!arenaBox) return null;
+    return coverMapPoint(0.5, 0.5, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+  }, [arenaBox]);
+
   // DEBUG GRID (A/B MIRROR)
   // Top half = "A" (0% at top edge, 100% at midline)
   // Bottom half = "B" (0% at bottom edge, 100% at midline)
@@ -1051,30 +1067,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     for (const e of timeline) {
       if (e.t > t) break;
 
-
-      // ✅ Round-end validity guard:
-      // Correct rule: a round ends only when ONE side has 0 alive units.
-      // If the log mistakenly emits round_start/reveal/score/round_end for a next round while BOTH sides are still alive,
-      // ignore those meta events so the current round can finish normally.
-      const eRound = Number((e as any)?.round ?? rr);
-      if (Number.isFinite(eRound) && eRound > rr) {
-        let aliveP1 = 0;
-        let aliveP2 = 0;
-        for (const u of units.values()) {
-          if (!u) continue;
-          if (u.alive && Math.max(0, Number(u.hp ?? 0)) > 0) {
-            if (u.side === "p1") aliveP1 += 1;
-            else if (u.side === "p2") aliveP2 += 1;
-          }
-        }
-        const bothSidesAlive = aliveP1 > 0 && aliveP2 > 0;
-        if (bothSidesAlive) {
-          if (e.type === "round_start" || e.type === "reveal" || e.type === "score" || e.type === "round_end") {
-            continue;
-          }
-        }
-      }
-
       if (e.type === "round_start") {
         rr = (e as any).round ?? rr;
         c1 = [];
@@ -1205,6 +1197,20 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       } else if (e.type === "round_end") {
         rr = (e as any).round ?? rr;
         rw = (e as any).winner ?? null;
+
+        // Enforce strict round-end: one SIDE must be fully dead.
+        // If timeline ends early (e.g. after total 5 deaths across the board),
+        // we sync UI by wiping the LOSER side (cards stay in DOM, just become dead).
+        const winner = rw as any;
+        if (winner === "p1" || winner === "p2") {
+          const loser: "p1" | "p2" = winner === "p1" ? "p2" : "p1";
+          for (const u of units.values()) {
+            if ((u as any)?.side !== loser) continue;
+            (u as any).alive = false;
+            (u as any).hp = 0;
+            (u as any).shield = 0;
+          }
+        }
       }
     }
 
@@ -1290,73 +1296,80 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [t, durationSec]);
 
   const phase = useMemo(() => {
-    let hasReveal = false;
-    let hasScore = false;
-    let hasEnd = false;
+  let hasReveal = false;
+  let hasScore = false;
+  let hasEnd = false;
 
-    for (const e of timeline) {
-      if ((e as any).round !== roundN) continue;
-      if (e.t > t) break;
-      if (e.type === "reveal") hasReveal = true;
-      if (e.type === "score") hasScore = true;
-      if (e.type === "round_end") hasEnd = true;
-    }
+  for (const e of timeline) {
+    if ((e as any).round !== roundN) continue;
+    if (e.t > t) break;
+    if (e.type === "reveal") hasReveal = true;
+    if (e.type === "score") hasScore = true;
+    if (e.type === "round_end") hasEnd = true;
+  }
 
-    if (hasEnd) return "end";
-    if (hasScore) return "score";
-    if (hasReveal) return "reveal";
-    return "start";
-  }, [timeline, roundN, t]);
+  // Strict end: do NOT enter end phase while both sides still have living units on the board.
+  // This prevents "round ended" UI when the timeline has round_end slightly earlier than final deaths.
+  if (hasEnd && !anySideHasAlive) return "end";
+  if (hasScore) return "score";
+  if (hasReveal) return "reveal";
+  return "start";
+}, [timeline, roundN, t, anySideHasAlive]);
 
   useEffect(() => {
-    // Hide immediately when leaving end phase (prevents banner sticking into next round)
-    if (phase === "end") return;
+  return () => {
     if (roundBannerTimeoutRef.current != null) {
       window.clearTimeout(roundBannerTimeoutRef.current);
       roundBannerTimeoutRef.current = null;
     }
-    setRoundBanner((b) => (b.visible ? { ...b, visible: false } : b));
-  }, [phase]);
+  };
+}, []);
 
-  useEffect(() => {
-    // Avoid initial mount flash
-    if (prevPhaseRef.current === null) {
-      prevPhaseRef.current = phase;
-      return;
-    }
+useEffect(() => {
+  // Anti-flash: do not show before the battle actually revealed something.
+  if (revealTick <= 0) return;
 
-    // We only show when we are currently in end phase
-    prevPhaseRef.current = phase;
-    if (phase !== "end") return;
-    if (!roundWinner) return;
+  // Strict end: do not show while both sides still have living units.
+  if (anySideHasAlive) return;
 
-    const sig = `${roundN}:${roundWinner}:${youSide}`;
-    if (sig === prevEndSigRef.current) return;
-    prevEndSigRef.current = sig;
+  // Find the last round_end that already happened (e.t <= t).
+  let lastEnd: TimelineEvent | null = null;
+  for (const e of timeline) {
+    if (e.t > t) break;
+    if (e.type === "round_end") lastEnd = e;
+  }
+  if (!lastEnd) return;
 
-    let tone: "p1" | "p2" | "draw" = "draw";
-    let text = "DRAW";
+  const endRound = Number((lastEnd as any).round ?? roundN);
+  const winner = String((lastEnd as any).winner ?? "draw");
+  const endT = Number((lastEnd as any).t ?? 0);
 
-    if (roundWinner === "draw") {
-      tone = "draw";
-      text = "DRAW";
-    } else if (roundWinner === youSide) {
-      tone = "p1";
-      text = "YOU WIN ROUND";
-    } else {
-      tone = "p2";
-      text = "ENEMY WIN ROUND";
-    }
+  const sig = `${endRound}:${winner}:${endT}`;
+  if (sig === prevEndSigRef.current) return;
+  prevEndSigRef.current = sig;
 
-    setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
+  let tone: "p1" | "p2" | "draw" = "draw";
+  let text = "DRAW";
 
-    // Reset any previous timeout and always schedule hide
-    if (roundBannerTimeoutRef.current != null) window.clearTimeout(roundBannerTimeoutRef.current);
-    roundBannerTimeoutRef.current = window.setTimeout(() => {
-      setRoundBanner((b) => ({ ...b, visible: false }));
-      roundBannerTimeoutRef.current = null;
-    }, 900);
-  }, [phase, roundWinner, roundN, youSide]);
+  if (winner === "draw") {
+    tone = "draw";
+    text = "DRAW";
+  } else if (winner === youSide) {
+    tone = "p1";
+    text = "YOU WIN ROUND";
+  } else {
+    tone = "p2";
+    text = "ENEMY WIN ROUND";
+  }
+
+  setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
+
+  if (roundBannerTimeoutRef.current != null) window.clearTimeout(roundBannerTimeoutRef.current);
+  roundBannerTimeoutRef.current = window.setTimeout(() => {
+    setRoundBanner((b) => ({ ...b, visible: false }));
+    roundBannerTimeoutRef.current = null;
+  }, 900);
+}, [timeline, t, roundN, revealTick, anySideHasAlive, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -3860,6 +3873,7 @@ const hpPct = useMemo(() => {
             <div
               key={roundBanner.tick}
               className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
+              style={roundBannerPos ? { left: roundBannerPos.x, top: roundBannerPos.y } : undefined}
             >
               <div className="title">ROUND END</div>
               <div className="sub">{roundBanner.text}</div>
