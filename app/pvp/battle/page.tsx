@@ -882,8 +882,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     const top = coverMapPoint(TOP_RING_NX, TOP_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
     const bot = coverMapPoint(BOT_RING_NX, BOT_RING_NY, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
 
-    const center = coverMapPoint(0.5, 0.5, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-
     return {
       arenaW: arenaBox.w,
       arenaH: arenaBox.h,
@@ -898,8 +896,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       topY: top.y,
       botX: bot.x,
       botY: bot.y,
-      centerX: center.x,
-      centerY: center.y,
     };
   }, [arenaBox]);
 
@@ -1054,6 +1050,30 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     for (const e of timeline) {
       if (e.t > t) break;
+
+
+      // ✅ Round-end validity guard:
+      // Correct rule: a round ends only when ONE side has 0 alive units.
+      // If the log mistakenly emits round_start/reveal/score/round_end for a next round while BOTH sides are still alive,
+      // ignore those meta events so the current round can finish normally.
+      const eRound = Number((e as any)?.round ?? rr);
+      if (Number.isFinite(eRound) && eRound > rr) {
+        let aliveP1 = 0;
+        let aliveP2 = 0;
+        for (const u of units.values()) {
+          if (!u) continue;
+          if (u.alive && Math.max(0, Number(u.hp ?? 0)) > 0) {
+            if (u.side === "p1") aliveP1 += 1;
+            else if (u.side === "p2") aliveP2 += 1;
+          }
+        }
+        const bothSidesAlive = aliveP1 > 0 && aliveP2 > 0;
+        if (bothSidesAlive) {
+          if (e.type === "round_start" || e.type === "reveal" || e.type === "score" || e.type === "round_end") {
+            continue;
+          }
+        }
+      }
 
       if (e.type === "round_start") {
         rr = (e as any).round ?? rr;
@@ -2689,9 +2709,9 @@ const hpPct = useMemo(() => {
           100% { transform: translate3d(0,0,0); }
         }
         @keyframes bannerIn {
-          0% { transform: translate(-50%, -50%) translateY(10px) scale(0.98); opacity: 0; }
-          60% { transform: translate(-50%, -50%) translateY(0) scale(1.02); opacity: 1; }
-          100% { transform: translate(-50%, -50%) translateY(0) scale(1); opacity: 1; }
+          0% { transform: translateY(10px) scale(0.98); opacity: 0; }
+          60% { transform: translateY(0) scale(1.02); opacity: 1; }
+          100% { transform: translateY(0) scale(1); opacity: 1; }
         }
         @keyframes bannerGlow {
           0% { opacity: 0.0; transform: scale(0.96); }
@@ -3089,7 +3109,7 @@ const hpPct = useMemo(() => {
         .round-banner {
           position: absolute;
           left: 50%;
-          top: 50%;
+          top: 52%;
           transform: translate(-50%, -50%);
           padding: 12px 14px;
           border-radius: 18px;
