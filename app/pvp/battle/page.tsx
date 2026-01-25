@@ -950,6 +950,14 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return { enemy, you };
   }, [arenaBox]);
 
+  const bannerCenter = useMemo(() => {
+    if (!arenaBox) return null;
+    // Center of the drawn board image (not the viewport). This keeps the banner perfectly centered on the board
+    // even when cover/letterbox changes across devices (TG iOS, desktop, resize, etc.)
+    return coverMapPoint(0.5, 0.5, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+  }, [arenaBox]);
+
+
   function seek(nextT: number) {
     const clamped = Math.max(0, Math.min(durationSec, Number(nextT) || 0));
     setT(clamped);
@@ -3853,6 +3861,8 @@ const hpPct = useMemo(() => {
             <div
               key={roundBanner.tick}
               className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
+            
+              style={bannerCenter ? { left: bannerCenter.x, top: bannerCenter.y } : undefined}
             >
               <div className="title">ROUND END</div>
               <div className="sub">{roundBanner.text}</div>
