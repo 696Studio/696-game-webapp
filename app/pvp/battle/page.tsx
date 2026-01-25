@@ -2689,9 +2689,9 @@ const hpPct = useMemo(() => {
           100% { transform: translate3d(0,0,0); }
         }
         @keyframes bannerIn {
-          0% { transform: translateY(10px) scale(0.98); opacity: 0; }
-          60% { transform: translateY(0) scale(1.02); opacity: 1; }
-          100% { transform: translateY(0) scale(1); opacity: 1; }
+          0% { transform: translate(-50%, -50%) translateY(10px) scale(0.98); opacity: 0; }
+          60% { transform: translate(-50%, -50%) translateY(0) scale(1.02); opacity: 1; }
+          100% { transform: translate(-50%, -50%) translateY(0) scale(1); opacity: 1; }
         }
         @keyframes bannerGlow {
           0% { opacity: 0.0; transform: scale(0.96); }
@@ -3840,8 +3840,6 @@ const hpPct = useMemo(() => {
             <div
               key={roundBanner.tick}
               className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
-            
-              style={debugCover ? { left: debugCover.centerX, top: debugCover.centerY } : undefined}
             >
               <div className="title">ROUND END</div>
               <div className="sub">{roundBanner.text}</div>
