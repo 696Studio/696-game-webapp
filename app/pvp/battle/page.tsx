@@ -1284,24 +1284,13 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return "start";
   }, [timeline, roundN, t]);
 
-  useEffect(() => {
-    // Hide immediately when leaving end phase (prevents banner sticking into next round)
-    if (phase === "end") return;
-    if (roundBannerTimeoutRef.current != null) {
-      window.clearTimeout(roundBannerTimeoutRef.current);
-      roundBannerTimeoutRef.current = null;
-    }
-    setRoundBanner((b) => (b.visible ? { ...b, visible: false } : b));
-  }, [phase]);
-
+  
   useEffect(() => {
     // Banner must be driven strictly by the timeline round_end event (not derived phase/roundWinner),
     // otherwise it can "skip" or appear at the wrong moment due to state ordering.
     //
     // Anti-flash: do not show before reveal (phase "start"). We intentionally do NOT gate on revealTick
     // because revealTick can be 0 in some edge cases (e.g. empty revealSig) while the round still ends.
-    if (phase === "start") return;
-
     // Find the most recent round_end we have already reached in time.
     let lastEnd: any = null;
     for (let i = timeline.length - 1; i >= 0; i--) {
@@ -1312,6 +1301,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       }
     }
     if (!lastEnd) return;
+    if (!(t > 0)) return;
 
     const r = (lastEnd.round ?? roundN) as any;
 
