@@ -10,10 +10,51 @@ import CardArt from "../../components/CardArt";
 import BattleFxLayer from './BattleFxLayer';
 
 
-const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (forced OFF)
-function bbDbgEnabled() { return false; }
-function bbDbgSet(_msg: string) { /* dbg disabled */ }
+// ===== BB_ATTACK_DEBUG_OVERLAY =====
+function bbDbgEnabled() {
+  try {
+    if (typeof window === "undefined") return false;
+    // Toggle options (no URL needed):
+    // 1) window.__bbdbg = 1
+    // 2) localStorage.setItem("bbdbg","1")
+    // 3) sessionStorage.setItem("bbdbg","1")
+    const w = window as any;
+    const ls = (() => { try { return window.localStorage?.getItem("bbdbg"); } catch { return null; } })();
+    const ss = (() => { try { return window.sessionStorage?.getItem("bbdbg"); } catch { return null; } })();
+    if (w.__bbdbg === 1 || w.__bbdbg === "1") return true;
+    if (ls === "1" || ss === "1") return true;
 
+    // Default OFF: debug overlay hidden unless explicitly enabled
+    return false;
+  } catch {
+    return true;
+  }
+}
+function bbDbgSet(msg: string) {
+  if (!bbDbgEnabled()) return;
+  const id = "bb-attack-debug";
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement("div");
+    el.id = id;
+    el.style.position = "fixed";
+    el.style.left = "12px";
+    el.style.top = "12px";
+    el.style.zIndex = "999999";
+    el.style.padding = "10px 12px";
+    el.style.font = "12px/1.25 system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    el.style.background = "rgba(0,0,0,0.72)";
+    el.style.color = "white";
+    el.style.borderRadius = "12px";
+    el.style.pointerEvents = "none";
+    el.style.maxWidth = "92vw";
+    el.style.whiteSpace = "pre-wrap";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+}
+
+const HIDE_VISUAL_DEBUG = true; // hide all DBG/grid/fx overlays (forced OFF)
 
 type MatchRow = {
   id: string;
@@ -868,12 +909,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     };
   }, [arenaBox]);
 
-
-  const roundBannerPos = useMemo(() => {
-    if (!arenaBox) return null;
-    return coverMapPoint(0.5, 0.5, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
-  }, [arenaBox]);
-
   // DEBUG GRID (A/B MIRROR)
   // Top half = "A" (0% at top edge, 100% at midline)
   // Bottom half = "B" (0% at bottom edge, 100% at midline)
@@ -1157,26 +1192,16 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         rr = (e as any).round ?? rr;
         rw = (e as any).winner ?? null;
 
-        // UI sync: ensure the losing side is fully dead at round end
-        // (some logs may omit final death events, causing "next round" while units still look alive).
-        const winner = String(rw ?? "");
-        if (winner === "p1" || winner === "p2") {
-          const losing = winner === "p1" ? "p2" : "p1";
+        // UI sync on round_end: ensure the losing side shows as fully dead.
+        // This prevents "next round" starting while some units still look alive when timeline round_end lands before final deaths.
+        const winner = rw as any;
+        if (winner === "p1") {
           for (const u of units.values()) {
-            if (u.side === losing) {
-              u.alive = false;
-              u.hp = 0;
-            }
+            if (u.side === "p2" && u.alive) { u.alive = false; u.hp = 0; }
           }
-          // also reflect in slot maps
-          const sm = losing === "p1" ? slotMapP1 : slotMapP2;
-          for (const k of Object.keys(sm)) {
-            const idx = Number(k);
-            const u = sm[idx];
-            if (u) {
-              u.alive = false;
-              u.hp = 0;
-            }
+        } else if (winner === "p2") {
+          for (const u of units.values()) {
+            if (u.side === "p1" && u.alive) { u.alive = false; u.hp = 0; }
           }
         }
       }
@@ -1296,6 +1321,9 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 useEffect(() => {
   // Anti-flash: do not show before the battle actually revealed something.
   if (revealTick <= 0) return;
+
+  // Strict end: do not show while both sides still have living units.
+  if (anySideHasAlive) return;
 
   // Find the last round_end that already happened (e.t <= t).
   let lastEnd: TimelineEvent | null = null;
@@ -3087,19 +3115,27 @@ const hpPct = useMemo(() => {
         .round-banner {
           position: absolute;
           left: 50%;
-          top: 52%;
+          top: 50%;
           transform: translate(-50%, -50%);
+          z-index: 9999;
+
+          width: calc(100% - 28px);
+          max-width: 520px;
+          box-sizing: border-box;
+
           padding: 12px 14px;
           border-radius: 18px;
           border: 1px solid rgba(255,255,255,0.20);
           background: rgba(0,0,0,0.42);
           backdrop-filter: blur(10px);
-          min-width: min(520px, calc(100% - 28px));
+
           text-align: center;
+          white-space: normal;
+          overflow-wrap: anywhere;
+
           box-shadow: 0 12px 40px rgba(0,0,0,0.35);
           animation: bannerIn 320ms var(--ease-out) both;
           pointer-events: none;
-          z-index: 7;
         }
         .arena .round-banner { z-index: 7; }
         .round-banner::before {
@@ -3838,7 +3874,6 @@ const hpPct = useMemo(() => {
             <div
               key={roundBanner.tick}
               className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
-              style={roundBannerPos ? { left: roundBannerPos.x, top: roundBannerPos.y } : undefined}
             >
               <div className="title">ROUND END</div>
               <div className="sub">{roundBanner.text}</div>
