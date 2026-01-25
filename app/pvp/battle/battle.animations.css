@@ -30,26 +30,8 @@ opacity: .55;
 text-shadow: 0 6px 20px rgba(0,0,0,.65);
 }
 
-.bb-slot.is-dying .bb-card{
-animation: bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both;
-transform-style: preserve-3d;
-}
 
-.bb-slot.is-dying.is-vanish .bb-card,
-.bb-slot.is-vanish .bb-card{
-animation:
-  bb_card_death_to_back 680ms var(--bb-ease-inout, cubic-bezier(.3,.7,.2,1)) both,
-  bb_card_vanish 260ms cubic-bezier(.2,.9,.2,1) forwards;
-animation-delay: 0ms, 520ms;
-transform-style: preserve-3d;
-}
 
-@keyframes bb_card_vanish{
-}
-
-@keyframes bb_card_death_to_back{
-18%  { transform: translate3d(0,-2px,0) rotateY(0deg) scale(1.02); }
-}
 
 .bb-card.is-dead{
 opacity: 1 !important;
@@ -188,13 +170,7 @@ pointer-events:none;
 overflow: visible;
 }
 
-.bb-slot.is-dying .bb-card{
-animation: bbDeathPunch 240ms ease-out;
-}
 
-@keyframes bbDeathPunch{
-60%{ transform: translateZ(0) scale(1.06); }
-}
 
 @keyframes bbDeathSprite{
 from{ background-position: 0% 50%; opacity:1; }
@@ -474,6 +450,13 @@ z-index: 21;
   }
 }
 
+
+/* =========================================================
+ STABILITY PATCH v1 — CLEAN CONFLICTING ANIMS
+ - Remove duplicate death-card animation blocks that could compete and leave WebKit in a bad state.
+ - Keep only the FINAL __final death flip definitions.
+ (No layout changes, no new FX, no slot count changes.)
+ ========================================================= */
 
 /* =========================================================
  STEP B OVERRIDES v2 — NO TRANSFORM ANIMS ON SLOT / NO CSS LUNGE
