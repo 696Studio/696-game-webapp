@@ -521,6 +521,29 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const prevRevealSigRef = useRef<string>("");
   const prevScoreRef = useRef<{ p1: number | null; p2: number | null }>({ p1: null, p2: null });
 
+  // Parser "cursor" to make battle playback stable and deterministic.
+  // We incrementally apply timeline events as `t` increases; if user seeks backwards or timeline changes, we reset and re-parse from start.
+  const timelineRef = useRef<any[]>([]);
+  const parserIdxRef = useRef<number>(0);
+  const parserLastTRef = useRef<number>(-1);
+
+  type ParserSnapshot = {
+    rr: number;
+    c1: string[];
+    c2: string[];
+    cf1: CardMeta[];
+    cf2: CardMeta[];
+    s1: number | null;
+    s2: number | null;
+    rw: string | null;
+    units: Map<string, UnitView>;
+    slotMapP1: Record<number, UnitView | null>;
+    slotMapP2: Record<number, UnitView | null>;
+    active: string | null;
+  };
+
+  const parserSnapRef = useRef<ParserSnapshot | null>(null);
+
   const [roundBanner, setRoundBanner] = useState<{
     visible: boolean;
     tick: number;
@@ -535,6 +558,16 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
+
+  const p1AliveCount = useMemo(() => {
+    return Object.values(p1UnitsBySlot).reduce((acc, u) => acc + (u && u.alive ? 1 : 0), 0);
+  }, [p1UnitsBySlot]);
+
+  const p2AliveCount = useMemo(() => {
+    return Object.values(p2UnitsBySlot).reduce((acc, u) => acc + (u && u.alive ? 1 : 0), 0);
+  }, [p2UnitsBySlot]);
+
+  const anySideHasAlive = (p1AliveCount > 0 && p2AliveCount > 0);
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
 
@@ -899,6 +932,12 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     };
   }, [arenaBox]);
 
+
+  const roundBannerPos = useMemo(() => {
+    if (!arenaBox) return null;
+    return coverMapPoint(0.5, 0.5, arenaBox.w, arenaBox.h, BOARD_IMG_W, BOARD_IMG_H);
+  }, [arenaBox]);
+
   // DEBUG GRID (A/B MIRROR)
   // Top half = "A" (0% at top edge, 100% at midline)
   // Bottom half = "B" (0% at bottom edge, 100% at midline)
@@ -1031,51 +1070,71 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
   const enemySide: "p1" | "p2" = youSide === "p1" ? "p2" : "p1";
 
-  useEffect(() => {
+    useEffect(() => {
     if (!timeline.length) return;
 
-    let rr = 1;
-    let c1: string[] = [];
-    let c2: string[] = [];
-    let cf1: CardMeta[] = [];
-    let cf2: CardMeta[] = [];
-    let s1: number | null = null;
-    let s2: number | null = null;
-    let rw: string | null = null;
+    const timelineChanged = timelineRef.current !== timeline;
+    const seekingBack = t < parserLastTRef.current;
 
-    const units = new Map<string, UnitView>();
-    const slotMapP1: Record<number, UnitView | null> = { 0: null, 1: null, 2: null, 3: null, 4: null };
-    const slotMapP2: Record<number, UnitView | null> = { 0: null, 1: null, 2: null, 3: null, 4: null };
-    let active: string | null = null;
+    const resetSnapshot = () => {
+      parserIdxRef.current = 0;
+      parserLastTRef.current = -1;
+      timelineRef.current = timeline;
 
-    for (const e of timeline) {
+      const slotMapP1: Record<number, UnitView | null> = { 0: null, 1: null, 2: null, 3: null, 4: null };
+      const slotMapP2: Record<number, UnitView | null> = { 0: null, 1: null, 2: null, 3: null, 4: null };
+
+      parserSnapRef.current = {
+        rr: 1,
+        c1: [],
+        c2: [],
+        cf1: [],
+        cf2: [],
+        s1: null,
+        s2: null,
+        rw: null,
+        units: new Map<string, UnitView>(),
+        slotMapP1,
+        slotMapP2,
+        active: null,
+      };
+    };
+
+    if (!parserSnapRef.current || timelineChanged || seekingBack) {
+      resetSnapshot();
+    }
+
+    const snap = parserSnapRef.current!;
+    // Apply any new events between last cursor and current `t`
+    while (parserIdxRef.current < timeline.length) {
+      const e = timeline[parserIdxRef.current];
       if (e.t > t) break;
 
       if (e.type === "round_start") {
-        rr = (e as any).round ?? rr;
-        c1 = [];
-        c2 = [];
-        cf1 = [];
-        cf2 = [];
-        s1 = null;
-        s2 = null;
-        rw = null;
+        snap.rr = (e as any).round ?? snap.rr;
+        snap.c1 = [];
+        snap.c2 = [];
+        snap.cf1 = [];
+        snap.cf2 = [];
+        snap.s1 = null;
+        snap.s2 = null;
+        snap.rw = null;
 
-        units.clear();
-        slotMapP1[0] = slotMapP1[1] = slotMapP1[2] = slotMapP1[3] = slotMapP1[4] = null;
-        slotMapP2[0] = slotMapP2[1] = slotMapP2[2] = slotMapP2[3] = slotMapP2[4] = null;
-        active = null;
+        snap.units.clear();
+        snap.slotMapP1[0] = snap.slotMapP1[1] = snap.slotMapP1[2] = snap.slotMapP1[3] = snap.slotMapP1[4] = null;
+        snap.slotMapP2[0] = snap.slotMapP2[1] = snap.slotMapP2[2] = snap.slotMapP2[3] = snap.slotMapP2[4] = null;
+        snap.active = null;
       } else if (e.type === "reveal") {
-        rr = (e as any).round ?? rr;
-        c1 = toStringArray((e as any).p1_cards ?? c1);
-        c2 = toStringArray((e as any).p2_cards ?? c2);
+        snap.rr = (e as any).round ?? snap.rr;
+        snap.c1 = toStringArray((e as any).p1_cards ?? snap.c1);
+        snap.c2 = toStringArray((e as any).p2_cards ?? snap.c2);
 
         const a1 = toCardMetaArray((e as any).p1_cards_full);
         const a2 = toCardMetaArray((e as any).p2_cards_full);
-        if (a1.length) cf1 = a1;
-        if (a2.length) cf2 = a2;
+        if (a1.length) snap.cf1 = a1;
+        if (a2.length) snap.cf2 = a2;
       } else if (e.type === "spawn") {
-        if ((e as any).round != null) rr = (e as any).round ?? rr;
+        if ((e as any).round != null) snap.rr = (e as any).round ?? snap.rr;
 
         const ref = readUnitRefFromEvent(e, "unit");
         const card_id = String((e as any).card_id ?? "");
@@ -1095,20 +1154,20 @@ const x = (r.left - arenaRect.left) + r.width / 2;
             alive: true,
             tags: new Set(),
           };
-          units.set(ref.instanceId, u);
-          if (ref.side === "p1") slotMapP1[ref.slot] = u;
-          else slotMapP2[ref.slot] = u;
+          snap.units.set(ref.instanceId, u);
+          if (ref.side === "p1") snap.slotMapP1[ref.slot] = u;
+          else snap.slotMapP2[ref.slot] = u;
         }
       } else if (e.type === "turn_start") {
         const ref = readUnitRefFromEvent(e, "unit");
-        if (ref?.instanceId) active = ref.instanceId;
+        if (ref?.instanceId) snap.active = ref.instanceId;
       } else if (e.type === "damage") {
         const tid = String((e as any)?.target?.instanceId ?? "");
         const amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
         const shield = (e as any)?.shield;
         if (tid) {
-          const u = units.get(tid);
+          const u = snap.units.get(tid);
           if (u) {
             if (Number.isFinite(hp)) u.hp = Math.max(0, Number(hp));
             else u.hp = Math.max(0, u.hp - Math.max(0, Math.floor(amount)));
@@ -1121,7 +1180,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         const amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
         if (tid) {
-          const u = units.get(tid);
+          const u = snap.units.get(tid);
           if (u) {
             if (Number.isFinite(hp)) u.hp = clamp(Number(hp), 0, u.maxHp);
             else u.hp = clamp(u.hp + Math.max(0, Math.floor(amount)), 0, u.maxHp);
@@ -1132,7 +1191,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         const shield = (e as any)?.shield;
         const amount = Number((e as any)?.amount ?? 0);
         if (tid) {
-          const u = units.get(tid);
+          const u = snap.units.get(tid);
           if (u) {
             if (Number.isFinite(shield)) u.shield = Math.max(0, Number(shield));
             else
@@ -1146,79 +1205,97 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         const tid = String((e as any)?.target?.instanceId ?? "");
         const debuff = String((e as any)?.debuff ?? "");
         if (tid && debuff) {
-          const u = units.get(tid);
+          const u = snap.units.get(tid);
           if (u) u.tags.add(debuff);
         }
       } else if (e.type === "buff_applied") {
         const ref = readUnitRefFromEvent(e, "target") || readUnitRefFromEvent(e, "unit");
         const buff = String((e as any)?.buff ?? "");
         if (ref?.instanceId && buff) {
-          const u = units.get(ref.instanceId);
+          const u = snap.units.get(ref.instanceId);
           if (u) u.tags.add(buff);
         }
       } else if (e.type === "debuff_tick") {
         const ref = readUnitRefFromEvent(e, "target") || readUnitRefFromEvent(e, "unit");
         const debuff = String((e as any)?.debuff ?? "");
         if (ref?.instanceId && debuff) {
-          const u = units.get(ref.instanceId);
+          const u = snap.units.get(ref.instanceId);
           if (u) u.tags.add(debuff);
         }
       } else if (e.type === "death") {
         const ref = readUnitRefFromEvent(e, "unit");
         if (ref?.instanceId) {
-          const u = units.get(ref.instanceId);
-          if (!u) break;
-          u.alive = false;
-          u.hp = 0;
-          u.dyingAt = e.t ?? Date.now();
-          // ⚠️ removal happens AFTER animation
-          continue;
+          const u = snap.units.get(ref.instanceId);
+          if (u) {
+            u.alive = false;
+            u.hp = 0;
+            u.dyingAt = e.t ?? Date.now();
+          }
         }
       } else if (e.type === "score") {
-        rr = (e as any).round ?? rr;
-        s1 = Number((e as any).p1 ?? 0);
-        s2 = Number((e as any).p2 ?? 0);
+        snap.rr = (e as any).round ?? snap.rr;
+        snap.s1 = Number((e as any).p1 ?? 0);
+        snap.s2 = Number((e as any).p2 ?? 0);
       } else if (e.type === "round_end") {
-        rr = (e as any).round ?? rr;
-        rw = (e as any).winner ?? null;
+        snap.rr = (e as any).round ?? snap.rr;
+        snap.rw = (e as any).winner ?? null;
+
+        // Keep the "strict end" UI sync (do not remove cards from DOM)
+        const winner = snap.rw as any;
+        if (winner === "p1" || winner === "p2") {
+          const loser: "p1" | "p2" = winner === "p1" ? "p2" : "p1";
+          for (const u of snap.units.values()) {
+            if ((u as any)?.side !== loser) continue;
+            (u as any).alive = false;
+            (u as any).hp = 0;
+            (u as any).shield = 0;
+          }
+        }
       }
+
+      parserIdxRef.current += 1;
     }
 
-    const sigLeft = (cf1?.map((x) => x?.id).join("|") || c1.join("|")) ?? "";
-    const sigRight = (cf2?.map((x) => x?.id).join("|") || c2.join("|")) ?? "";
-    const revealSig = [rr, `${sigLeft}::${sigRight}`].join("::");
+    parserLastTRef.current = t;
+
+    const sigLeft = (snap.cf1?.map((x) => x?.id).join("|") || snap.c1.join("|")) ?? "";
+    const sigRight = (snap.cf2?.map((x) => x?.id).join("|") || snap.c2.join("|")) ?? "";
+    const revealSig = [snap.rr, `${sigLeft}::${sigRight}`].join("::");
 
     if (revealSig !== prevRevealSigRef.current) {
       const hasSomething =
-        (cf1?.length || 0) > 0 || (cf2?.length || 0) > 0 || (c1?.length || 0) > 0 || (c2?.length || 0) > 0;
+        (snap.cf1?.length || 0) > 0 ||
+        (snap.cf2?.length || 0) > 0 ||
+        (snap.c1?.length || 0) > 0 ||
+        (snap.c2?.length || 0) > 0;
       if (hasSomething) setRevealTick((x) => x + 1);
       prevRevealSigRef.current = revealSig;
     }
 
     const prevS1 = prevScoreRef.current.p1;
     const prevS2 = prevScoreRef.current.p2;
-    if (s1 != null && prevS1 != null && s1 !== prevS1) {
+    if (snap.s1 != null && prevS1 != null && snap.s1 !== prevS1) {
       setP1Hit(true);
       window.setTimeout(() => setP1Hit(false), 220);
     }
-    if (s2 != null && prevS2 != null && s2 !== prevS2) {
+    if (snap.s2 != null && prevS2 != null && snap.s2 !== prevS2) {
       setP2Hit(true);
       window.setTimeout(() => setP2Hit(false), 220);
     }
-    prevScoreRef.current = { p1: s1, p2: s2 };
+    prevScoreRef.current = { p1: snap.s1, p2: snap.s2 };
 
-    setRoundN(rr);
-    setP1Cards(c1);
-    setP2Cards(c2);
-    setP1CardsFull(cf1);
-    setP2CardsFull(cf2);
-    setP1Score(s1);
-    setP2Score(s2);
-    setRoundWinner(rw);
+    setRoundN(snap.rr);
+    setP1Cards(snap.c1);
+    setP2Cards(snap.c2);
+    setP1CardsFull(snap.cf1);
+    setP2CardsFull(snap.cf2);
+    setP1Score(snap.s1);
+    setP2Score(snap.s2);
+    setRoundWinner(snap.rw);
 
-    setActiveInstance(active);
-    setP1UnitsBySlot(slotMapP1);
-    setP2UnitsBySlot(slotMapP2);
+    setActiveInstance(snap.active);
+    setP1UnitsBySlot({ ...snap.slotMapP1 });
+    setP2UnitsBySlot({ ...snap.slotMapP2 });
 
     setLayoutTick((x) => x + 1);
   }, [t, timeline]);
@@ -1266,80 +1343,80 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   }, [t, durationSec]);
 
   const phase = useMemo(() => {
-    let hasReveal = false;
-    let hasScore = false;
-    let hasEnd = false;
+  let hasReveal = false;
+  let hasScore = false;
+  let hasEnd = false;
 
-    for (const e of timeline) {
-      if ((e as any).round !== roundN) continue;
-      if (e.t > t) break;
-      if (e.type === "reveal") hasReveal = true;
-      if (e.type === "score") hasScore = true;
-      if (e.type === "round_end") hasEnd = true;
-    }
+  for (const e of timeline) {
+    if ((e as any).round !== roundN) continue;
+    if (e.t > t) break;
+    if (e.type === "reveal") hasReveal = true;
+    if (e.type === "score") hasScore = true;
+    if (e.type === "round_end") hasEnd = true;
+  }
 
-    if (hasEnd) return "end";
-    if (hasScore) return "score";
-    if (hasReveal) return "reveal";
-    return "start";
-  }, [timeline, roundN, t]);
+  // Strict end: do NOT enter end phase while both sides still have living units on the board.
+  // This prevents "round ended" UI when the timeline has round_end slightly earlier than final deaths.
+  if (hasEnd && !anySideHasAlive) return "end";
+  if (hasScore) return "score";
+  if (hasReveal) return "reveal";
+  return "start";
+}, [timeline, roundN, t, anySideHasAlive]);
 
   useEffect(() => {
-    // Hide immediately when leaving end phase (prevents banner sticking into next round)
-    if (phase === "end") return;
+  return () => {
     if (roundBannerTimeoutRef.current != null) {
       window.clearTimeout(roundBannerTimeoutRef.current);
       roundBannerTimeoutRef.current = null;
     }
-    setRoundBanner((b) => (b.visible ? { ...b, visible: false } : b));
-  }, [phase]);
+  };
+}, []);
 
-  useEffect(() => {
-    // Banner must be driven strictly by the timeline round_end event (not derived phase/roundWinner),
-    // otherwise it can "skip" or appear at the wrong moment due to state ordering.
-    if (revealTick <= 0) return; // anti-flash on initial mount / before the battle is revealed
+useEffect(() => {
+  // Anti-flash: do not show before the battle actually revealed something.
+  if (revealTick <= 0) return;
 
-    let lastEnd: any = null;
-    for (let i = timeline.length - 1; i >= 0; i--) {
-      const e: any = timeline[i];
-      if (e?.type === "round_end" && typeof e.t === "number" && e.t <= t) {
-        lastEnd = e;
-        break;
-      }
-    }
-    if (!lastEnd) return;
+  // Strict end: do not show while both sides still have living units.
+  if (anySideHasAlive) return;
 
-    const r = (lastEnd.round ?? roundN) as any;
-    const w = (lastEnd.winner ?? null) as any;
-    if (!w) return;
+  // Find the last round_end that already happened (e.t <= t).
+  let lastEnd: TimelineEvent | null = null;
+  for (const e of timeline) {
+    if (e.t > t) break;
+    if (e.type === "round_end") lastEnd = e;
+  }
+  if (!lastEnd) return;
 
-    const sig = `${r}:${w}:${lastEnd.t}`;
-    if (sig === prevEndSigRef.current) return;
-    prevEndSigRef.current = sig;
+  const endRound = Number((lastEnd as any).round ?? roundN);
+  const winner = String((lastEnd as any).winner ?? "draw");
+  const endT = Number((lastEnd as any).t ?? 0);
 
-    let tone: "p1" | "p2" | "draw" = "draw";
-    let text = "DRAW";
+  const sig = `${endRound}:${winner}:${endT}`;
+  if (sig === prevEndSigRef.current) return;
+  prevEndSigRef.current = sig;
 
-    if (w === "draw") {
-      tone = "draw";
-      text = "DRAW";
-    } else if (w === youSide) {
-      tone = "p1";
-      text = "YOU WIN ROUND";
-    } else {
-      tone = "p2";
-      text = "ENEMY WIN ROUND";
-    }
+  let tone: "p1" | "p2" | "draw" = "draw";
+  let text = "DRAW";
 
-    setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
+  if (winner === "draw") {
+    tone = "draw";
+    text = "DRAW";
+  } else if (winner === youSide) {
+    tone = "p1";
+    text = "YOU WIN ROUND";
+  } else {
+    tone = "p2";
+    text = "ENEMY WIN ROUND";
+  }
 
-    // Reset any previous timeout and always schedule hide (do NOT tie this to every tick elsewhere)
-    if (roundBannerTimeoutRef.current != null) window.clearTimeout(roundBannerTimeoutRef.current);
-    roundBannerTimeoutRef.current = window.setTimeout(() => {
-      setRoundBanner((b) => ({ ...b, visible: false }));
-      roundBannerTimeoutRef.current = null;
-    }, 900);
-  }, [t, timeline, youSide, revealTick, roundN]);
+  setRoundBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
+
+  if (roundBannerTimeoutRef.current != null) window.clearTimeout(roundBannerTimeoutRef.current);
+  roundBannerTimeoutRef.current = window.setTimeout(() => {
+    setRoundBanner((b) => ({ ...b, visible: false }));
+    roundBannerTimeoutRef.current = null;
+  }, 900);
+}, [timeline, t, roundN, revealTick, anySideHasAlive, youSide]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
@@ -3089,30 +3166,22 @@ const hpPct = useMemo(() => {
         }
         .corner-info .line b { font-weight: 900; }
 
-        .round-banner-wrap {
-          position: absolute;
-          inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 7;
-          pointer-events: none;
-        }
-
         .round-banner {
-          position: relative;
+          position: absolute;
+          left: 50%;
+          top: 52%;
+          transform: translate(-50%, -50%);
           padding: 12px 14px;
           border-radius: 18px;
           border: 1px solid rgba(255,255,255,0.20);
           background: rgba(0,0,0,0.42);
           backdrop-filter: blur(10px);
-          width: calc(100% - 28px);
-          max-width: 520px;
-          box-sizing: border-box;
+          min-width: min(520px, calc(100% - 28px));
           text-align: center;
           box-shadow: 0 12px 40px rgba(0,0,0,0.35);
           animation: bannerIn 320ms var(--ease-out) both;
           pointer-events: none;
+          z-index: 7;
         }
         .arena .round-banner { z-index: 7; }
         .round-banner::before {
@@ -3443,7 +3512,8 @@ const hpPct = useMemo(() => {
           .bb-card { max-width: 110px; border-radius: 16px; }
           .bb-face { border-radius: 16px; }
           .bb-card-inner { border-radius: 16px; }
-                    .round-banner .sub { font-size: 16px; }
+          .round-banner { top: 54%; }
+          .round-banner .sub { font-size: 16px; }
           .bb-bar { height: 6px; }
 
 .map-portrait-ring { width: var(--ringSize); height: var(--ringSize); }
@@ -3847,14 +3917,13 @@ const hpPct = useMemo(() => {
           <MapPortrait where="bottom" tone="you" name={youName} avatar={youAvatar} hp={bottomTeam.hp} hpMax={bottomTeam.hpMax} score={scored ? bottomScore : null} isHit={bottomHit} />
 
           {roundBanner.visible && (
-            <div className="round-banner-wrap" aria-hidden="true">
-              <div
-                key={roundBanner.tick}
-                className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
-              >
-                <div className="title">ROUND END</div>
-                <div className="sub">{roundBanner.text}</div>
-              </div>
+            <div
+              key={roundBanner.tick}
+              className={["round-banner", roundBanner.tone === "p1" ? "tone-p1" : roundBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
+              style={roundBannerPos ? { left: roundBannerPos.x, top: roundBannerPos.y } : undefined}
+            >
+              <div className="title">ROUND END</div>
+              <div className="sub">{roundBanner.text}</div>
             </div>
           )}
 
