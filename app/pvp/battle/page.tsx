@@ -1297,8 +1297,12 @@ const x = (r.left - arenaRect.left) + r.width / 2;
   useEffect(() => {
     // Banner must be driven strictly by the timeline round_end event (not derived phase/roundWinner),
     // otherwise it can "skip" or appear at the wrong moment due to state ordering.
-    if (revealTick <= 0) return; // anti-flash on initial mount / before the battle is revealed
+    //
+    // Anti-flash: do not show before reveal (phase "start"). We intentionally do NOT gate on revealTick
+    // because revealTick can be 0 in some edge cases (e.g. empty revealSig) while the round still ends.
+    if (phase === "start") return;
 
+    // Find the most recent round_end we have already reached in time.
     let lastEnd: any = null;
     for (let i = timeline.length - 1; i >= 0; i--) {
       const e: any = timeline[i];
@@ -1310,7 +1314,41 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     if (!lastEnd) return;
 
     const r = (lastEnd.round ?? roundN) as any;
-    const w = (lastEnd.winner ?? null) as any;
+
+    // Winner field can be "p1" | "p2" | "draw", but some logs may store user_id.
+    let w: any =
+      (lastEnd.winner ?? (lastEnd as any).win ?? (lastEnd as any).w ?? null) ??
+      null;
+
+    // Fallback to roundWinner state (still only triggers on round_end).
+    if (!w && roundWinner) w = roundWinner;
+
+    // Fallback: derive from the latest score event up to this time (still only triggers on round_end).
+    if (!w) {
+      let lastScore: any = null;
+      for (let i = timeline.length - 1; i >= 0; i--) {
+        const e: any = timeline[i];
+        if (e?.type === "score" && typeof e.t === "number" && e.t <= (lastEnd.t ?? t)) {
+          lastScore = e;
+          break;
+        }
+      }
+      if (lastScore) {
+        const s1 = Number((lastScore as any).p1 ?? 0);
+        const s2 = Number((lastScore as any).p2 ?? 0);
+        if (Number.isFinite(s1) && Number.isFinite(s2)) {
+          if (s1 === s2) w = "draw";
+          else w = s1 > s2 ? "p1" : "p2";
+        }
+      }
+    }
+
+    // Map winner=user_id → side.
+    if (w && match) {
+      if (w === match.p1_user_id) w = "p1";
+      if (w === match.p2_user_id) w = "p2";
+    }
+
     if (!w) return;
 
     const sig = `${r}:${w}:${lastEnd.t}`;
@@ -1339,7 +1377,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       setRoundBanner((b) => ({ ...b, visible: false }));
       roundBannerTimeoutRef.current = null;
     }, 900);
-  }, [t, timeline, youSide, revealTick, roundN]);
+  }, [t, timeline, youSide, phase, roundN, roundWinner, match]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
