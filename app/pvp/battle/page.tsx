@@ -1282,26 +1282,24 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     if (hasScore) return "score";
     if (hasReveal) return "reveal";
     return "start";
-  }, [timeline, roundN, t]);
-
-  
-  useEffect(() => {
+  }, [timeline, roundN, t]);useEffect(() => {
     // Banner must be driven strictly by the timeline round_end event (not derived phase/roundWinner),
     // otherwise it can "skip" or appear at the wrong moment due to state ordering.
     //
-    // Anti-flash: do not show before reveal (phase "start"). We intentionally do NOT gate on revealTick
-    // because revealTick can be 0 in some edge cases (e.g. empty revealSig) while the round still ends.
-    // Find the most recent round_end we have already reached in time.
+    // Anti-flash: do not show until REVEAL for THIS round has been reached.
+    let hasReveal = false;
     let lastEnd: any = null;
-    for (let i = timeline.length - 1; i >= 0; i--) {
-      const e: any = timeline[i];
-      if (e?.type === "round_end" && typeof e.t === "number" && e.t <= t) {
-        lastEnd = e;
-        break;
-      }
+
+    for (const ev of timeline as any[]) {
+      const e: any = ev;
+      if ((e as any).round !== roundN) continue;
+      if (typeof e.t === "number" && e.t > t) break;
+      if (e.type === "reveal") hasReveal = true;
+      if (e.type === "round_end") lastEnd = e;
     }
+
+    if (!hasReveal) return;
     if (!lastEnd) return;
-    if (!(t > 0)) return;
 
     const r = (lastEnd.round ?? roundN) as any;
 
@@ -1313,11 +1311,12 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     // Fallback to roundWinner state (still only triggers on round_end).
     if (!w && roundWinner) w = roundWinner;
 
-    // Fallback: derive from the latest score event up to this time (still only triggers on round_end).
+    // Fallback: derive from the latest score event in THIS round up to this time (still only triggers on round_end).
     if (!w) {
       let lastScore: any = null;
       for (let i = timeline.length - 1; i >= 0; i--) {
-        const e: any = timeline[i];
+        const e: any = (timeline as any[])[i];
+        if ((e as any).round !== roundN) continue;
         if (e?.type === "score" && typeof e.t === "number" && e.t <= (lastEnd.t ?? t)) {
           lastScore = e;
           break;
@@ -1367,7 +1366,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       setRoundBanner((b) => ({ ...b, visible: false }));
       roundBannerTimeoutRef.current = null;
     }, 900);
-  }, [t, timeline, youSide, phase, roundN, roundWinner, match]);
+  }, [t, timeline, youSide, roundN, roundWinner, match]);
 
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
