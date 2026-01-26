@@ -584,19 +584,75 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     by: number;
   }>({ show: false, ax: 0, ay: 0, bx: 0, by: 0 });
 
-  const attackArrowTimeoutRef = useRef<number | null>(null);
+  // --- Animated SVG "Hearthstone-like" attack indicator overlay ---
+  // Key: all animation is via stroke-dashoffset, opacity, stroke-width, drop-shadow, endpoint dot with pulse
+  // NO transforms, NO rotate, strictly iOS-safe
 
-  // When attackCue changes, compute arrow endpoints relative to the arena and show briefly.
+  type ArrowAnimState = {
+    opacity: number;      // overall fade
+    dashOffset: number;   // for stroke-dashoffset line-draw
+    coreOffset: number;   // for core path dash animation (optional, for multi-stroke)
+    dotPulse: number;     // 1.0=base, up to e.g. 1.20 for endpoint impact "pop"
+    dotAlpha: number;     // endpoint dot opacity pulse (0..1)
+    length?: number;
+  };
+
+  const [arrowAnim, setArrowAnim] = useState<ArrowAnimState>({
+    opacity: 0,
+    dashOffset: 260,
+    coreOffset: 260,
+    dotPulse: 0.8,
+    dotAlpha: 0,
+    length: undefined,
+  });
+
+  const attackArrowTimeoutRef = useRef<number | null>(null);
+  const arrowAnimFadeRef = useRef<number | null>(null);
+  const arrowAnimFrameRef = useRef<number | null>(null);
+
+  /**
+   * Calculate n-point cubic (or straight) attack curves in arena coordinates,
+   * returning {d, x2, y2, length}. All points in arena local space.
+   * For now: always a single quadratic curve, "Hearthstone style".
+   */
+  function calcAttackCurves(ax: number, ay: number, bx: number, by: number) {
+    // Compute control for a gentle curve
+    const dx = bx - ax, dy = by - ay;
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    // Outward (perp) sweep for curve:
+    const norm = Math.sqrt(dx*dx + dy*dy) || 1;
+    const px = -dy/norm, py = dx/norm;
+    const sweep = Math.min(48, 0.26 * norm);
+    // Upwards for P1, Down for P2 direction (for more clarity)
+    const sign = ay < by ? -1 : 1;
+    const c1x = mx + px * sweep * sign;
+    const c1y = my + py * sweep * sign;
+    // SVG Path: quadratic for iOS safety
+    const d = `M${ax},${ay} Q${c1x},${c1y} ${bx},${by}`;
+    // Approximate length by control polyline
+    const l = Math.sqrt((c1x-ax)**2+(c1y-ay)**2) + Math.sqrt((bx-c1x)**2+(by-c1y)**2);
+    return [{ d, x2: bx, y2: by, length: l }];
+  }
+
+  // When attackCue changes, compute, show arrow with animated path+impact
   useEffect(() => {
     if (!attackCue) return;
 
-    // Clear any previous timer
+    // Cleanup
     if (attackArrowTimeoutRef.current !== null) {
       clearTimeout(attackArrowTimeoutRef.current);
       attackArrowTimeoutRef.current = null;
     }
+    if (arrowAnimFadeRef.current) {
+      clearTimeout(arrowAnimFadeRef.current);
+      arrowAnimFadeRef.current = null;
+    }
+    if (arrowAnimFrameRef.current) {
+      cancelAnimationFrame(arrowAnimFrameRef.current);
+      arrowAnimFrameRef.current = null;
+    }
 
-    // Delay to next tick to ensure DOM nodes exist for this frame
+    // Sync on DOM
     const timer = window.setTimeout(() => {
       const arenaEl = arenaRef.current;
       const fromEl = unitElByIdRef.current[attackCue.fromId];
@@ -614,18 +670,99 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
       setAttackArrow({ show: true, ax, ay, bx, by });
 
-      // Hide after a short moment (Hearthstone-like readability)
+      // compute initial path length so dasharray matches perfectly
+      const curves = calcAttackCurves(ax, ay, bx, by);
+      const pathLen = curves[0]?.length ?? 210;
+
+      // Animation timings
+      const pathDrawDuration = 320;  // ms (curve grows over this period)
+      const dotPulseIn = 120;
+      const dotPulseStay = 96;
+      const dotPulseTotal = 320;
+      const fadeOutMs = 135;
+      const arrowDuration = pathDrawDuration + dotPulseTotal + fadeOutMs + 40;  // full arrow overlay lifetime
+
+      let cancelled = false;
+      let startTime = performance.now();
+
+      const animate = (now: number) => {
+        const t = now - startTime;
+        // Path "draw": stroke-dashoffset shrinks from pathLen to zero with ease
+        let doff = pathLen;
+        if (t < pathDrawDuration) {
+          // ease-out (quartic)
+          const p = Math.min(1, t/pathDrawDuration);
+          doff = pathLen * (1 - 1 + Math.pow(1-p, 1.9));
+        } else {
+          doff = 0;
+        }
+
+        // Core path dash can match or slightly lag for a shimmer (+24px)
+        let coreOffset = Math.max(0, doff - 15);
+
+        // Opacity: fade out at end only
+        let opacity = 1;
+        if (t > arrowDuration - fadeOutMs) {
+          opacity = Math.max(0, (arrowDuration-t) / fadeOutMs);
+        }
+
+        // Impact-pulse: endpoint dot pops at end-of-path
+        let dotPulse = 0.88;
+        let dotAlpha = 0.0;
+        if (t > pathDrawDuration) {
+          const pt = t-pathDrawDuration;
+          if (pt < dotPulseIn) {
+            dotPulse = 0.88 + 0.29 * (pt/dotPulseIn); // scales to ~1.17
+            dotAlpha = 0.47 + 0.36 * (pt/dotPulseIn);
+          } else if (pt < dotPulseIn+dotPulseStay) {
+            dotPulse = 1.17;
+            dotAlpha = 0.83;
+          } else if (pt < dotPulseTotal) {
+            // fade out
+            dotPulse = 1.17 - 0.20*((pt-dotPulseIn-dotPulseStay)/(dotPulseTotal-dotPulseIn-dotPulseStay));
+            dotAlpha = 0.83 - 0.7*((pt-dotPulseIn-dotPulseStay)/(dotPulseTotal-dotPulseIn-dotPulseStay));
+          }
+        }
+
+        setArrowAnim({
+          opacity,
+          dashOffset: doff,
+          coreOffset,
+          dotPulse,
+          dotAlpha,
+          length: pathLen,
+        });
+
+        if (t < arrowDuration && !cancelled) {
+          arrowAnimFrameRef.current = requestAnimationFrame(animate);
+        } else {
+          setAttackArrow(a => ({ ...a, show: false }));
+        }
+      };
+
+      arrowAnimFrameRef.current = requestAnimationFrame(animate);
+
+      // Final forced cleanup at lifetime expiry
       attackArrowTimeoutRef.current = window.setTimeout(() => {
+        cancelled = true;
+        setArrowAnim(a => ({ ...a, opacity: 0 }));
         setAttackArrow(a => ({ ...a, show: false }));
-        attackArrowTimeoutRef.current = null;
-      }, 300);
+        arrowAnimFrameRef.current && cancelAnimationFrame(arrowAnimFrameRef.current);
+      }, arrowDuration + 50);
+
     }, 0);
 
     return () => {
       clearTimeout(timer);
+      if (attackArrowTimeoutRef.current) clearTimeout(attackArrowTimeoutRef.current);
+      if (arrowAnimFadeRef.current) clearTimeout(arrowAnimFadeRef.current);
+      if (arrowAnimFrameRef.current) cancelAnimationFrame(arrowAnimFrameRef.current);
     };
   }, [attackCue?.tick]);
 
+  // ===============================
+  // ATTACK ARROW SVG OVERLAY
+  // ===============================
   function AttackArrowOverlay() {
     if (!attackArrow.show) return null;
 
@@ -635,23 +772,32 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     const vw = arenaRect?.width ?? Math.max(ax, bx) + 64;
     const vh = arenaRect?.height ?? Math.max(ay, by) + 64;
 
-    const arrowColor = "#e1bc29";
-    const arrowWidth = 7;
-    const headLength = 22;
+    // Curves config and render shape
+    const curves = calcAttackCurves(ax, ay, bx, by);
+    const pathLen = curves[0]?.length ?? 210;
 
-    const dx = bx - ax;
-    const dy = by - ay;
-    const length = Math.sqrt(dx * dx + dy * dy);
-    if (!(length > 2)) return null;
+    // Visuals (Hearthstone like)
+    const glowColor = "#ffe16b";
+    const coreColor = "#ffe16b";
+    const coreStrokeWidth = 6.4;
+    const glowStrokeWidth = 13.5;
+    const shadowColor = "#ffebab";
+    const shadowFilter = "url(#hstone-arrow-glow)";
+    const dashArray = pathLen;
 
-    const nx = dx / length;
-    const ny = dy / length;
+    // Impact endpoint dot
+    const impactDotFill = "#fffbe9";
+    const impactDotStroke = "#ffd22d";
+    const impactDotR0 = 9;
+    const impactDotR1 = 21;
+    const impactDotStrokeWidth = 2.3;
 
-    const hx1 = bx - nx * headLength + ny * (headLength * 0.36);
-    const hy1 = by - ny * headLength - nx * (headLength * 0.36);
-
-    const hx2 = bx - nx * headLength - ny * (headLength * 0.36);
-    const hy2 = by - ny * headLength + nx * (headLength * 0.36);
+    // Animation from state
+    const dashOffset = arrowAnim.dashOffset;
+    const coreOffset = arrowAnim.coreOffset;
+    const arrowOpacity = arrowAnim.opacity;
+    const dotPulse = arrowAnim.dotPulse;
+    const dotAlpha = arrowAnim.dotAlpha;
 
     return (
       <svg
@@ -662,27 +808,73 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
           width: "100%",
           height: "100%",
           pointerEvents: "none",
-          zIndex: 6, // above cards, below overlays
+          zIndex: 6,
+          transition: "none"
         }}
         width="100%"
         height="100%"
         viewBox={`0 0 ${vw} ${vh}`}
+        className="atk-arrow-overlay"
       >
-        <line
-          x1={ax}
-          y1={ay}
-          x2={bx}
-          y2={by}
-          stroke={arrowColor}
-          strokeWidth={arrowWidth}
-          strokeLinecap="round"
-          opacity={0.92}
-        />
-        <polygon
-          points={`${bx},${by} ${hx1},${hy1} ${hx2},${hy2}`}
-          fill={arrowColor}
-          opacity={0.92}
-        />
+        <defs>
+          <filter id="hstone-arrow-glow" x="-38%" y="-38%" width="190%" height="190%">
+            {/* Big gold halo, then subtle white outer ring */}
+            <feDropShadow dx="0" dy="2" stdDeviation="8.6" floodColor={glowColor} floodOpacity="0.92"/>
+            <feDropShadow dx="0" dy="0" stdDeviation="19" floodColor="#fffdf4" floodOpacity="0.29"/>
+          </filter>
+          <filter id="atk-dot-glow" x="-65%" y="-65%" width="240%" height="240%">
+            <feDropShadow dx="0" dy="2" stdDeviation="9" floodColor="#ffe16b" floodOpacity="0.64"/>
+            <feDropShadow dx="0" dy="0" stdDeviation="13" floodColor="#ffeed7" floodOpacity="0.29"/>
+          </filter>
+        </defs>
+        {curves.map((c, i) => (
+          <g key={i}>
+            {/* Glow path */}
+            <path
+              d={c.d}
+              stroke={glowColor}
+              strokeWidth={glowStrokeWidth}
+              opacity={0.83 * arrowOpacity}
+              fill="none"
+              strokeLinecap="round"
+              filter={shadowFilter}
+              style={{
+                strokeDasharray: dashArray,
+                strokeDashoffset: dashOffset,
+                transition: "none"
+              }}
+            />
+            {/* Core path */}
+            <path
+              d={c.d}
+              stroke={coreColor}
+              strokeWidth={coreStrokeWidth}
+              opacity={arrowOpacity}
+              fill="none"
+              strokeLinecap="round"
+              style={{
+                strokeDasharray: dashArray,
+                strokeDashoffset: coreOffset,
+                filter: "none",
+                transition: "none"
+              }}
+            />
+            {/* Impact endpoint "dot", pulsing */}
+            <circle
+              cx={c.x2}
+              cy={c.y2}
+              r={impactDotR0 + (impactDotR1-impactDotR0)*dotPulse}
+              fill={impactDotFill}
+              stroke={impactDotStroke}
+              strokeWidth={impactDotStrokeWidth}
+              opacity={dotAlpha * arrowOpacity}
+              filter="url(#atk-dot-glow)"
+              style={{
+                transition: "none"
+              }}
+            />
+          </g>
+        ))}
       </svg>
     );
   }
@@ -1665,16 +1857,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     // Keep chronological order (oldest -> newest) since we scanned backwards.
     return arr.reverse();
   }, [timeline, t]);
-
-
-const arrowAttacks = useMemo(() => {
-  // Visual-only: show attack arrow briefly so it doesn't "stick" between rounds.
-  const windowSec = 0.35;
-  const fromT = Math.max(0, t - windowSec);
-  return (recentAttacks || []).filter((a) => a.t >= fromT && a.t <= t).slice(-1);
-}, [recentAttacks, t]);
-
-
   // Step 2 (Readability): short-lived 2D focus for the last attack (attacker -> target)
   const attackFocus = useMemo(() => {
     const last = recentAttacks && recentAttacks.length ? recentAttacks[recentAttacks.length - 1] : null;
@@ -1772,52 +1954,6 @@ const arrowAttacks = useMemo(() => {
     }
     return set;
   }, [timeline, t]);
-
-  function getCenterInArena(instanceId: string) {
-    const arenaEl = arenaRef.current;
-    const el = unitElByIdRef.current[instanceId];
-    if (!arenaEl || !el) return null;
-
-    const aRect = arenaEl.getBoundingClientRect();
-    const r = el.getBoundingClientRect();
-
-    return {
-      x: r.left + r.width / 2 - aRect.left,
-      y: r.top + r.height / 2 - aRect.top,
-    };
-  }
-
-  const attackCurves = useMemo(() => {
-    const arenaEl = arenaRef.current;
-    if (!arenaEl) return [];
-
-    const curves: Array<{ key: string; d: string; fromId: string; toId: string }> = [];
-
-    for (const atk of arrowAttacks) {
-      const p1 = getCenterInArena(atk.fromId);
-      const p2 = getCenterInArena(atk.toId);
-      if (!p1 || !p2) continue;
-
-      const mx = (p1.x + p2.x) / 2;
-      const my = (p1.y + p2.y) / 2;
-      const dx = p2.x - p1.x;
-      const dy = p2.y - p1.y;
-      const len = Math.max(1, Math.hypot(dx, dy));
-      const nx = -dy / len;
-      const ny = dx / len;
-
-      const bend = clamp(len * 0.1, 14, 46);
-      const cx = mx + nx * bend;
-      const cy = my + ny * bend;
-
-      const d = `M ${p1.x} ${p1.y} Q ${cx} ${cy} ${p2.x} ${p2.y}`;
-      curves.push({ key: `${atk.t}:${atk.fromId}:${atk.toId}`, d, fromId: atk.fromId, toId: atk.toId });
-    }
-
-    return curves;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arrowAttacks, layoutTick]);
-
   function TagPill({ label }: { label: string }) {
     return <span className="bb-tag">{label}</span>;
   }
@@ -4011,21 +4147,6 @@ const hpPct = useMemo(() => {
               <div className="dbg-cross" style={{ left: debugCover.botX, top: debugCover.botY }} />
             </>
           )}
-          <svg className="atk-overlay" width="100%" height="100%">
-            <defs>
-              <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.85)" />
-              </marker>
-            </defs>
-
-            {attackCurves.map((c) => (
-              <g key={c.key}>
-                <path className="atk-path-glow" d={c.d} />
-                <path className="atk-path-core" d={c.d} />
-              </g>
-            ))}
-          </svg>
-
           <div className="corner-info">
             <div className="h1">
               РАУНД{" "}
