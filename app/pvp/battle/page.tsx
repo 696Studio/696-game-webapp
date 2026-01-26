@@ -1972,7 +1972,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const renderUnit = activeUnit;
 
     const [isVanish, setIsVanish] = useState(false);
-    const [isHidden, setIsHidden] = useState(false);
     const [deathStarted, setDeathStarted] = useState(false);
 
     const lastUnitRef = useRef<UnitView | null>(null);
@@ -1994,11 +1993,10 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     // Keep latest live unit snapshot so we can render death/vanish even if engine removes the unit immediately.
     useEffect(() => {
-      if (isHidden) return;
       if (!unit) return;
       setGhostUnit(unit);
       lastUnitRef.current = unit;
-    }, [unit, isHidden]);
+    }, [unit]);
 
     // Reset local FX state when the slot instance changes (new spawn / empty slot).
     useEffect(() => {
@@ -2008,7 +2006,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       deathStartedRef.current = false;
       setDeathStarted(false);
       setIsVanish(false);
-      setIsHidden(false);
       vanishStartedForRef.current = null;
 
       // clear any pending timers from previous unit
@@ -2016,8 +2013,13 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       vanishTimersRef.current = [];
 
       if (!instId) {
-        setGhostUnit(null);
-        lastUnitRef.current = null;
+        // IMPORTANT: never remove cards from DOM on death. Keep a ghost snapshot if it was a dead unit.
+        const last = lastUnitRef.current;
+        const lastWasDead = !!last && (!last.alive || (last.hp ?? 0) <= 0);
+        if (!lastWasDead) {
+          setGhostUnit(null);
+          lastUnitRef.current = null;
+        }
       } else if (unit) {
         setGhostUnit(unit);
         lastUnitRef.current = unit;
@@ -2035,15 +2037,6 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
       // 0..520ms: death atlas plays (flip + burst)
       // 520..860ms: vanish animation
-      vanishTimersRef.current.push(
-        window.setTimeout(() => setIsVanish(true), 520),
-      );
-      vanishTimersRef.current.push(
-        window.setTimeout(() => {
-          setIsHidden(true);
-          setGhostUnit(null);
-        }, 860),
-      );
     }, [instId, isDying, isDead]);
 
 const hpPct = useMemo(() => {
@@ -2088,7 +2081,6 @@ const hpPct = useMemo(() => {
     const isAttacker = !!renderUnit && !!attackFocus ? renderUnit.instanceId === (attackFocus as any).fromId : false;
     const isTarget = !!renderUnit && !!attackFocus ? renderUnit.instanceId === (attackFocus as any).toId : false;
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
-    if (isHidden) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
         <div
@@ -2133,8 +2125,8 @@ const hpPct = useMemo(() => {
               frameSrc={CARD_FRAME_SRC}
               showStats={false}
               atk={power ?? 0}
-              hp={unit?.hp ?? 0}
-              shield={unit?.shield ?? 0}
+              hp={renderUnit?.hp ?? 0}
+              shield={renderUnit?.shield ?? 0}
               showCorner={false}
             />
             {renderUnit && (
