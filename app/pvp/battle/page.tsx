@@ -1773,6 +1773,9 @@ const arrowAttacks = useMemo(() => {
     return set;
   }, [timeline, t]);
 
+  /**
+   * Возвращает центр DOM-элемента юнита в координатах арены.
+   */
   function getCenterInArena(instanceId: string) {
     const arenaEl = arenaRef.current;
     const el = unitElByIdRef.current[instanceId];
@@ -1787,31 +1790,61 @@ const arrowAttacks = useMemo(() => {
     };
   }
 
+  /**
+   * Генерируем сглаженную наподобие Hearthstone, но 2D-стрелку и ее SVG path через useMemo.
+   * Бирюзовая линия с glow, marker, stroke-dash анимациями, без изменениий layout.
+   */
   const attackCurves = useMemo(() => {
     const arenaEl = arenaRef.current;
     if (!arenaEl) return [];
 
-    const curves: Array<{ key: string; d: string; fromId: string; toId: string }> = [];
+    const curves: Array<{
+      key: string;
+      d: string;
+      fromId: string;
+      toId: string;
+      length: number;
+      p1: { x: number; y: number };
+      p2: { x: number; y: number };
+    }> = [];
 
     for (const atk of arrowAttacks) {
       const p1 = getCenterInArena(atk.fromId);
       const p2 = getCenterInArena(atk.toId);
       if (!p1 || !p2) continue;
 
-      const mx = (p1.x + p2.x) / 2;
-      const my = (p1.y + p2.y) / 2;
+      // Более плавная кривая для 2D "energy" стрелки: Catmull-Rom через Q (Quadratic Bezier)
       const dx = p2.x - p1.x;
       const dy = p2.y - p1.y;
       const len = Math.max(1, Math.hypot(dx, dy));
+
+      // Поворот нормали для изгиба: чем длиннее, тем больше изгиб, но capped
+      const bend = clamp(len * 0.17, 24, 66);
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
       const nx = -dy / len;
       const ny = dx / len;
 
-      const bend = clamp(len * 0.1, 14, 46);
-      const cx = mx + nx * bend;
-      const cy = my + ny * bend;
+      // Основная контрольная точка для мягкой дуги
+      const cx = midX + nx * bend;
+      const cy = midY + ny * bend;
 
+      // SVG path стрелки (Quadratic for smooth HS-style look)
       const d = `M ${p1.x} ${p1.y} Q ${cx} ${cy} ${p2.x} ${p2.y}`;
-      curves.push({ key: `${atk.t}:${atk.fromId}:${atk.toId}`, d, fromId: atk.fromId, toId: atk.toId });
+
+      // Для анимаций dash нам нужен длина пути — можем посчитать после рендера SVG через ref, 
+      // но для плавных эффектов можно прикинуть длину как len * 1.12 ± небольшой запас
+      const approxLen = len * 1.12 + Math.abs(bend) * 0.35;
+
+      curves.push({
+        key: `${atk.t}:${atk.fromId}:${atk.toId}`,
+        d,
+        fromId: atk.fromId,
+        toId: atk.toId,
+        length: approxLen,
+        p1,
+        p2,
+      });
     }
 
     return curves;
@@ -4011,19 +4044,116 @@ const hpPct = useMemo(() => {
               <div className="dbg-cross" style={{ left: debugCover.botX, top: debugCover.botY }} />
             </>
           )}
-          <svg className="atk-overlay" width="100%" height="100%">
+          <svg className="atk-overlay" width="100%" height="100%" style={{ pointerEvents: "none", position: "absolute", top: 0, left: 0, zIndex: 1 }}>
             <defs>
-              <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.85)" />
+              {/* Energy Cyan Glow */}
+              <filter id="atkGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor="#19F6FF" floodOpacity="0.45"/>
+                <feDropShadow dx="0" dy="0" stdDeviation="14" floodColor="#19F6FF" floodOpacity="0.18"/>
+              </filter>
+              {/* Cyan Arrow Head */}
+              <marker
+                id="atkArrowHead"
+                markerWidth="18"
+                markerHeight="18"
+                refX="15"
+                refY="9"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
+                <path
+                  d="M2,3 L16,9 L2,15 Q7,9 2,3"
+                  fill="#19F6FF"
+                  fillOpacity="0.82"
+                  filter="url(#atkGlow)"
+                />
+                <path
+                  d="M2,3 L16,9 L2,15 Q7,9 2,3"
+                  fill="none"
+                  stroke="#fff"
+                  strokeWidth="1"
+                  opacity="0.4"
+                />
               </marker>
             </defs>
 
             {attackCurves.map((c) => (
               <g key={c.key}>
-                <path className="atk-path-glow" d={c.d} />
-                <path className="atk-path-core" d={c.d} />
+                {/* Glow Layer */}
+                <path
+                  className="atk-path-glow"
+                  d={c.d}
+                  filter="url(#atkGlow)"
+                  stroke="#19F6FF"
+                  strokeWidth="18"
+                  opacity="0.15"
+                  fill="none"
+                  style={{
+                    transition: "opacity 0.24s cubic-bezier(.6,0,.7,1)",
+                  }}
+                />
+                {/* Energetic Core (main arrow) */}
+                <path
+                  className="atk-path-core"
+                  d={c.d}
+                  stroke="#19F6FF"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                  markerEnd="url(#atkArrowHead)"
+                  filter="url(#atkGlow)"
+                  style={{
+                    opacity: 0.87,
+                    strokeDasharray: "30 22 10 16 22 22 40 22 6 16 14 40",
+                    strokeDashoffset: `-${(performance.now() / 20) % 192}`,
+                    transition: "opacity 0.3s cubic-bezier(.57,0,.85,1)",
+                    animation: "atkFadeInOut 0.6s cubic-bezier(.61,0,.7,1) alternate both",
+                  }}
+                />
+                {/* Energetic accent stroke */}
+                <path
+                  className="atk-path-core"
+                  d={c.d}
+                  stroke="#fff"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                  markerEnd=""
+                  opacity="0.77"
+                  style={{
+                    mixBlendMode: "lighten",
+                    strokeDasharray: "12 15 20 23 38 11 19 8 6",
+                    strokeDashoffset: `-${(performance.now() / 14) % 152}`,
+                    transition: "opacity 0.32s cubic-bezier(.5,0,.7,1)",
+                    animation: "atkFadeInOut 0.6s cubic-bezier(.51,0,.8,1) alternate both",
+                  }}
+                />
               </g>
             ))}
+            {/* Anim keyframes in global css */}
+            <style>{`
+              @keyframes atkFadeInOut {
+                0% { opacity: 0; }
+                8% { opacity: 1; }
+                92% { opacity: 1; }
+                100% { opacity: 0; }
+              }
+              .atk-overlay {
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                z-index: 2;
+                overflow: visible;
+              }
+              .atk-path-glow {
+                will-change: opacity, filter;
+              }
+              .atk-path-core {
+                will-change: opacity, stroke-dashoffset;
+              }
+            `}</style>
           </svg>
 
           <div className="corner-info">
