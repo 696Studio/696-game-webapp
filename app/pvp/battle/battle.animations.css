@@ -546,74 +546,85 @@ z-index: 21;
     100% { transform: translate3d(0,0,0); }
   }
 }
+
 /* =========================================================
  STEP 2: TURN READABILITY (2D ONLY)
- Goal: make turn/target obvious without any motion.
- Rules: 2D only (outline/box-shadow/filter/opacity). NO transform/3D.
+ Make it obvious on iOS TG WebView.
+ No transform / no 3D.
  ========================================================= */
 
-/* Active card (whose turn) — strong neon outline + outer glow */
 .bb-card.is-active{
   position: relative;
-  z-index: 120;
-  outline: 3px solid rgba(120, 220, 255, 0.92);
+  z-index: 130;
+  outline: 3px solid rgba(120, 220, 255, 0.95);
   outline-offset: 3px;
   box-shadow:
-    0 0 0 4px rgba(120, 220, 255, 0.42),
-    0 0 28px 10px rgba(80, 200, 255, 0.78),
-    0 0 72px 18px rgba(120, 220, 255, 0.46);
-  filter: drop-shadow(0 6px 34px rgba(40,120,200,0.65));
+    0 0 0 4px rgba(120, 220, 255, 0.45),
+    0 0 34px 12px rgba(80, 200, 255, 0.85),
+    0 0 90px 24px rgba(120, 220, 255, 0.55);
+  filter: drop-shadow(0 10px 30px rgba(0,0,0,0.45));
 }
 
-/* Extra halo layer (helps when parent stacking/FX overlays hide the outline) */
-.bb-card.is-active::after{
-  content: "";
+/* Visible TURN badge (works even if glow is hard to see) */
+.bb-card.is-active::before{
+  content: "TURN";
   position: absolute;
-  inset: -10px;
-  border-radius: 18px;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: .12em;
+  color: rgba(10, 15, 20, 0.92);
+  background: rgba(120, 220, 255, 0.92);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.35);
   pointer-events: none;
-  opacity: 0.95;
-  box-shadow:
-    0 0 0 2px rgba(120, 220, 255, 0.18),
-    0 0 36px rgba(120, 220, 255, 0.38),
-    0 0 92px rgba(120, 220, 255, 0.24);
-  mix-blend-mode: screen;
 }
 
-/* Target card (who got hit / selected) — quick flash */
+/* Target flash (who got hit / selected) */
 .bb-card.is-target,
 .bb-card.is-attack-target{
   position: relative;
-  z-index: 125;
+  z-index: 135;
   animation: bb_target_flash_2d 340ms ease-out both;
 }
 
-.bb-card.is-target::after,
-.bb-card.is-attack-target::after{
-  content: "";
+/* Visible HIT badge */
+.bb-card.is-target::before,
+.bb-card.is-attack-target::before{
+  content: "HIT";
   position: absolute;
-  inset: -10px;
-  border-radius: 18px;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: .12em;
+  color: rgba(25, 10, 20, 0.92);
+  background: rgba(255, 80, 180, 0.92);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.35);
   pointer-events: none;
-  opacity: 0;
-  mix-blend-mode: screen;
-  animation: bb_target_halo_2d 340ms ease-out both;
+  animation: bb_target_badge_2d 340ms ease-out both;
 }
 
 @keyframes bb_target_flash_2d{
   0%{
-    outline: 2px solid rgba(255, 60, 180, 0.10);
+    outline: 2px solid rgba(255, 60, 180, 0.18);
     outline-offset: 2px;
     box-shadow: none;
     opacity: 1;
   }
   40%{
-    outline: 4px solid rgba(255, 60, 180, 0.90);
+    outline: 4px solid rgba(255, 60, 180, 0.95);
     outline-offset: 3px;
     box-shadow:
-      0 0 0 6px rgba(255, 60, 180, 0.40),
-      0 0 34px 14px rgba(255, 60, 180, 0.86),
-      0 0 86px 24px rgba(255, 135, 225, 0.62);
+      0 0 0 6px rgba(255, 60, 180, 0.45),
+      0 0 38px 14px rgba(255, 60, 180, 0.90),
+      0 0 96px 26px rgba(255, 135, 225, 0.65);
     opacity: 1;
   }
   100%{
@@ -624,14 +635,8 @@ z-index: 21;
   }
 }
 
-@keyframes bb_target_halo_2d{
+@keyframes bb_target_badge_2d{
   0%{ opacity: 0; }
-  45%{
-    opacity: 0.95;
-    box-shadow:
-      0 0 0 2px rgba(255, 60, 180, 0.22),
-      0 0 40px rgba(255, 60, 180, 0.44),
-      0 0 100px rgba(255, 135, 225, 0.30);
-  }
+  25%{ opacity: 1; }
   100%{ opacity: 0; }
 }
