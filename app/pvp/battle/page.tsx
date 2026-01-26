@@ -569,6 +569,124 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // the CardRoot (data-bb-slot element) via top/left.
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
+  
+  // Hearthstone-style attack arrow overlay inside arena (2D only).
+  // IMPORTANT: We do NOT depend on ref.current in hooks dependencies.
+  // Instead, we update an explicit cue (attackCue) when a new attack is processed.
+  const attackCueTickRef = useRef<number>(0);
+  const [attackCue, setAttackCue] = useState<{ fromId: string; toId: string; tick: number } | null>(null);
+
+  const [attackArrow, setAttackArrow] = useState<{
+    show: boolean;
+    ax: number;
+    ay: number;
+    bx: number;
+    by: number;
+  }>({ show: false, ax: 0, ay: 0, bx: 0, by: 0 });
+
+  const attackArrowTimeoutRef = useRef<number | null>(null);
+
+  // When attackCue changes, compute arrow endpoints relative to the arena and show briefly.
+  useEffect(() => {
+    if (!attackCue) return;
+
+    // Clear any previous timer
+    if (attackArrowTimeoutRef.current !== null) {
+      clearTimeout(attackArrowTimeoutRef.current);
+      attackArrowTimeoutRef.current = null;
+    }
+
+    // Delay to next tick to ensure DOM nodes exist for this frame
+    const timer = window.setTimeout(() => {
+      const arenaEl = arenaRef.current;
+      const fromEl = unitElByIdRef.current[attackCue.fromId];
+      const toEl = unitElByIdRef.current[attackCue.toId];
+      if (!arenaEl || !fromEl || !toEl) return;
+
+      const arenaRect = arenaEl.getBoundingClientRect();
+      const fromRect = fromEl.getBoundingClientRect();
+      const toRect = toEl.getBoundingClientRect();
+
+      const ax = fromRect.left + fromRect.width / 2 - arenaRect.left;
+      const ay = fromRect.top + fromRect.height / 2 - arenaRect.top;
+      const bx = toRect.left + toRect.width / 2 - arenaRect.left;
+      const by = toRect.top + toRect.height / 2 - arenaRect.top;
+
+      setAttackArrow({ show: true, ax, ay, bx, by });
+
+      // Hide after a short moment (Hearthstone-like readability)
+      attackArrowTimeoutRef.current = window.setTimeout(() => {
+        setAttackArrow(a => ({ ...a, show: false }));
+        attackArrowTimeoutRef.current = null;
+      }, 300);
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [attackCue?.tick]);
+
+  function AttackArrowOverlay() {
+    if (!attackArrow.show) return null;
+
+    const { ax, ay, bx, by } = attackArrow;
+
+    const arenaRect = arenaRef.current?.getBoundingClientRect();
+    const vw = arenaRect?.width ?? Math.max(ax, bx) + 64;
+    const vh = arenaRect?.height ?? Math.max(ay, by) + 64;
+
+    const arrowColor = "#e1bc29";
+    const arrowWidth = 7;
+    const headLength = 22;
+
+    const dx = bx - ax;
+    const dy = by - ay;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    if (!(length > 2)) return null;
+
+    const nx = dx / length;
+    const ny = dy / length;
+
+    const hx1 = bx - nx * headLength + ny * (headLength * 0.36);
+    const hy1 = by - ny * headLength - nx * (headLength * 0.36);
+
+    const hx2 = bx - nx * headLength - ny * (headLength * 0.36);
+    const hy2 = by - ny * headLength + nx * (headLength * 0.36);
+
+    return (
+      <svg
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: "100%",
+          height: "100%",
+          pointerEvents: "none",
+          zIndex: 6, // above cards, below overlays
+        }}
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${vw} ${vh}`}
+      >
+        <line
+          x1={ax}
+          y1={ay}
+          x2={bx}
+          y2={by}
+          stroke={arrowColor}
+          strokeWidth={arrowWidth}
+          strokeLinecap="round"
+          opacity={0.92}
+        />
+        <polygon
+          points={`${bx},${by} ${hx1},${hy1} ${hx2},${hy2}`}
+          fill={arrowColor}
+          opacity={0.92}
+        />
+      </svg>
+    );
+  }
+
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
     // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
@@ -1566,6 +1684,9 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const sig = `${last.t}:${last.fromId}:${last.toId}`;
     if (sig === lastAttackSigRef.current) return;
     lastAttackSigRef.current = sig;
+    // Update cue for 2D arrow overlay (separate from lunge animation).
+    attackCueTickRef.current += 1;
+    setAttackCue({ fromId: last.fromId, toId: last.toId, tick: attackCueTickRef.current });
     lungeByInstanceIds(last.fromId, last.toId);
   }, [recentAttacks, lungeByInstanceIds]);
 
@@ -3726,6 +3847,7 @@ const hpPct = useMemo(() => {
             </div>
           )}
 
+          <AttackArrowOverlay />
 
           {isGridDebug && debugCover && (
             <div
