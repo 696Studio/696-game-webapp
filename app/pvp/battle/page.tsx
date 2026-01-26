@@ -1666,6 +1666,15 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return arr.reverse();
   }, [timeline, t]);
 
+
+const arrowAttacks = useMemo(() => {
+  // Visual-only: show attack arrow briefly so it doesn't "stick" between rounds.
+  const windowSec = 0.35;
+  const fromT = Math.max(0, t - windowSec);
+  return (recentAttacks || []).filter((a) => a.t >= fromT && a.t <= t).slice(-1);
+}, [recentAttacks, t]);
+
+
   // Step 2 (Readability): short-lived 2D focus for the last attack (attacker -> target)
   const attackFocus = useMemo(() => {
     const last = recentAttacks && recentAttacks.length ? recentAttacks[recentAttacks.length - 1] : null;
@@ -1784,7 +1793,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     const curves: Array<{ key: string; d: string; fromId: string; toId: string }> = [];
 
-    for (const atk of recentAttacks) {
+    for (const atk of arrowAttacks) {
       const p1 = getCenterInArena(atk.fromId);
       const p2 = getCenterInArena(atk.toId);
       if (!p1 || !p2) continue;
@@ -1807,7 +1816,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     return curves;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recentAttacks, layoutTick]);
+  }, [arrowAttacks, layoutTick]);
 
   function TagPill({ label }: { label: string }) {
     return <span className="bb-tag">{label}</span>;
@@ -1972,6 +1981,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     const renderUnit = activeUnit;
 
     const [isVanish, setIsVanish] = useState(false);
+    const [isHidden, setIsHidden] = useState(false);
     const [deathStarted, setDeathStarted] = useState(false);
 
     const lastUnitRef = useRef<UnitView | null>(null);
@@ -1993,10 +2003,11 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
     // Keep latest live unit snapshot so we can render death/vanish even if engine removes the unit immediately.
     useEffect(() => {
+      if (isHidden) return;
       if (!unit) return;
       setGhostUnit(unit);
       lastUnitRef.current = unit;
-    }, [unit]);
+    }, [unit, isHidden]);
 
     // Reset local FX state when the slot instance changes (new spawn / empty slot).
     useEffect(() => {
@@ -2006,6 +2017,7 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       deathStartedRef.current = false;
       setDeathStarted(false);
       setIsVanish(false);
+      setIsHidden(false);
       vanishStartedForRef.current = null;
 
       // clear any pending timers from previous unit
@@ -2013,13 +2025,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       vanishTimersRef.current = [];
 
       if (!instId) {
-        // IMPORTANT: never remove cards from DOM on death. Keep a ghost snapshot if it was a dead unit.
-        const last = lastUnitRef.current;
-        const lastWasDead = !!last && (!last.alive || (last.hp ?? 0) <= 0);
-        if (!lastWasDead) {
-          setGhostUnit(null);
-          lastUnitRef.current = null;
-        }
+        setGhostUnit(null);
+        lastUnitRef.current = null;
       } else if (unit) {
         setGhostUnit(unit);
         lastUnitRef.current = unit;
@@ -2037,6 +2044,15 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
 
       // 0..520ms: death atlas plays (flip + burst)
       // 520..860ms: vanish animation
+      vanishTimersRef.current.push(
+        window.setTimeout(() => setIsVanish(true), 520),
+      );
+      vanishTimersRef.current.push(
+        window.setTimeout(() => {
+          setIsHidden(true);
+          setGhostUnit(null);
+        }, 860),
+      );
     }, [instId, isDying, isDead]);
 
 const hpPct = useMemo(() => {
@@ -2081,6 +2097,7 @@ const hpPct = useMemo(() => {
     const isAttacker = !!renderUnit && !!attackFocus ? renderUnit.instanceId === (attackFocus as any).fromId : false;
     const isTarget = !!renderUnit && !!attackFocus ? renderUnit.instanceId === (attackFocus as any).toId : false;
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
+    if (isHidden) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
         <div
@@ -2125,8 +2142,8 @@ const hpPct = useMemo(() => {
               frameSrc={CARD_FRAME_SRC}
               showStats={false}
               atk={power ?? 0}
-              hp={renderUnit?.hp ?? 0}
-              shield={renderUnit?.shield ?? 0}
+              hp={unit?.hp ?? 0}
+              shield={unit?.shield ?? 0}
               showCorner={false}
             />
             {renderUnit && (
