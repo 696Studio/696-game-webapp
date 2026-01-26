@@ -1548,6 +1548,16 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
     return arr.reverse();
   }, [timeline, t]);
 
+  // Step 2 (Readability): short-lived 2D focus for the last attack (attacker -> target)
+  const attackFocus = useMemo(() => {
+    const last = recentAttacks && recentAttacks.length ? recentAttacks[recentAttacks.length - 1] : null;
+    if (!last) return null;
+    const dt = Number(t) - Number((last as any).t ?? 0);
+    // Keep the highlight very short so it doesn't linger if playback ticks jump.
+    if (!(dt >= 0 && dt <= 0.70)) return null;
+    return last;
+  }, [recentAttacks, t]);
+
   // Trigger one lunge per new attack event (no TEST button).
   useEffect(() => {
     if (!recentAttacks || recentAttacks.length === 0) return;
@@ -1953,6 +1963,9 @@ const hpPct = useMemo(() => {
     }, [activeUnit?.instanceId]);
 
     const isActive = !!activeUnit && activeInstance ? activeUnit.instanceId === activeInstance : false;
+
+    const isAttacker = !!renderUnit && !!attackFocus ? renderUnit.instanceId === (attackFocus as any).fromId : false;
+    const isTarget = !!renderUnit && !!attackFocus ? renderUnit.instanceId === (attackFocus as any).toId : false;
     const isDyingUi = !!renderUnit && (deathStarted || isDying || isDead);
     if (isHidden) return null;
     return (
@@ -1979,6 +1992,8 @@ const hpPct = useMemo(() => {
           renderUnit ? "has-unit" : "",
           isDead ? "is-dead" : "",
           isActive ? "is-active" : "",
+          isAttacker ? "is-attacker" : "",
+          isTarget ? "is-target" : "",
           spawned ? "is-spawn" : "",
           dmg ? "is-damage" : "",
           isDying ? "is-dying" : "",
@@ -2164,6 +2179,28 @@ const hpPct = useMemo(() => {
             width: 2px;
             height: 2px;
           }
+
+
+        /* Step 2: readability highlights (2D only; safe for TG iOS WebView) */
+        .bb-card.is-attacker:not(.is-dead) {
+          box-shadow:
+            0 0 0 2px rgba(51, 241, 255, 0.32),
+            0 0 14px rgba(48, 230, 255, 0.22);
+        }
+        .bb-card.is-target:not(.is-dead) {
+          outline: 2px solid rgba(255, 80, 140, 0.38);
+          outline-offset: 2px;
+          box-shadow:
+            0 0 0 2px rgba(255, 80, 140, 0.22),
+            0 0 18px rgba(255, 80, 140, 0.18);
+          animation: bbTargetPulse 0.55s ease-in-out 1;
+        }
+        @keyframes bbTargetPulse {
+          0% { filter: brightness(1); }
+          50% { filter: brightness(1.12); }
+          100% { filter: brightness(1); }
+        }
+
         }
       `}</style>
         </div>
