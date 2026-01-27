@@ -2279,7 +2279,9 @@ const hpPct = useMemo(() => {
                   <>
                     <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
                     <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
-                      {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
+                      <span className="bb-dmgfloat-pill">
+                        {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
+                      </span>
                     </div>
                   </>
                 )}
@@ -3039,9 +3041,9 @@ const hpPct = useMemo(() => {
           100% { opacity: 0; }
         }
         @keyframes dmgFloat {
-          0%   { opacity: 0; transform: translate3d(-50%, -30%, 0) scale(0.96); }
-          20%  { opacity: 1; transform: translate3d(-50%, -46%, 0) scale(1.02); }
-          100% { opacity: 0; transform: translate3d(-50%, -70%, 0) scale(1.06); }
+          0%   { opacity: 0; transform: translateY(6px) scale(0.96); }
+          20%  { opacity: 1; transform: translateY(0px) scale(1.04); }
+          100% { opacity: 0; transform: translateY(-14px) scale(1.06); }
         }
         @keyframes deathFade {
           0%   { opacity: 0; }
@@ -3643,9 +3645,13 @@ const hpPct = useMemo(() => {
         }
         .bb-dmgfloat {
           position: absolute;
-          left: 50%;
-          top: 46%;
-          transform: translate(-50%, -50%);
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          pointer-events: none;
+        }
+        .bb-dmgfloat-pill {
           padding: 6px 10px;
           border-radius: 999px;
           border: 1px solid rgba(255,255,255,0.22);
