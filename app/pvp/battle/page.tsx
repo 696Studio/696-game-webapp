@@ -570,7 +570,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
   
-  // Hearthstone-style attack arrow overlay inside arena (2D only).
+  // Hearthstone-style turquoise energy attack arrow overlay inside arena (2D only).
   // IMPORTANT: We do NOT depend on ref.current in hooks dependencies.
   // Instead, we update an explicit cue (attackCue) when a new attack is processed.
   const attackCueTickRef = useRef<number>(0);
@@ -585,6 +585,24 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   }>({ show: false, ax: 0, ay: 0, bx: 0, by: 0 });
 
   const attackArrowTimeoutRef = useRef<number | null>(null);
+  const [arrowAnimTick, setArrowAnimTick] = useState(0);
+
+  // Animation loop for flow dashoffset and pulse effect
+  useEffect(() => {
+    if (!attackArrow.show) return;
+    let frame: number;
+    let last = performance.now();
+    function animate(now: number) {
+      if (!attackArrow.show) return;
+      setArrowAnimTick(t => t + 1);
+      frame = requestAnimationFrame(animate);
+    }
+    frame = requestAnimationFrame(animate);
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+    // Only when visible
+  }, [attackArrow.show]);
 
   // When attackCue changes, compute arrow endpoints relative to the arena and show briefly.
   useEffect(() => {
@@ -618,7 +636,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
       attackArrowTimeoutRef.current = window.setTimeout(() => {
         setAttackArrow(a => ({ ...a, show: false }));
         attackArrowTimeoutRef.current = null;
-      }, 300);
+      }, 360);
     }, 0);
 
     return () => {
@@ -635,9 +653,24 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     const vw = arenaRect?.width ?? Math.max(ax, bx) + 64;
     const vh = arenaRect?.height ?? Math.max(ay, by) + 64;
 
-    const arrowColor = "#e1bc29";
-    const arrowWidth = 7;
-    const headLength = 22;
+    // COLORS
+    const beamColor = "#2fffe1";
+    const beamColor2 = "#00f5ff";
+    const beamGlow = "#00f5ff";
+    const auraColor = "#b5fff5";
+
+    // ARROW SPECS
+    const coreWidth = 8;
+    const glowWidth = 24;
+    const auraWidth = 50;
+    const arrowHeadLength = 28;
+    const arrowHeadWidth = 18;
+    const tipOrbR = 10;
+
+    // Animate dash (turquoise pulse/flow), and pulse width
+    const pulseT = ((arrowAnimTick % 60) / 60);
+    const dashOffset = -arrowAnimTick * 10 % 180;
+    const pulseScale = 1 + 0.11 * Math.sin((arrowAnimTick % 40) / 40 * 2 * Math.PI);
 
     const dx = bx - ax;
     const dy = by - ay;
@@ -647,11 +680,19 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     const nx = dx / length;
     const ny = dy / length;
 
-    const hx1 = bx - nx * headLength + ny * (headLength * 0.36);
-    const hy1 = by - ny * headLength - nx * (headLength * 0.36);
+    // Arrowhead base (center) point
+    const baseX = bx - nx * arrowHeadLength;
+    const baseY = by - ny * arrowHeadLength;
+    // Arrowhead triangle corners
+    const perpX = -ny;
+    const perpY = nx;
+    const hx1 = baseX + perpX * (arrowHeadWidth / 2);
+    const hy1 = baseY + perpY * (arrowHeadWidth / 2);
+    const hx2 = baseX - perpX * (arrowHeadWidth / 2);
+    const hy2 = baseY - perpY * (arrowHeadWidth / 2);
 
-    const hx2 = bx - nx * headLength - ny * (headLength * 0.36);
-    const hy2 = by - ny * headLength + nx * (headLength * 0.36);
+    // Path string
+    const arrowPath = `M ${ax},${ay} L ${bx},${by}`;
 
     return (
       <svg
@@ -668,20 +709,102 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
         height="100%"
         viewBox={`0 0 ${vw} ${vh}`}
       >
-        <line
-          x1={ax}
-          y1={ay}
-          x2={bx}
-          y2={by}
-          stroke={arrowColor}
-          strokeWidth={arrowWidth}
+        <defs>
+          <linearGradient id="bb-arrow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={beamColor2} />
+            <stop offset="25%" stopColor={beamColor} />
+            <stop offset="70%" stopColor={beamColor2} />
+            <stop offset="100%" stopColor={beamColor2} />
+          </linearGradient>
+          <filter id="bb-arrow-glow" filterUnits="userSpaceOnUse">
+            <feGaussianBlur stdDeviation="8" result="blur"/>
+            <feColorMatrix
+              in="blur"
+              type="matrix"
+              values="0 0 0 0  0.15
+                      0 0 0 0  0.95
+                      0 0 0 0  0.87
+                      0 0 0 0.44  0"
+            />
+          </filter>
+          <filter id="bb-arrow-aura" filterUnits="userSpaceOnUse">
+            <feGaussianBlur stdDeviation="22" result="blur"/>
+            <feColorMatrix
+              in="blur"
+              type="matrix"
+              values="0 0 0 0  0.78
+                      0 0 0 0  1
+                      0 0 0 0  0.95
+                      0 0 0 0.18  0"/>
+          </filter>
+        </defs>
+
+        {/* Aura */}
+        <path
+          d={arrowPath}
+          stroke={auraColor}
+          strokeWidth={auraWidth * pulseScale}
           strokeLinecap="round"
-          opacity={0.92}
+          opacity={0.18}
+          style={{
+            filter: "url(#bb-arrow-aura)",
+          }}
         />
+        {/* Outer Neon Glow */}
+        <path
+          d={arrowPath}
+          stroke="url(#bb-arrow-gradient)"
+          strokeWidth={glowWidth * pulseScale}
+          strokeLinecap="round"
+          opacity={0.48}
+          style={{
+            filter: "url(#bb-arrow-glow)",
+            mixBlendMode: "lighten",
+          }}
+        />
+        {/* Core (with animated dashes for energy flow) */}
+        <path
+          d={arrowPath}
+          stroke="url(#bb-arrow-gradient)"
+          strokeWidth={coreWidth * pulseScale}
+          strokeLinecap="round"
+          fill="none"
+          style={{
+            filter: "drop-shadow(0 0 5px #00ffe9)",
+            mixBlendMode: "lighten",
+            strokeDasharray: "16 24",
+            strokeDashoffset: dashOffset,
+            transition: "stroke-width 0.12s, filter 0.2s",
+          }}
+          opacity={0.93}
+        />
+        {/* Smaller glowing trail for "energy" near arrowhead */}
+        <circle
+          cx={bx}
+          cy={by}
+          r={tipOrbR * pulseScale * 1.15}
+          fill="url(#bb-arrow-gradient)"
+          filter="url(#bb-arrow-glow)"
+          opacity={0.77}
+        />
+        {/* Arrowhead: main triangle, filled with gradient, glowing */}
         <polygon
           points={`${bx},${by} ${hx1},${hy1} ${hx2},${hy2}`}
-          fill={arrowColor}
-          opacity={0.92}
+          fill="url(#bb-arrow-gradient)"
+          filter="url(#bb-arrow-glow)"
+          opacity={0.95}
+        />
+        {/* Arrowhead highlight orb (energy tip) */}
+        <circle
+          cx={bx}
+          cy={by}
+          r={tipOrbR * pulseScale * (1.05 + 0.07 * Math.sin(arrowAnimTick / 7))}
+          fill="url(#bb-arrow-gradient)"
+          style={{
+            filter: "url(#bb-arrow-aura)",
+            mixBlendMode: "lighten",
+          }}
+          opacity={0.43}
         />
       </svg>
     );
