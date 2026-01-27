@@ -27,7 +27,7 @@ function bbDbgEnabled() {
     // Default OFF: debug overlay hidden unless explicitly enabled
     return false;
   } catch {
-    return true;
+    return false;
   }
 }
 function bbDbgSet(msg: string) {
@@ -603,7 +603,11 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     let last = performance.now();
     function animate(now: number) {
       if (!attackArrow.show) return;
-      setArrowAnimTick(t => t + 1);
+      // Throttle state updates to reduce rerenders on mobile (TG iOS WebView).
+      if (now - last >= 50) { // ~20 FPS is enough for dash/pulse
+        last = now;
+        setArrowAnimTick((t) => t + 1);
+      }
       frame = requestAnimationFrame(animate);
     }
     frame = requestAnimationFrame(animate);
@@ -4141,15 +4145,57 @@ const hpPct = useMemo(() => {
           )}
           <svg className="atk-overlay" width="100%" height="100%">
             <defs>
-              <marker id="atkArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.85)" />
+              {/* Turquoise glow filter: Gaussian blur + color matrix + merge core+glow */}
+              <filter id="atkGlow" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+                <feColorMatrix 
+                  in="blur"
+                  type="matrix"
+                  values="0 0 0 0 0
+                          0 1 0 0 0
+                          0.82 0 0.89 0 0
+                          0 0 0 0.85 0"
+                  result="turquoiseGlow"
+                />
+                <feMerge>
+                  <feMergeNode in="turquoiseGlow"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+              <marker
+                id="atkArrow"
+                markerWidth="10"
+                markerHeight="10"
+                refX="9"
+                refY="5"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(0,255,210,0.97)" />
               </marker>
             </defs>
-
             {attackCurves.map((c) => (
               <g key={c.key}>
-                <path className="atk-path-glow" d={c.d} />
-                <path className="atk-path-core" d={c.d} />
+                <path
+                  d={c.d}
+                  style={{
+                    filter: 'url(#atkGlow)'
+                  }}
+                  stroke="rgba(0,255,210,0.94)"
+                  strokeWidth={9}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d={c.d}
+                  stroke="rgba(0,255,210,1)"
+                  strokeWidth={3.2}
+                  fill="none"
+                  markerEnd="url(#atkArrow)"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </g>
             ))}
           </svg>
