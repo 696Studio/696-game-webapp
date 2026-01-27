@@ -3673,11 +3673,14 @@ const hpPct = useMemo(() => {
 
         .bb-dmgfloat {
           position: absolute;
-          inset: 0;
+          left: 0;
+          right: 0;
+          top: -26px; /* show damage number above the card */
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: center;
           pointer-events: none;
+          z-index: 9;
         }
         .bb-dmgfloat-pill {
           padding: 7px 14px;
@@ -3698,10 +3701,10 @@ const hpPct = useMemo(() => {
           animation: dmgFloatPop 326ms cubic-bezier(0.32,1.2,0.83,0.94) both;
         }
         @keyframes dmgFloatPop {
-          0%   { opacity: 0; transform: scale(0.9);}
-          18%  { opacity: 1; transform: scale(1.07);}
-          40%  { transform: scale(1.00);}
-          100% { opacity: 0; transform: translate3d(-50%, -70%, 0) scale(1.06);}
+          0%   { opacity: 0; transform: translate3d(0, 8px, 0) scale(0.92); }
+          18%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1.07); }
+          40%  { opacity: 1; transform: translate3d(0, -2px, 0) scale(1.00); }
+          100% { opacity: 0; transform: translate3d(0, -18px, 0) scale(1.06); }
         }
 
         .bb-death {
