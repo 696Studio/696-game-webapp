@@ -407,21 +407,30 @@ function coverMapRect(
 }
 
 function BattleInner() {
-  // iOS class flag (used for CSS overrides to prevent TG iOS WebView spinning/flip glitches)
-  useEffect(() => {
+  const isIOS = useMemo(() => {
     try {
       const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-      const isIOS =
+      return (
         /iP(hone|ad|od)/.test(ua) ||
-        (((navigator as any).platform === "MacIntel") && (navigator as any).maxTouchPoints > 1);
-      if (isIOS && typeof document !== "undefined") document.documentElement.classList.add("bb-ios");
+        (((navigator as any).platform === "MacIntel") && (navigator as any).maxTouchPoints > 1)
+      );
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // iOS class flag (used for CSS overrides to prevent TG iOS WebView spinning/flip glitches)
+  useEffect(() => {
+    if (!isIOS) return;
+    try {
+      if (typeof document !== "undefined") document.documentElement.classList.add("bb-ios");
       return () => {
-        if (isIOS && typeof document !== "undefined") document.documentElement.classList.remove("bb-ios");
+        if (typeof document !== "undefined") document.documentElement.classList.remove("bb-ios");
       };
     } catch {
       return;
     }
-  }, []);
+  }, [isIOS]);
 
   const router = useRouter();
   const sp = useSearchParams();
@@ -703,7 +712,9 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
           width: "100%",
           height: "100%",
           pointerEvents: "none",
-          zIndex: 6, // above cards, below overlays
+          zIndex: 80, // attack arrow overlay (must be above cards on iOS)
+          transform: "translateZ(0)",
+          WebkitTransform: "translateZ(0)",
         }}
         width="100%"
         height="100%"
@@ -746,10 +757,9 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
           strokeWidth={auraWidth * pulseScale}
           strokeLinecap="round"
           opacity={0.18}
-          style={{
-            filter: "url(#bb-arrow-aura)",
-          }}
+          style={{ filter: "url(#bb-arrow-aura)" }}
         />
+
         {/* Outer Neon Glow */}
         <path
           d={arrowPath}
@@ -759,52 +769,55 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
           opacity={0.48}
           style={{
             filter: "url(#bb-arrow-glow)",
-            mixBlendMode: "lighten",
+            mixBlendMode: isIOS ? "normal" : "lighten",
           }}
         />
-        {/* Core (with animated dashes for energy flow) */}
+
+        {/* Core (animated dashes for energy flow) */}
         <path
           d={arrowPath}
           stroke="url(#bb-arrow-gradient)"
           strokeWidth={coreWidth * pulseScale}
           strokeLinecap="round"
-          fill="none"
+          strokeDasharray="16 24"
+          strokeDashoffset={dashOffset}
+          opacity={0.93}
           style={{
-            filter: "drop-shadow(0 0 5px #00ffe9)",
-            mixBlendMode: "lighten",
-            strokeDasharray: "16 24",
-            strokeDashoffset: dashOffset,
+            filter: isIOS ? "url(#bb-arrow-glow)" : "drop-shadow(0 0 5px #00ffe9)",
+            mixBlendMode: isIOS ? "normal" : "lighten",
             transition: "stroke-width 0.12s, filter 0.2s",
           }}
-          opacity={0.93}
         />
-        {/* Smaller glowing trail for "energy" near arrowhead */}
+
+        {/* Smaller glowing orb near arrow tip */}
         <circle
           cx={bx}
           cy={by}
           r={tipOrbR * pulseScale * 1.15}
           fill="url(#bb-arrow-gradient)"
-          filter="url(#bb-arrow-glow)"
+          style={{ filter: "url(#bb-arrow-glow)" }}
           opacity={0.77}
         />
-        {/* Arrowhead: main triangle, filled with gradient, glowing */}
+
+        {/* Arrowhead */}
         <polygon
           points={`${bx},${by} ${hx1},${hy1} ${hx2},${hy2}`}
           fill="url(#bb-arrow-gradient)"
-          filter="url(#bb-arrow-glow)"
+          style={{ filter: "url(#bb-arrow-glow)" }}
           opacity={0.95}
         />
-        {/* Arrowhead highlight orb (energy tip) */}
+
+        {/* Arrowhead highlight aura */}
         <circle
           cx={bx}
           cy={by}
           r={tipOrbR * pulseScale * (1.05 + 0.07 * Math.sin(arrowAnimTick / 7))}
           fill="url(#bb-arrow-gradient)"
+          opacity={0.43}
           style={{
             filter: "url(#bb-arrow-aura)",
-            mixBlendMode: "lighten",
+            mixBlendMode: isIOS ? "normal" : "lighten",
           }}
-          opacity={0.43}
         />
       </svg>
     );
