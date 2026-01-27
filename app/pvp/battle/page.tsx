@@ -2279,9 +2279,7 @@ const hpPct = useMemo(() => {
                   <>
                     <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
                     <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
-                      <span className="bb-dmgfloat-pill">
-                        {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
-                      </span>
+                      {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
                     </div>
                   </>
                 )}
@@ -3041,9 +3039,12 @@ const hpPct = useMemo(() => {
           100% { opacity: 0; }
         }
         @keyframes dmgFloat {
-          0%   { opacity: 0; transform: translateY(6px) scale(0.96); }
-          20%  { opacity: 1; transform: translateY(0px) scale(1.04); }
-          100% { opacity: 0; transform: translateY(-14px) scale(1.06); }
+          0%   { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.96); }
+          20%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1.02); }
+          100% { opacity: 0; transform: translate3d(0, -16px, 0) scale(1.06); }
+        }
+          20%  { opacity: 1; transform: translate3d(-50%, -46%, 0) scale(1.02); }
+          100% { opacity: 0; transform: translate3d(-50%, -70%, 0) scale(1.06); }
         }
         @keyframes deathFade {
           0%   { opacity: 0; }
@@ -3635,76 +3636,43 @@ const hpPct = useMemo(() => {
           mix-blend-mode: screen;
         }
 
+        .bb-motion-layer { overflow: visible; }
+
         .bb-dmgflash {
           position: absolute;
           inset: 0;
           border-radius: 18px;
-          background: rgba(255,255,255,0.16);
+          background: rgba(255,255,255,0.22);
           animation: dmgFlash 180ms ease-out both;
-          overflow: hidden; /* ensure slash stays clipped */
+          mix-blend-mode: screen;
         }
-        .bb-dmgflash::after {
-          content: "";
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          width: 64%;
-          height: 14%;
-          transform: translate(-50%, -55%) rotate(-21deg) scaleY(1.07);
-          background: linear-gradient(
-            90deg,
-            rgba(255,255,255,0.00) 0%,
-            rgba(255,255,255,0.16) 24%,
-            rgba(255,255,255,0.72) 52%,
-            rgba(255,255,255,0.12) 78%,
-            rgba(255,255,255,0.00) 100%
-          );
-          border-radius: 99px;
-          opacity: 0;
-          pointer-events: none;
-          animation: slashBlade 132ms cubic-bezier(0.63,0.01,0.95,0.85) both;
-        }
-        @keyframes slashBlade {
-          0%   { opacity: 0; transform: translate(-50%, -55%) rotate(-21deg) scaleY(0.89) scaleX(0.93);}
-          25%  { opacity: 1; transform: translate(-50%, -55%) rotate(-21deg) scaleY(1.12) scaleX(1.04);}
-          70%  { opacity: 0.82; }
-          100% { opacity: 0; transform: translate(-50%, -55%) rotate(-21deg) scaleY(1.18) scaleX(1.13);}
-        }
-
         .bb-dmgfloat {
           position: absolute;
-          left: 0;
-          right: 0;
-          top: -26px; /* show damage number above the card */
+          inset: 0;
           display: flex;
           align-items: flex-start;
           justify-content: center;
           pointer-events: none;
           z-index: 9;
-        }
-        .bb-dmgfloat-pill {
-          padding: 7px 14px;
+
+          /* show the number above the card (no translate(-50%)) */
+          margin-top: -22px;
+
+          padding: 6px 10px;
           border-radius: 999px;
-          border: 2px solid rgba(255,255,255,0.36);
-          background: linear-gradient(120deg, rgba(30,30,32,0.84) 60%, rgba(46,46,60,0.73) 100%);
-          font-weight: 1000;
-          letter-spacing: 0.13em;
-          text-transform: uppercase;
-          font-size: 13px;
-          color: #fff;
+          border: 1px solid rgba(255,255,255,0.22);
+          background: rgba(0,0,0,0.42);
+
+          font-weight: 900;
+          font-size: 18px;
+          letter-spacing: 0.2px;
           text-shadow:
-            0 1px 2px #000C,
-            0 0 4px #2349,
-            0 0 0.5px #fff,
-            1.5px 0 1.5px #000E,
-            -1.5px 0 1.5px #000E;
-          animation: dmgFloatPop 326ms cubic-bezier(0.32,1.2,0.83,0.94) both;
-        }
-        @keyframes dmgFloatPop {
-          0%   { opacity: 0; transform: translate3d(0, 8px, 0) scale(0.92); }
-          18%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1.07); }
-          40%  { opacity: 1; transform: translate3d(0, -2px, 0) scale(1.00); }
-          100% { opacity: 0; transform: translate3d(0, -18px, 0) scale(1.06); }
+            0 1px 0 rgba(0,0,0,0.65),
+            0 0 6px rgba(0,0,0,0.55),
+            -1px 0 0 rgba(0,0,0,0.55),
+            1px 0 0 rgba(0,0,0,0.55),
+            0 -1px 0 rgba(0,0,0,0.55),
+            0 2px 10px rgba(0,0,0,0.35);
         }
 
         .bb-death {
