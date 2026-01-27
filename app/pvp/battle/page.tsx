@@ -662,22 +662,20 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     const vw = arenaRect?.width ?? Math.max(ax, bx) + 64;
     const vh = arenaRect?.height ?? Math.max(ay, by) + 64;
 
-    // COLORS
+    // COLORS (turquoise, Hearthstone-like)
     const beamColor = "#2fffe1";
     const beamColor2 = "#00f5ff";
-    const beamGlow = "#00f5ff";
     const auraColor = "#b5fff5";
 
     // ARROW SPECS
-    const coreWidth = 8;
-    const glowWidth = 24;
+    const coreWidth = 10;
+    const glowWidth = 28;
     const auraWidth = 50;
     const arrowHeadLength = 28;
     const arrowHeadWidth = 18;
-    const tipOrbR = 10;
+    const tipOrbR = 11;
 
     // Animate dash (turquoise pulse/flow), and pulse width
-    const pulseT = ((arrowAnimTick % 60) / 60);
     const dashOffset = -arrowAnimTick * 10 % 180;
     const pulseScale = 1 + 0.11 * Math.sin((arrowAnimTick % 40) / 40 * 2 * Math.PI);
 
@@ -703,6 +701,13 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     // Path string
     const arrowPath = `M ${ax},${ay} L ${bx},${by}`;
 
+    // Use gradient for all but fallback to solid color on iOS if needed
+    // But in this case, use gradient for all (Telegram iOS supports SVG gradients fine, but not heavy filters/mixBlendMode)
+    // All glows via thick strokes and drop-shadow
+
+    // Drop shadow CSS style for iOS and desktop - fallback if not supported will just be strong color
+    const glowDropShadow = "drop-shadow(0 0 10px #00fff3) drop-shadow(0 0 32px #00ffe0)";
+
     return (
       <svg
         style={{
@@ -712,7 +717,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
           width: "100%",
           height: "100%",
           pointerEvents: "none",
-          zIndex: 80, // attack arrow overlay (must be above cards on iOS)
+          zIndex: 80,
           transform: "translateZ(0)",
           WebkitTransform: "translateZ(0)",
         }}
@@ -721,102 +726,89 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
         viewBox={`0 0 ${vw} ${vh}`}
       >
         <defs>
+          {/* Full-length turquoise energy beam */}
           <linearGradient id="bb-arrow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor={beamColor2} />
-            <stop offset="25%" stopColor={beamColor} />
+            <stop offset="22%" stopColor={beamColor} />
             <stop offset="70%" stopColor={beamColor2} />
             <stop offset="100%" stopColor={beamColor2} />
           </linearGradient>
-          <filter id="bb-arrow-glow" filterUnits="userSpaceOnUse">
-            <feGaussianBlur stdDeviation="8" result="blur"/>
-            <feColorMatrix
-              in="blur"
-              type="matrix"
-              values="0 0 0 0  0.15
-                      0 0 0 0  0.95
-                      0 0 0 0  0.87
-                      0 0 0 0.44  0"
-            />
-          </filter>
-          <filter id="bb-arrow-aura" filterUnits="userSpaceOnUse">
-            <feGaussianBlur stdDeviation="22" result="blur"/>
-            <feColorMatrix
-              in="blur"
-              type="matrix"
-              values="0 0 0 0  0.78
-                      0 0 0 0  1
-                      0 0 0 0  0.95
-                      0 0 0 0.18  0"/>
-          </filter>
         </defs>
 
-        {/* Aura */}
+        {/* Multi-layered arrow: Aura (very soft, very wide) */}
         <path
           d={arrowPath}
           stroke={auraColor}
           strokeWidth={auraWidth * pulseScale}
           strokeLinecap="round"
-          opacity={0.18}
-          style={{ filter: "url(#bb-arrow-aura)" }}
+          opacity={0.27}
+          style={{
+            filter: glowDropShadow,
+            transition: "stroke-width 0.15s, filter 0.12s",
+          }}
         />
 
-        {/* Outer Neon Glow */}
+        {/* Outer Glow - very thick, colored */}
         <path
           d={arrowPath}
           stroke="url(#bb-arrow-gradient)"
           strokeWidth={glowWidth * pulseScale}
           strokeLinecap="round"
-          opacity={0.48}
+          opacity={0.70}
           style={{
-            filter: "url(#bb-arrow-glow)",
-            mixBlendMode: isIOS ? "normal" : "lighten",
+            filter: glowDropShadow,
+            transition: "stroke-width 0.15s, filter 0.12s",
           }}
         />
 
-        {/* Core (animated dashes for energy flow) */}
+        {/* Core Beam - animated dash */}
         <path
           d={arrowPath}
           stroke="url(#bb-arrow-gradient)"
           strokeWidth={coreWidth * pulseScale}
           strokeLinecap="round"
-          strokeDasharray="16 24"
+          strokeDasharray="14 24"
           strokeDashoffset={dashOffset}
-          opacity={0.93}
+          opacity={0.98}
           style={{
-            filter: isIOS ? "url(#bb-arrow-glow)" : "drop-shadow(0 0 5px #00ffe9)",
-            mixBlendMode: isIOS ? "normal" : "lighten",
-            transition: "stroke-width 0.12s, filter 0.2s",
+            filter: glowDropShadow,
+            transition: "stroke-width 0.1s, filter 0.12s",
           }}
         />
 
-        {/* Smaller glowing orb near arrow tip */}
+        {/* Energetic tip orb */}
         <circle
           cx={bx}
           cy={by}
-          r={tipOrbR * pulseScale * 1.15}
+          r={tipOrbR * pulseScale * 1.14}
           fill="url(#bb-arrow-gradient)"
-          style={{ filter: "url(#bb-arrow-glow)" }}
-          opacity={0.77}
+          opacity={0.81}
+          style={{
+            filter: glowDropShadow,
+            transition: "r 0.11s",
+          }}
         />
 
-        {/* Arrowhead */}
+        {/* Arrowhead Polygon - layered, with glow */}
         <polygon
           points={`${bx},${by} ${hx1},${hy1} ${hx2},${hy2}`}
           fill="url(#bb-arrow-gradient)"
-          style={{ filter: "url(#bb-arrow-glow)" }}
-          opacity={0.95}
+          opacity={0.97}
+          style={{
+            filter: glowDropShadow,
+            transition: "filter 0.1s",
+          }}
         />
 
-        {/* Arrowhead highlight aura */}
+        {/* Arrowhead tip highlight aura (soft outer circle) */}
         <circle
           cx={bx}
           cy={by}
-          r={tipOrbR * pulseScale * (1.05 + 0.07 * Math.sin(arrowAnimTick / 7))}
-          fill="url(#bb-arrow-gradient)"
-          opacity={0.43}
+          r={tipOrbR * pulseScale * (1.23 + 0.09 * Math.sin(arrowAnimTick / 7))}
+          fill={auraColor}
+          opacity={0.26}
           style={{
-            filter: "url(#bb-arrow-aura)",
-            mixBlendMode: isIOS ? "normal" : "lighten",
+            filter: glowDropShadow,
           }}
         />
       </svg>
