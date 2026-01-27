@@ -579,9 +579,9 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   // =========================================================
   const lastAttackSigRef = useRef<string>("");
   
-  // Hearthstone-style turquoise energy attack arrow overlay inside arena (2D only).
-  // IMPORTANT: We do NOT depend on ref.current in hooks dependencies.
-  // Instead, we update an explicit cue (attackCue) when a new attack is processed.
+  // Hearthstone-style turquoise energy shot/beam overlay inside arena (2D only), iOS-safe.
+  // Do not depend on ref.current in hooks dependencies.
+  // Only update via explicit cue (attackCue) when a new attack is processed.
   const attackCueTickRef = useRef<number>(0);
   const [attackCue, setAttackCue] = useState<{ fromId: string; toId: string; tick: number } | null>(null);
 
@@ -596,65 +596,52 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const attackArrowTimeoutRef = useRef<number | null>(null);
   const [arrowAnimTick, setArrowAnimTick] = useState(0);
 
-  // Animation loop for flow dashoffset and pulse effect
+  // Animation loop for dash flow and pulse.
   useEffect(() => {
     if (!attackArrow.show) return;
     let frame: number;
     let last = performance.now();
     function animate(now: number) {
       if (!attackArrow.show) return;
-      // Throttle state updates to reduce rerenders on mobile (TG iOS WebView).
-      if (now - last >= 50) { // ~20 FPS is enough for dash/pulse
+      // Throttled updates for mobile perf (TG iOS WebView etc)
+      if (now - last >= 50) { // ~20 FPS, good for eye/pulse/dash
         last = now;
         setArrowAnimTick((t) => t + 1);
       }
       frame = requestAnimationFrame(animate);
     }
     frame = requestAnimationFrame(animate);
-    return () => {
-      cancelAnimationFrame(frame);
-    };
-    // Only when visible
+    return () => cancelAnimationFrame(frame);
   }, [attackArrow.show]);
 
-  // When attackCue changes, compute arrow endpoints relative to the arena and show briefly.
+  // On new attackCue, get arena/unit DOM coords, show arrow, hide after a moment.
   useEffect(() => {
     if (!attackCue) return;
-
-    // Clear any previous timer
     if (attackArrowTimeoutRef.current !== null) {
       clearTimeout(attackArrowTimeoutRef.current);
       attackArrowTimeoutRef.current = null;
     }
-
-    // Delay to next tick to ensure DOM nodes exist for this frame
+    // Next tick for DOM layout
     const timer = window.setTimeout(() => {
       const arenaEl = arenaRef.current;
       const fromEl = unitElByIdRef.current[attackCue.fromId];
       const toEl = unitElByIdRef.current[attackCue.toId];
       if (!arenaEl || !fromEl || !toEl) return;
-
       const arenaRect = arenaEl.getBoundingClientRect();
       const fromRect = fromEl.getBoundingClientRect();
       const toRect = toEl.getBoundingClientRect();
-
       const ax = fromRect.left + fromRect.width / 2 - arenaRect.left;
       const ay = fromRect.top + fromRect.height / 2 - arenaRect.top;
       const bx = toRect.left + toRect.width / 2 - arenaRect.left;
       const by = toRect.top + toRect.height / 2 - arenaRect.top;
-
       setAttackArrow({ show: true, ax, ay, bx, by });
-
-      // Hide after a short moment (Hearthstone-like readability)
+      // Hide after a brief moment (Hearthstone readability)
       attackArrowTimeoutRef.current = window.setTimeout(() => {
         setAttackArrow(a => ({ ...a, show: false }));
         attackArrowTimeoutRef.current = null;
       }, 360);
     }, 0);
-
-    return () => {
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [attackCue?.tick]);
 
   function AttackArrowOverlay() {
@@ -662,56 +649,54 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
     const { ax, ay, bx, by } = attackArrow;
 
+    // arenaRect for sizing SVG viewport to fit entire attack arrow cleanly
     const arenaRect = arenaRef.current?.getBoundingClientRect();
     const vw = arenaRect?.width ?? Math.max(ax, bx) + 64;
     const vh = arenaRect?.height ?? Math.max(ay, by) + 64;
 
-    // COLORS (turquoise, Hearthstone-like)
+    // BASE COLORS (turquoise/energy blue)
     const beamColor = "#2fffe1";
     const beamColor2 = "#00f5ff";
     const auraColor = "#b5fff5";
+    const auraEdge = "#79fff0";
 
-    // ARROW SPECS
-    const coreWidth = 10;
-    const glowWidth = 28;
-    const auraWidth = 50;
+    // Arrow specs
+    const outerGlowWidth = 42; // thick, soft glow
+    const midGlowWidth = 18;   // mid, medium glow
+    const coreWidth = 7;       // sharp core
     const arrowHeadLength = 28;
-    const arrowHeadWidth = 18;
-    const tipOrbR = 11;
+    const arrowHeadWidth = 16;
+    const tipOrbR = 10;
 
-    // Animate dash (turquoise pulse/flow), and pulse width
-    const dashOffset = -arrowAnimTick * 10 % 180;
-    const pulseScale = 1 + 0.11 * Math.sin((arrowAnimTick % 40) / 40 * 2 * Math.PI);
+    // Animated dash/pulse for the energy effect
+    const dashOffset = -(arrowAnimTick * 9) % 160;
+    const pulseMag = Math.sin((arrowAnimTick % 40) / 40 * 2 * Math.PI);
+    const pulseScale = 1 + 0.10 * pulseMag;
+    // Subtle pulse for opacity, gives inner flicker/shimmer
+    const shimmer = 0.03 * Math.sin((arrowAnimTick % 18) / 18 * 2 * Math.PI);
 
-    const dx = bx - ax;
-    const dy = by - ay;
+    // Calculate direction/length, skip degenerate cases
+    const dx = bx - ax, dy = by - ay;
     const length = Math.sqrt(dx * dx + dy * dy);
     if (!(length > 2)) return null;
 
-    const nx = dx / length;
-    const ny = dy / length;
+    const nx = dx / length, ny = dy / length;
 
-    // Arrowhead base (center) point
+    // Arrowhead base (just before tip)
     const baseX = bx - nx * arrowHeadLength;
     const baseY = by - ny * arrowHeadLength;
     // Arrowhead triangle corners
-    const perpX = -ny;
-    const perpY = nx;
+    const perpX = -ny, perpY = nx;
     const hx1 = baseX + perpX * (arrowHeadWidth / 2);
     const hy1 = baseY + perpY * (arrowHeadWidth / 2);
     const hx2 = baseX - perpX * (arrowHeadWidth / 2);
     const hy2 = baseY - perpY * (arrowHeadWidth / 2);
 
-    // Path string
+    // Path string for the arrow/beam
     const arrowPath = `M ${ax},${ay} L ${bx},${by}`;
 
-    // Use gradient for all but fallback to solid color on iOS if needed
-    // But in this case, use gradient for all (Telegram iOS supports SVG gradients fine, but not heavy filters/mixBlendMode)
-    // All glows via thick strokes and drop-shadow
-
-    // Drop shadow CSS style for iOS and desktop - fallback if not supported will just be strong color
-    const glowDropShadow = "drop-shadow(0 0 10px #00fff3) drop-shadow(0 0 32px #00ffe0)";
-
+    // Gradient for the stroke (for all platforms)
+    // No SVG filter, no mix-blend, just color/opacity/layering
     return (
       <svg
         style={{
@@ -722,6 +707,7 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
           height: "100%",
           pointerEvents: "none",
           zIndex: 80,
+          // iOS: no transforms on parent/arena, so only translateZ(0)
           transform: "translateZ(0)",
           WebkitTransform: "translateZ(0)",
         }}
@@ -730,89 +716,89 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
         viewBox={`0 0 ${vw} ${vh}`}
       >
         <defs>
-          {/* Full-length turquoise energy beam */}
-          <linearGradient id="bb-arrow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          {/* Turquoise core gradient for energetic beam */}
+          <linearGradient id="bb-energy-gradient" x1={ax} y1={ay} x2={bx} y2={by} gradientUnits="userSpaceOnUse">
             <stop offset="0%" stopColor={beamColor2} />
-            <stop offset="22%" stopColor={beamColor} />
-            <stop offset="70%" stopColor={beamColor2} />
-            <stop offset="100%" stopColor={beamColor2} />
+            <stop offset="30%" stopColor={beamColor} />
+            <stop offset="80%" stopColor={beamColor2} />
           </linearGradient>
         </defs>
 
-        {/* Multi-layered arrow: Aura (very soft, very wide) */}
+        {/* Outer Glow Stroke - soft, bright aura */}
         <path
           d={arrowPath}
           stroke={auraColor}
-          strokeWidth={auraWidth * pulseScale}
+          strokeWidth={outerGlowWidth * pulseScale}
           strokeLinecap="round"
-          opacity={0.27}
+          opacity={0.19 + shimmer}
           style={{
-            filter: glowDropShadow,
-            transition: "stroke-width 0.15s, filter 0.12s",
+            // Fallback drop-shadow for further soft visual boost, but harmless on iOS
+            filter: "drop-shadow(0 0 15px #8ffffe)",
+            transition: "stroke-width 0.13s"
           }}
         />
 
-        {/* Outer Glow - very thick, colored */}
+        {/* Mid Glow Stroke - more visible */}
         <path
           d={arrowPath}
-          stroke="url(#bb-arrow-gradient)"
-          strokeWidth={glowWidth * pulseScale}
+          stroke={auraEdge}
+          strokeWidth={midGlowWidth * pulseScale}
           strokeLinecap="round"
-          opacity={0.70}
+          opacity={0.44 + shimmer}
           style={{
-            filter: glowDropShadow,
-            transition: "stroke-width 0.15s, filter 0.12s",
+            filter: "drop-shadow(0 0 9px #4afffc)",
+            transition: "stroke-width 0.10s"
           }}
         />
 
-        {/* Core Beam - animated dash */}
+        {/* Core Beam Stroke - animated dash */}
         <path
           d={arrowPath}
-          stroke="url(#bb-arrow-gradient)"
+          stroke="url(#bb-energy-gradient)"
           strokeWidth={coreWidth * pulseScale}
           strokeLinecap="round"
-          strokeDasharray="14 24"
+          strokeDasharray="13 21"
           strokeDashoffset={dashOffset}
-          opacity={0.98}
+          opacity={0.93 + shimmer}
           style={{
-            filter: glowDropShadow,
-            transition: "stroke-width 0.1s, filter 0.12s",
+            // No filter/mix-blend; crisp core energy color
+            transition: "stroke-width 0.08s"
           }}
         />
 
-        {/* Energetic tip orb */}
+        {/* Energetic Tip Orb (glowing turquoise ring at tip) */}
         <circle
           cx={bx}
           cy={by}
-          r={tipOrbR * pulseScale * 1.14}
-          fill="url(#bb-arrow-gradient)"
-          opacity={0.81}
+          r={tipOrbR * pulseScale * 1.10}
+          fill="url(#bb-energy-gradient)"
+          opacity={0.83}
           style={{
-            filter: glowDropShadow,
-            transition: "r 0.11s",
+            filter: "drop-shadow(0 0 7px #e6ffff)",
+            transition: "r 0.1s"
           }}
         />
 
-        {/* Arrowhead Polygon - layered, with glow */}
+        {/* Arrowhead Polygon - simple bright tip with inner cone */}
         <polygon
           points={`${bx},${by} ${hx1},${hy1} ${hx2},${hy2}`}
-          fill="url(#bb-arrow-gradient)"
-          opacity={0.97}
+          fill="url(#bb-energy-gradient)"
+          opacity={0.93}
           style={{
-            filter: glowDropShadow,
-            transition: "filter 0.1s",
+            filter: "drop-shadow(0 0 6px #00fff9)",
+            transition: "filter 0.07s"
           }}
         />
 
-        {/* Arrowhead tip highlight aura (soft outer circle) */}
+        {/* Subtle outer orb for tip highlight, add visible punch */}
         <circle
           cx={bx}
           cy={by}
           r={tipOrbR * pulseScale * (1.23 + 0.09 * Math.sin(arrowAnimTick / 7))}
           fill={auraColor}
-          opacity={0.26}
+          opacity={0.22}
           style={{
-            filter: glowDropShadow,
+            filter: "drop-shadow(0 0 12px #97fdfc)"
           }}
         />
       </svg>
