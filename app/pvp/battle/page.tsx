@@ -1009,6 +1009,60 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
+  // Resolve instanceId from timeline events across schema variations.
+  // Falls back to last seen instanceId by side+slot (stable) when the engine omits instanceId in some events.
+  const resolveEventInstanceId = useCallback(
+    (e: any, key: "unit" | "target" | "from" | "to", extraIdKeys: string[] = []) => {
+      const obj = e?.[key];
+      let id = "";
+
+      // 1) Direct instanceId on the nested ref.
+      if (obj && typeof obj === "object") {
+        id = String((obj as any).instanceId ?? "");
+      }
+
+      // 2) Common alternative fields on the event root.
+      if (!id) {
+        for (const k of extraIdKeys) {
+          const v = (e as any)?.[k];
+          if (v != null) {
+            const s = String(v);
+            if (s) {
+              id = s;
+              break;
+            }
+          }
+        }
+      }
+
+      // 3) Side+slot fallback → last seen instanceId (prevents "damage on wrong card" / "no damage shown").
+      if (!id && obj && typeof obj === "object") {
+        const side = (obj as any).side as any;
+        const slot = Number((obj as any).slot);
+        if ((side === "p1" || side === "p2") && Number.isFinite(slot)) {
+          const k = `${side}:${slot}`;
+          const mapped = lastInstBySlotRef.current[k];
+          if (mapped) id = String(mapped);
+        }
+      }
+
+      // 4) Last resort: some logs put side/slot on root for "unit"/"target".
+      if (!id && (key === "unit" || key === "target")) {
+        const side = (e as any)?.side as any;
+        const slot = Number((e as any)?.slot);
+        if ((side === "p1" || side === "p2") && Number.isFinite(slot)) {
+          const k = `${side}:${slot}`;
+          const mapped = lastInstBySlotRef.current[k];
+          if (mapped) id = String(mapped);
+        }
+      }
+
+      return id;
+    },
+    [],
+  );
+
+
   // =========================================================
   // FX MANAGER (GUARANTEED): death bursts are rendered in an
   // arena-level overlay, independent of card DOM/lifecycle.
@@ -1339,7 +1393,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         const ref = readUnitRefFromEvent(e, "unit");
         if (ref?.instanceId) active = ref.instanceId;
       } else if (e.type === "damage") {
-        const tid = String((e as any)?.target?.instanceId ?? "");
+        const tid = resolveEventInstanceId(e as any, "target", ["targetId", "toId"]);
         const amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
         const shield = (e as any)?.shield;
@@ -1353,7 +1407,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           }
         }
       } else if (e.type === "heal") {
-        const tid = String((e as any)?.target?.instanceId ?? "");
+        const tid = resolveEventInstanceId(e as any, "target", ["targetId", "toId"]);
         const amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
         if (tid) {
@@ -1364,7 +1418,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           }
         }
       } else if (e.type === "shield" || e.type === "shield_hit") {
-        const tid = String((e as any)?.target?.instanceId ?? "");
+        const tid = resolveEventInstanceId(e as any, "target", ["targetId", "toId"]);
         const shield = (e as any)?.shield;
         const amount = Number((e as any)?.amount ?? 0);
         if (tid) {
@@ -1379,7 +1433,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           }
         }
       } else if (e.type === "debuff_applied") {
-        const tid = String((e as any)?.target?.instanceId ?? "");
+        const tid = resolveEventInstanceId(e as any, "target", ["targetId", "toId"]);
         const debuff = String((e as any)?.debuff ?? "");
         if (tid && debuff) {
           const u = units.get(tid);
@@ -1723,23 +1777,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       if (e.type !== "attack") continue;
 
       // Be resilient: event schemas differ between engines/log versions.
-      const fromRef = readUnitRefFromEvent(e as any, "from") || readUnitRefFromEvent(e as any, "unit");
-      const toRef = readUnitRefFromEvent(e as any, "to") || readUnitRefFromEvent(e as any, "target");
-
-      const fromId = String(
-        (fromRef as any)?.instanceId ??
-          (e as any)?.from?.instanceId ??
-          (e as any)?.fromId ??
-          (e as any)?.attackerId ??
-          "",
-      );
-      const toId = String(
-        (toRef as any)?.instanceId ??
-          (e as any)?.to?.instanceId ??
-          (e as any)?.toId ??
-          (e as any)?.targetId ??
-          "",
-      );
+      const fromId = resolveEventInstanceId(e as any, "from", ["fromId", "attackerId", "attacker_id", "from_id"]);
+      const toId = resolveEventInstanceId(e as any, "to", ["toId", "targetId", "target_id", "to_id"]);
       if (!fromId || !toId) continue;
 
       (map[fromId] ||= []).push({ t: (e as any).t, fromId, toId });
@@ -1760,22 +1799,8 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       const et = Number(e.t ?? 0);
       if (!(et <= t)) continue;
 
-      const fromRef = readUnitRefFromEvent(e as any, 'from') || readUnitRefFromEvent(e as any, 'unit');
-      const toRef = readUnitRefFromEvent(e as any, 'to') || readUnitRefFromEvent(e as any, 'target');
-      const fromId = String(
-        (fromRef as any)?.instanceId ??
-          (e as any)?.from?.instanceId ??
-          (e as any)?.fromId ??
-          (e as any)?.attackerId ??
-          '',
-      );
-      const toId = String(
-        (toRef as any)?.instanceId ??
-          (e as any)?.to?.instanceId ??
-          (e as any)?.toId ??
-          (e as any)?.targetId ??
-          '',
-      );
+      const fromId = resolveEventInstanceId(e as any, "from", ["fromId", "attackerId", "attacker_id", "from_id"]);
+      const toId = resolveEventInstanceId(e as any, "to", ["toId", "targetId", "target_id", "to_id"]);
       if (!fromId || !toId) continue;
 
       arr.push({ t: et, fromId, toId });
@@ -1826,11 +1851,9 @@ const arrowAttacks = useMemo(() => {
       const e: any = tl[i];
       if (!e || e.type !== "attack") continue;
 
-      const fromRef = readUnitRefFromEvent(e, "from") || readUnitRefFromEvent(e, "unit");
-      const toRef = readUnitRefFromEvent(e, "to") || readUnitRefFromEvent(e, "target");
 
-      const attackerId = String(fromRef?.instanceId ?? (e?.from && e.from.instanceId) ?? e?.fromId ?? e?.attackerId ?? "");
-      const targetId = String(toRef?.instanceId ?? (e?.to && e.to.instanceId) ?? e?.toId ?? e?.targetId ?? "");
+      const attackerId = resolveEventInstanceId(e as any, "from", ["fromId", "attackerId", "attacker_id", "from_id"]);
+      const targetId = resolveEventInstanceId(e as any, "to", ["toId", "targetId", "target_id", "to_id"]);
       if (!attackerId || !targetId) continue;
 
       const baseId = String(e.id ?? e.uid ?? `${e.t ?? ""}:${attackerId}:${targetId}`);
@@ -1866,7 +1889,7 @@ const arrowAttacks = useMemo(() => {
       if (e.t < fromT) continue;
       if (e.t > t) break;
       if (e.type === "damage") {
-        const tid = String((e as any)?.target?.instanceId ?? "");
+        const tid = resolveEventInstanceId(e as any, "target", ["targetId", "toId"]);
         const amount = Number((e as any)?.amount ?? 0);
         const blocked = Boolean((e as any)?.blocked ?? false);
         if (!tid) continue;
@@ -1884,8 +1907,8 @@ const arrowAttacks = useMemo(() => {
       if (e.t < fromT) continue;
       if (e.t > t) break;
       if (e.type === "death") {
-        const ref = readUnitRefFromEvent(e, "unit");
-        if (ref?.instanceId) set.add(ref.instanceId);
+        const id = resolveEventInstanceId(e as any, "unit", ["unitId", "instanceId"]);
+        if (id) set.add(id);
       }
     }
     return set;
@@ -2204,64 +2227,7 @@ const hpPct = useMemo(() => {
       return damageFx[damageFx.length - 1];
     }, [renderUnit?.instanceId, damageFx]);
 
-    
-    // Damage HUD (separate from in-card FX): show damage ABOVE the card, reliably.
-    // We prefer timeline damage events when present; otherwise we fall back to HP+shield delta.
-    const [dmgHud, setDmgHud] = useState<null | { k: string; text: string }>(null);
-    const dmgHudTimerRef = useRef<number | null>(null);
-    const prevHpSumRef = useRef<number | null>(null);
-
-    const showDmgHud = (text: string, key: string) => {
-      setDmgHud({ k: key, text });
-      if (dmgHudTimerRef.current) window.clearTimeout(dmgHudTimerRef.current);
-      dmgHudTimerRef.current = window.setTimeout(() => setDmgHud(null), 650);
-    };
-
-    useEffect(() => {
-      return () => {
-        if (dmgHudTimerRef.current) window.clearTimeout(dmgHudTimerRef.current);
-      };
-    }, []);
-
-    // Reset HP baseline when instance changes
-    useEffect(() => {
-      prevHpSumRef.current = null;
-    }, [instId]);
-
-    // Preferred: explicit damage event from timeline (if present in the current damageFx window)
-    useEffect(() => {
-      if (!renderUnit || !dmg) return;
-      const tNow = Number((dmg as any).t);
-      const amt = Math.max(0, Math.floor(Number((dmg as any).amount ?? 0)));
-      const text = (dmg as any).blocked ? "BLOCK" : `-${amt}`;
-      // key must change to re-trigger animation even for same amount
-      const key = `evt-${renderUnit.instanceId}-${Number.isFinite(tNow) ? tNow : Date.now()}`;
-      showDmgHud(text, key);
-      // keep baseline in sync so fallback doesn't double-fire
-      if (activeUnit) prevHpSumRef.current = (activeUnit.hp ?? 0) + (activeUnit.shield ?? 0);
-    }, [renderUnit?.instanceId, (dmg as any)?.t, (dmg as any)?.amount, (dmg as any)?.blocked]);
-
-    // Fallback: detect damage by HP+shield drop (covers cases where timeline has no 'damage' event)
-    useEffect(() => {
-      if (!activeUnit || !instId) return;
-      // if we already have an explicit dmg event in the window, do not double-fire
-      if (dmg) {
-        prevHpSumRef.current = (activeUnit.hp ?? 0) + (activeUnit.shield ?? 0);
-        return;
-      }
-
-      const sum = (activeUnit.hp ?? 0) + (activeUnit.shield ?? 0);
-      const prev = prevHpSumRef.current;
-      prevHpSumRef.current = sum;
-
-      if (prev == null) return;
-      const delta = Math.max(0, Math.floor(prev - sum));
-      if (delta <= 0) return;
-
-      const key = `hp-${instId}-${Date.now()}`;
-      showDmgHud(`-${delta}`, key);
-    }, [instId, activeUnit?.hp, activeUnit?.shield, dmg]);
-const tags = useMemo(() => {
+    const tags = useMemo(() => {
       if (!activeUnit) return [];
       const arr = Array.from(activeUnit.tags || []);
       return arr.slice(0, 3);
@@ -2275,13 +2241,7 @@ const tags = useMemo(() => {
     if (isHidden) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
-        
-        {dmgHud && (
-          <div key={dmgHud.k} className="bb-dmg-hud" aria-hidden="true">
-            <span className="bb-dmg-hud-pill">{dmgHud.text}</span>
-          </div>
-        )}
-<div
+        <div
           data-bb-slot={slotKey}
           className="bb-motion-layer bb-card-root"
           data-fx-motion="1"
@@ -2338,7 +2298,16 @@ const tags = useMemo(() => {
                   </div>
                 )}
 
-                {renderUnit && dmg && (<div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />)}
+                {renderUnit && dmg && (
+                  <>
+                    <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
+                    <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
+                      <span className="bb-dmgfloat-pill">
+                        {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
+                      </span>
+                    </div>
+                  </>
+                )}
 
                 {isDying && <div className="bb-death" />}
               </div>
@@ -3095,9 +3064,9 @@ const tags = useMemo(() => {
           100% { opacity: 0; }
         }
         @keyframes dmgFloat {
-          0%   { opacity: 0; transform: translate3d(-50%, -30%, 0) scale(0.96); }
-          20%  { opacity: 1; transform: translate3d(-50%, -46%, 0) scale(1.02); }
-          100% { opacity: 0; transform: translate3d(-50%, -70%, 0) scale(1.06); }
+          0%   { opacity: 0; transform: translateY(6px) scale(0.96); }
+          20%  { opacity: 1; transform: translateY(0px) scale(1.04); }
+          100% { opacity: 0; transform: translateY(-14px) scale(1.06); }
         }
         @keyframes deathFade {
           0%   { opacity: 0; }
@@ -3557,44 +3526,7 @@ const tags = useMemo(() => {
           margin: 0 auto;
         }
 
-        
-        .bb-dmg-hud{
-          position:absolute;
-          left:0; right:0;
-          top:-22px;
-          display:flex;
-          align-items:flex-end;
-          justify-content:center;
-          pointer-events:none;
-          z-index: 9;
-        }
-        .bb-dmg-hud-pill{
-          display:inline-flex;
-          align-items:center;
-          justify-content:center;
-          min-width: 34px;
-          height: 24px;
-          padding: 0 10px;
-          border-radius: 999px;
-          font-weight: 900;
-          font-size: 16px;
-          line-height: 1;
-          color: #fff;
-          background: rgba(12, 12, 14, 0.78);
-          border: 1px solid rgba(255,255,255,0.18);
-          text-shadow:
-            0 1px 0 rgba(0,0,0,0.55),
-            0 0 6px rgba(0,0,0,0.55);
-          animation: dmgHudPop 650ms ease-out both;
-          will-change: transform, opacity;
-        }
-        @keyframes dmgHudPop{
-          0%{ opacity:0; transform: translate3d(0, 10px, 0) scale(0.92); }
-          18%{ opacity:1; transform: translate3d(0, 0px, 0) scale(1.08); }
-          40%{ opacity:1; transform: translate3d(0, -2px, 0) scale(1.00); }
-          100%{ opacity:0; transform: translate3d(0, -18px, 0) scale(1.06); }
-        }
-.bb-hud {
+        .bb-hud {
           position: absolute;
           top: 100%;
           left: 50%;
@@ -3730,25 +3662,69 @@ const tags = useMemo(() => {
           position: absolute;
           inset: 0;
           border-radius: 18px;
-          background: rgba(255,255,255,0.22);
+          background: rgba(255,255,255,0.16);
           animation: dmgFlash 180ms ease-out both;
-          mix-blend-mode: screen;
+          overflow: hidden; /* ensure slash stays clipped */
         }
-        .bb-dmgfloat {
+        .bb-dmgflash::after {
+          content: "";
           position: absolute;
           left: 50%;
-          top: 46%;
-          transform: translate(-50%, -50%);
-          padding: 6px 10px;
+          top: 50%;
+          width: 64%;
+          height: 14%;
+          transform: translate(-50%, -55%) rotate(-21deg) scaleY(1.07);
+          background: linear-gradient(
+            90deg,
+            rgba(255,255,255,0.00) 0%,
+            rgba(255,255,255,0.16) 24%,
+            rgba(255,255,255,0.72) 52%,
+            rgba(255,255,255,0.12) 78%,
+            rgba(255,255,255,0.00) 100%
+          );
+          border-radius: 99px;
+          opacity: 0;
+          pointer-events: none;
+          animation: slashBlade 132ms cubic-bezier(0.63,0.01,0.95,0.85) both;
+        }
+        @keyframes slashBlade {
+          0%   { opacity: 0; transform: translate(-50%, -55%) rotate(-21deg) scaleY(0.89) scaleX(0.93);}
+          25%  { opacity: 1; transform: translate(-50%, -55%) rotate(-21deg) scaleY(1.12) scaleX(1.04);}
+          70%  { opacity: 0.82; }
+          100% { opacity: 0; transform: translate(-50%, -55%) rotate(-21deg) scaleY(1.18) scaleX(1.13);}
+        }
+
+        .bb-dmgfloat {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          pointer-events: none;
+        }
+        .bb-dmgfloat-pill {
+          padding: 7px 14px;
           border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.22);
-          background: rgba(0,0,0,0.42);
-          backdrop-filter: blur(8px);
-          font-weight: 900;
-          letter-spacing: 0.12em;
+          border: 2px solid rgba(255,255,255,0.36);
+          background: linear-gradient(120deg, rgba(30,30,32,0.84) 60%, rgba(46,46,60,0.73) 100%);
+          font-weight: 1000;
+          letter-spacing: 0.13em;
           text-transform: uppercase;
-          font-size: 11px;
-          animation: dmgFloat 320ms ease-out both;
+          font-size: 13px;
+          color: #fff;
+          text-shadow:
+            0 1px 2px #000C,
+            0 0 4px #2349,
+            0 0 0.5px #fff,
+            1.5px 0 1.5px #000E,
+            -1.5px 0 1.5px #000E;
+          animation: dmgFloatPop 326ms cubic-bezier(0.32,1.2,0.83,0.94) both;
+        }
+        @keyframes dmgFloatPop {
+          0%   { opacity: 0; transform: scale(0.9);}
+          18%  { opacity: 1; transform: scale(1.07);}
+          40%  { transform: scale(1.00);}
+          100% { opacity: 0; transform: translate3d(-50%, -70%, 0) scale(1.06);}
         }
 
         .bb-death {
