@@ -1338,12 +1338,18 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       } else if (e.type === "turn_start") {
         const ref = readUnitRefFromEvent(e, "unit");
         if (ref?.instanceId) active = ref.instanceId;
-      } else if (e.type === "damage") {
-        // Prefer explicit instanceId; fallback to side+slot -> current slot map to avoid 'wrong target' / missing updates.
-        const tgtObj = (e as any)?.target ?? null;
-        const side = (tgtObj?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
-        const slot = Number(tgtObj?.slot ?? (e as any)?.slot ?? NaN);
-        let tid = String(tgtObj?.instanceId ?? "");
+            } else if (e.type === "damage") {
+        // Prefer explicit instanceId; fallback to side+slot -> current slot map.
+        // Some logs can store unit ref under different keys (target/unit/to), so we normalize it here
+        // to avoid "wrong target" visuals and premature round_end while cards look alive.
+        const ref =
+          readUnitRefFromEvent(e, "target") ||
+          readUnitRefFromEvent(e, "unit") ||
+          readUnitRefFromEvent(e, "to");
+
+        const side = (ref?.side ?? (e as any)?.target?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
+        const slot = Number(ref?.slot ?? (e as any)?.target?.slot ?? (e as any)?.slot ?? NaN);
+        let tid = String(ref?.instanceId ?? (e as any)?.target?.instanceId ?? "");
         const amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
         const shield = (e as any)?.shield;
@@ -1363,10 +1369,14 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           }
         }
       } else if (e.type === "heal") {
-        const tgtObj = (e as any)?.target ?? null;
-        const side = (tgtObj?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
-        const slot = Number(tgtObj?.slot ?? (e as any)?.slot ?? NaN);
-        let tid = String(tgtObj?.instanceId ?? "");
+        const ref =
+          readUnitRefFromEvent(e, "target") ||
+          readUnitRefFromEvent(e, "unit") ||
+          readUnitRefFromEvent(e, "to");
+
+        const side = (ref?.side ?? (e as any)?.target?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
+        const slot = Number(ref?.slot ?? (e as any)?.target?.slot ?? (e as any)?.slot ?? NaN);
+        let tid = String(ref?.instanceId ?? (e as any)?.target?.instanceId ?? "");
         const amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
 
@@ -1384,9 +1394,24 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           }
         }
       } else if (e.type === "shield" || e.type === "shield_hit") {
-        const tid = String((e as any)?.target?.instanceId ?? "");
+        const ref =
+          readUnitRefFromEvent(e, "target") ||
+          readUnitRefFromEvent(e, "unit") ||
+          readUnitRefFromEvent(e, "to");
+
+        let tid = String(ref?.instanceId ?? (e as any)?.target?.instanceId ?? "");
         const shield = (e as any)?.shield;
         const amount = Number((e as any)?.amount ?? 0);
+
+        if (!tid) {
+          const side = (ref?.side ?? (e as any)?.target?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
+          const slot = Number(ref?.slot ?? (e as any)?.target?.slot ?? (e as any)?.slot ?? NaN);
+          if ((side === "p1" || side === "p2") && Number.isFinite(slot)) {
+            const bySlot = side === "p1" ? slotMapP1[slot] : slotMapP2[slot];
+            if (bySlot?.instanceId) tid = String(bySlot.instanceId);
+          }
+        }
+
         if (tid) {
           const u = units.get(tid);
           if (u) {
@@ -1886,10 +1911,14 @@ const arrowAttacks = useMemo(() => {
       if (e.t < fromT) continue;
       if (e.t > t) break;
       if (e.type === "damage") {
-        const tgtObj = (e as any)?.target ?? null;
-        const side = (tgtObj?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
-        const slot = Number(tgtObj?.slot ?? (e as any)?.slot ?? NaN);
-        let tid = String(tgtObj?.instanceId ?? "");
+        const ref =
+          readUnitRefFromEvent(e, "target") ||
+          readUnitRefFromEvent(e, "unit") ||
+          readUnitRefFromEvent(e, "to");
+
+        const side = (ref?.side ?? (e as any)?.target?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
+        const slot = Number(ref?.slot ?? (e as any)?.target?.slot ?? (e as any)?.slot ?? NaN);
+        let tid = String(ref?.instanceId ?? (e as any)?.target?.instanceId ?? "");
         const amount = Number((e as any)?.amount ?? 0);
         const blocked = Boolean((e as any)?.blocked ?? false);
 
