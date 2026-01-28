@@ -1009,60 +1009,6 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
 
-  // Resolve instanceId from timeline events across schema variations.
-  // Falls back to last seen instanceId by side+slot (stable) when the engine omits instanceId in some events.
-  const resolveEventInstanceId = useCallback(
-    (e: any, key: "unit" | "target" | "from" | "to", extraIdKeys: string[] = []) => {
-      const obj = e?.[key];
-      let id = "";
-
-      // 1) Direct instanceId on the nested ref.
-      if (obj && typeof obj === "object") {
-        id = String((obj as any).instanceId ?? "");
-      }
-
-      // 2) Common alternative fields on the event root.
-      if (!id) {
-        for (const k of extraIdKeys) {
-          const v = (e as any)?.[k];
-          if (v != null) {
-            const s = String(v);
-            if (s) {
-              id = s;
-              break;
-            }
-          }
-        }
-      }
-
-      // 3) Side+slot fallback → last seen instanceId (prevents "damage on wrong card" / "no damage shown").
-      if (!id && obj && typeof obj === "object") {
-        const side = (obj as any).side as any;
-        const slot = Number((obj as any).slot);
-        if ((side === "p1" || side === "p2") && Number.isFinite(slot)) {
-          const k = `${side}:${slot}`;
-          const mapped = lastInstBySlotRef.current[k];
-          if (mapped) id = String(mapped);
-        }
-      }
-
-      // 4) Last resort: some logs put side/slot on root for "unit"/"target".
-      if (!id && (key === "unit" || key === "target")) {
-        const side = (e as any)?.side as any;
-        const slot = Number((e as any)?.slot);
-        if ((side === "p1" || side === "p2") && Number.isFinite(slot)) {
-          const k = `${side}:${slot}`;
-          const mapped = lastInstBySlotRef.current[k];
-          if (mapped) id = String(mapped);
-        }
-      }
-
-      return id;
-    },
-    [],
-  );
-
-
   // =========================================================
   // FX MANAGER (GUARANTEED): death bursts are rendered in an
   // arena-level overlay, independent of card DOM/lifecycle.
@@ -1393,10 +1339,20 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         const ref = readUnitRefFromEvent(e, "unit");
         if (ref?.instanceId) active = ref.instanceId;
       } else if (e.type === "damage") {
-        const tid = resolveEventInstanceId(e as any, "target", ["targetId", "toId"]);
+        // Prefer explicit instanceId; fallback to side+slot -> current slot map to avoid 'wrong target' / missing updates.
+        const tgtObj = (e as any)?.target ?? null;
+        const side = (tgtObj?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
+        const slot = Number(tgtObj?.slot ?? (e as any)?.slot ?? NaN);
+        let tid = String(tgtObj?.instanceId ?? "");
         const amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
         const shield = (e as any)?.shield;
+
+        if (!tid && (side === "p1" || side === "p2") && Number.isFinite(slot)) {
+          const bySlot = side === "p1" ? slotMapP1[slot] : slotMapP2[slot];
+          if (bySlot?.instanceId) tid = String(bySlot.instanceId);
+        }
+
         if (tid) {
           const u = units.get(tid);
           if (u) {
@@ -1407,18 +1363,28 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           }
         }
       } else if (e.type === "heal") {
-        const tid = resolveEventInstanceId(e as any, "target", ["targetId", "toId"]);
+        const tgtObj = (e as any)?.target ?? null;
+        const side = (tgtObj?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
+        const slot = Number(tgtObj?.slot ?? (e as any)?.slot ?? NaN);
+        let tid = String(tgtObj?.instanceId ?? "");
         const amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
+
+        if (!tid && (side === "p1" || side === "p2") && Number.isFinite(slot)) {
+          const bySlot = side === "p1" ? slotMapP1[slot] : slotMapP2[slot];
+          if (bySlot?.instanceId) tid = String(bySlot.instanceId);
+        }
+
         if (tid) {
           const u = units.get(tid);
           if (u) {
-            if (Number.isFinite(hp)) u.hp = clamp(Number(hp), 0, u.maxHp);
-            else u.hp = clamp(u.hp + Math.max(0, Math.floor(amount)), 0, u.maxHp);
+            if (Number.isFinite(hp)) u.hp = Math.max(0, Number(hp));
+            else u.hp = Math.max(0, u.hp + Math.max(0, Math.floor(amount)));
+            if (u.hp > 0) u.alive = true;
           }
         }
       } else if (e.type === "shield" || e.type === "shield_hit") {
-        const tid = resolveEventInstanceId(e as any, "target", ["targetId", "toId"]);
+        const tid = String((e as any)?.target?.instanceId ?? "");
         const shield = (e as any)?.shield;
         const amount = Number((e as any)?.amount ?? 0);
         if (tid) {
@@ -1433,7 +1399,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           }
         }
       } else if (e.type === "debuff_applied") {
-        const tid = resolveEventInstanceId(e as any, "target", ["targetId", "toId"]);
+        const tid = String((e as any)?.target?.instanceId ?? "");
         const debuff = String((e as any)?.debuff ?? "");
         if (tid && debuff) {
           const u = units.get(tid);
@@ -1777,8 +1743,23 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       if (e.type !== "attack") continue;
 
       // Be resilient: event schemas differ between engines/log versions.
-      const fromId = resolveEventInstanceId(e as any, "from", ["fromId", "attackerId", "attacker_id", "from_id"]);
-      const toId = resolveEventInstanceId(e as any, "to", ["toId", "targetId", "target_id", "to_id"]);
+      const fromRef = readUnitRefFromEvent(e as any, "from") || readUnitRefFromEvent(e as any, "unit");
+      const toRef = readUnitRefFromEvent(e as any, "to") || readUnitRefFromEvent(e as any, "target");
+
+      const fromId = String(
+        (fromRef as any)?.instanceId ??
+          (e as any)?.from?.instanceId ??
+          (e as any)?.fromId ??
+          (e as any)?.attackerId ??
+          "",
+      );
+      const toId = String(
+        (toRef as any)?.instanceId ??
+          (e as any)?.to?.instanceId ??
+          (e as any)?.toId ??
+          (e as any)?.targetId ??
+          "",
+      );
       if (!fromId || !toId) continue;
 
       (map[fromId] ||= []).push({ t: (e as any).t, fromId, toId });
@@ -1799,8 +1780,22 @@ const enemyUserId = enemySide === "p1" ? match?.p1_user_id : match?.p2_user_id;
       const et = Number(e.t ?? 0);
       if (!(et <= t)) continue;
 
-      const fromId = resolveEventInstanceId(e as any, "from", ["fromId", "attackerId", "attacker_id", "from_id"]);
-      const toId = resolveEventInstanceId(e as any, "to", ["toId", "targetId", "target_id", "to_id"]);
+      const fromRef = readUnitRefFromEvent(e as any, 'from') || readUnitRefFromEvent(e as any, 'unit');
+      const toRef = readUnitRefFromEvent(e as any, 'to') || readUnitRefFromEvent(e as any, 'target');
+      const fromId = String(
+        (fromRef as any)?.instanceId ??
+          (e as any)?.from?.instanceId ??
+          (e as any)?.fromId ??
+          (e as any)?.attackerId ??
+          '',
+      );
+      const toId = String(
+        (toRef as any)?.instanceId ??
+          (e as any)?.to?.instanceId ??
+          (e as any)?.toId ??
+          (e as any)?.targetId ??
+          '',
+      );
       if (!fromId || !toId) continue;
 
       arr.push({ t: et, fromId, toId });
@@ -1851,9 +1846,11 @@ const arrowAttacks = useMemo(() => {
       const e: any = tl[i];
       if (!e || e.type !== "attack") continue;
 
+      const fromRef = readUnitRefFromEvent(e, "from") || readUnitRefFromEvent(e, "unit");
+      const toRef = readUnitRefFromEvent(e, "to") || readUnitRefFromEvent(e, "target");
 
-      const attackerId = resolveEventInstanceId(e as any, "from", ["fromId", "attackerId", "attacker_id", "from_id"]);
-      const targetId = resolveEventInstanceId(e as any, "to", ["toId", "targetId", "target_id", "to_id"]);
+      const attackerId = String(fromRef?.instanceId ?? (e?.from && e.from.instanceId) ?? e?.fromId ?? e?.attackerId ?? "");
+      const targetId = String(toRef?.instanceId ?? (e?.to && e.to.instanceId) ?? e?.toId ?? e?.targetId ?? "");
       if (!attackerId || !targetId) continue;
 
       const baseId = String(e.id ?? e.uid ?? `${e.t ?? ""}:${attackerId}:${targetId}`);
@@ -1889,9 +1886,18 @@ const arrowAttacks = useMemo(() => {
       if (e.t < fromT) continue;
       if (e.t > t) break;
       if (e.type === "damage") {
-        const tid = resolveEventInstanceId(e as any, "target", ["targetId", "toId"]);
+        const tgtObj = (e as any)?.target ?? null;
+        const side = (tgtObj?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
+        const slot = Number(tgtObj?.slot ?? (e as any)?.slot ?? NaN);
+        let tid = String(tgtObj?.instanceId ?? "");
         const amount = Number((e as any)?.amount ?? 0);
         const blocked = Boolean((e as any)?.blocked ?? false);
+
+        if (!tid && (side === "p1" || side === "p2") && Number.isFinite(slot)) {
+          const bySlot = side === "p1" ? p1UnitsBySlot[slot] : p2UnitsBySlot[slot];
+          if (bySlot?.instanceId) tid = String(bySlot.instanceId);
+        }
+
         if (!tid) continue;
         (map[tid] ||= []).push({ t: e.t, amount, blocked });
       }
@@ -1907,8 +1913,8 @@ const arrowAttacks = useMemo(() => {
       if (e.t < fromT) continue;
       if (e.t > t) break;
       if (e.type === "death") {
-        const id = resolveEventInstanceId(e as any, "unit", ["unitId", "instanceId"]);
-        if (id) set.add(id);
+        const ref = readUnitRefFromEvent(e, "unit");
+        if (ref?.instanceId) set.add(ref.instanceId);
       }
     }
     return set;
@@ -2302,9 +2308,7 @@ const hpPct = useMemo(() => {
                   <>
                     <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
                     <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
-                      <span className="bb-dmgfloat-pill">
-                        {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
-                      </span>
+                      {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
                     </div>
                   </>
                 )}
@@ -3064,9 +3068,9 @@ const hpPct = useMemo(() => {
           100% { opacity: 0; }
         }
         @keyframes dmgFloat {
-          0%   { opacity: 0; transform: translateY(6px) scale(0.96); }
-          20%  { opacity: 1; transform: translateY(0px) scale(1.04); }
-          100% { opacity: 0; transform: translateY(-14px) scale(1.06); }
+          0%   { opacity: 0; transform: translate3d(-50%, -30%, 0) scale(0.96); }
+          20%  { opacity: 1; transform: translate3d(-50%, -46%, 0) scale(1.02); }
+          100% { opacity: 0; transform: translate3d(-50%, -70%, 0) scale(1.06); }
         }
         @keyframes deathFade {
           0%   { opacity: 0; }
@@ -3662,69 +3666,25 @@ const hpPct = useMemo(() => {
           position: absolute;
           inset: 0;
           border-radius: 18px;
-          background: rgba(255,255,255,0.16);
+          background: rgba(255,255,255,0.22);
           animation: dmgFlash 180ms ease-out both;
-          overflow: hidden; /* ensure slash stays clipped */
+          mix-blend-mode: screen;
         }
-        .bb-dmgflash::after {
-          content: "";
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          width: 64%;
-          height: 14%;
-          transform: translate(-50%, -55%) rotate(-21deg) scaleY(1.07);
-          background: linear-gradient(
-            90deg,
-            rgba(255,255,255,0.00) 0%,
-            rgba(255,255,255,0.16) 24%,
-            rgba(255,255,255,0.72) 52%,
-            rgba(255,255,255,0.12) 78%,
-            rgba(255,255,255,0.00) 100%
-          );
-          border-radius: 99px;
-          opacity: 0;
-          pointer-events: none;
-          animation: slashBlade 132ms cubic-bezier(0.63,0.01,0.95,0.85) both;
-        }
-        @keyframes slashBlade {
-          0%   { opacity: 0; transform: translate(-50%, -55%) rotate(-21deg) scaleY(0.89) scaleX(0.93);}
-          25%  { opacity: 1; transform: translate(-50%, -55%) rotate(-21deg) scaleY(1.12) scaleX(1.04);}
-          70%  { opacity: 0.82; }
-          100% { opacity: 0; transform: translate(-50%, -55%) rotate(-21deg) scaleY(1.18) scaleX(1.13);}
-        }
-
         .bb-dmgfloat {
           position: absolute;
-          inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          pointer-events: none;
-        }
-        .bb-dmgfloat-pill {
-          padding: 7px 14px;
+          left: 50%;
+          top: 46%;
+          transform: translate(-50%, -50%);
+          padding: 6px 10px;
           border-radius: 999px;
-          border: 2px solid rgba(255,255,255,0.36);
-          background: linear-gradient(120deg, rgba(30,30,32,0.84) 60%, rgba(46,46,60,0.73) 100%);
-          font-weight: 1000;
-          letter-spacing: 0.13em;
+          border: 1px solid rgba(255,255,255,0.22);
+          background: rgba(0,0,0,0.42);
+          backdrop-filter: blur(8px);
+          font-weight: 900;
+          letter-spacing: 0.12em;
           text-transform: uppercase;
-          font-size: 13px;
-          color: #fff;
-          text-shadow:
-            0 1px 2px #000C,
-            0 0 4px #2349,
-            0 0 0.5px #fff,
-            1.5px 0 1.5px #000E,
-            -1.5px 0 1.5px #000E;
-          animation: dmgFloatPop 326ms cubic-bezier(0.32,1.2,0.83,0.94) both;
-        }
-        @keyframes dmgFloatPop {
-          0%   { opacity: 0; transform: scale(0.9);}
-          18%  { opacity: 1; transform: scale(1.07);}
-          40%  { transform: scale(1.00);}
-          100% { opacity: 0; transform: translate3d(-50%, -70%, 0) scale(1.06);}
+          font-size: 11px;
+          animation: dmgFloat 320ms ease-out both;
         }
 
         .bb-death {
