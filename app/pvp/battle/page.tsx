@@ -2204,22 +2204,64 @@ const hpPct = useMemo(() => {
       return damageFx[damageFx.length - 1];
     }, [renderUnit?.instanceId, damageFx]);
 
-    const [dmgHud, setDmgHud] = useState<null | { t: number; text: string }>(null);
-    const lastDmgTRef = useRef<number | null>(null);
+    
+    // Damage HUD (separate from in-card FX): show damage ABOVE the card, reliably.
+    // We prefer timeline damage events when present; otherwise we fall back to HP+shield delta.
+    const [dmgHud, setDmgHud] = useState<null | { k: string; text: string }>(null);
+    const dmgHudTimerRef = useRef<number | null>(null);
+    const prevHpSumRef = useRef<number | null>(null);
+
+    const showDmgHud = (text: string, key: string) => {
+      setDmgHud({ k: key, text });
+      if (dmgHudTimerRef.current) window.clearTimeout(dmgHudTimerRef.current);
+      dmgHudTimerRef.current = window.setTimeout(() => setDmgHud(null), 650);
+    };
+
+    useEffect(() => {
+      return () => {
+        if (dmgHudTimerRef.current) window.clearTimeout(dmgHudTimerRef.current);
+      };
+    }, []);
+
+    // Reset HP baseline when instance changes
+    useEffect(() => {
+      prevHpSumRef.current = null;
+    }, [instId]);
+
+    // Preferred: explicit damage event from timeline (if present in the current damageFx window)
     useEffect(() => {
       if (!renderUnit || !dmg) return;
       const tNow = Number((dmg as any).t);
-      if (!Number.isFinite(tNow)) return;
-      if (lastDmgTRef.current === tNow) return;
-      lastDmgTRef.current = tNow;
-      const text = (dmg as any).blocked ? "BLOCK" : `-${Math.max(0, Math.floor(Number((dmg as any).amount ?? 0)))}`;
-      setDmgHud({ t: tNow, text });
-      const tm = window.setTimeout(() => setDmgHud(null), 650);
-      return () => window.clearTimeout(tm);
-    }, [renderUnit?.instanceId, dmg?.t, (dmg as any)?.amount, (dmg as any)?.blocked]);
+      const amt = Math.max(0, Math.floor(Number((dmg as any).amount ?? 0)));
+      const text = (dmg as any).blocked ? "BLOCK" : `-${amt}`;
+      // key must change to re-trigger animation even for same amount
+      const key = `evt-${renderUnit.instanceId}-${Number.isFinite(tNow) ? tNow : Date.now()}`;
+      showDmgHud(text, key);
+      // keep baseline in sync so fallback doesn't double-fire
+      if (activeUnit) prevHpSumRef.current = (activeUnit.hp ?? 0) + (activeUnit.shield ?? 0);
+    }, [renderUnit?.instanceId, (dmg as any)?.t, (dmg as any)?.amount, (dmg as any)?.blocked]);
 
+    // Fallback: detect damage by HP+shield drop (covers cases where timeline has no 'damage' event)
+    useEffect(() => {
+      if (!activeUnit || !instId) return;
+      // if we already have an explicit dmg event in the window, do not double-fire
+      if (dmg) {
+        prevHpSumRef.current = (activeUnit.hp ?? 0) + (activeUnit.shield ?? 0);
+        return;
+      }
 
-    const tags = useMemo(() => {
+      const sum = (activeUnit.hp ?? 0) + (activeUnit.shield ?? 0);
+      const prev = prevHpSumRef.current;
+      prevHpSumRef.current = sum;
+
+      if (prev == null) return;
+      const delta = Math.max(0, Math.floor(prev - sum));
+      if (delta <= 0) return;
+
+      const key = `hp-${instId}-${Date.now()}`;
+      showDmgHud(`-${delta}`, key);
+    }, [instId, activeUnit?.hp, activeUnit?.shield, dmg]);
+const tags = useMemo(() => {
       if (!activeUnit) return [];
       const arr = Array.from(activeUnit.tags || []);
       return arr.slice(0, 3);
@@ -2233,16 +2275,13 @@ const hpPct = useMemo(() => {
     if (isHidden) return null;
     return (
       <div className={["bb-slot", isDyingUi ? "is-dying" : "", isVanish ? "is-vanish" : ""].join(" ")} data-unit-id={renderUnit?.instanceId}>
+        
         {dmgHud && (
-          <div
-            key={`dmghud-${dmgHud.t}-${renderUnit?.instanceId ?? slotKey}`}
-            className="bb-dmg-hud"
-            aria-hidden="true"
-          >
+          <div key={dmgHud.k} className="bb-dmg-hud" aria-hidden="true">
             <span className="bb-dmg-hud-pill">{dmgHud.text}</span>
           </div>
         )}
-        <div
+<div
           data-bb-slot={slotKey}
           className="bb-motion-layer bb-card-root"
           data-fx-motion="1"
@@ -2299,6 +2338,7 @@ const hpPct = useMemo(() => {
                   </div>
                 )}
 
+                {renderUnit && dmg && (<div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />)}
 
                 {isDying && <div className="bb-death" />}
               </div>
@@ -2412,50 +2452,6 @@ const hpPct = useMemo(() => {
           letter-spacing: 0.1px;
           flex: 0 1 auto;
           min-width: 0;
-        }
-
-        .bb-dmg-hud {
-          position: absolute;
-          left: 0;
-          right: 0;
-          bottom: 100%;
-          margin-bottom: 6px;
-          display: flex;
-          align-items: flex-end;
-          justify-content: center;
-          pointer-events: none;
-          z-index: 31;
-        }
-
-        .bb-dmg-hud-pill {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          min-width: 26px;
-          padding: 4px 8px;
-          border-radius: 999px;
-          background: rgba(120, 12, 16, 0.92);
-          border: 1.6px solid rgba(255, 120, 120, 0.38);
-          color: rgba(255,255,255,0.96);
-          font-size: 11px;
-          font-weight: 900;
-          line-height: 1;
-          letter-spacing: 0.02em;
-          text-shadow:
-            0 1px 2px rgba(0,0,0,0.45),
-            0 0 6px rgba(0,0,0,0.18);
-          box-shadow: 0 8px 18px rgba(0,0,0,0.22);
-          transform: translate3d(0, 8px, 0) scale(0.92);
-          opacity: 0;
-          animation: bbDmgHudPop 650ms var(--ease-out) forwards;
-          will-change: transform, opacity;
-        }
-
-        @keyframes bbDmgHudPop {
-          0%   { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.92); }
-          18%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1.08); }
-          40%  { opacity: 1; transform: translate3d(0, -2px, 0) scale(1.00); }
-          100% { opacity: 0; transform: translate3d(0, -16px, 0) scale(1.06); }
         }
 
         .bb-hud-sep {
@@ -3561,7 +3557,44 @@ const hpPct = useMemo(() => {
           margin: 0 auto;
         }
 
-        .bb-hud {
+        
+        .bb-dmg-hud{
+          position:absolute;
+          left:0; right:0;
+          top:-22px;
+          display:flex;
+          align-items:flex-end;
+          justify-content:center;
+          pointer-events:none;
+          z-index: 9;
+        }
+        .bb-dmg-hud-pill{
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          min-width: 34px;
+          height: 24px;
+          padding: 0 10px;
+          border-radius: 999px;
+          font-weight: 900;
+          font-size: 16px;
+          line-height: 1;
+          color: #fff;
+          background: rgba(12, 12, 14, 0.78);
+          border: 1px solid rgba(255,255,255,0.18);
+          text-shadow:
+            0 1px 0 rgba(0,0,0,0.55),
+            0 0 6px rgba(0,0,0,0.55);
+          animation: dmgHudPop 650ms ease-out both;
+          will-change: transform, opacity;
+        }
+        @keyframes dmgHudPop{
+          0%{ opacity:0; transform: translate3d(0, 10px, 0) scale(0.92); }
+          18%{ opacity:1; transform: translate3d(0, 0px, 0) scale(1.08); }
+          40%{ opacity:1; transform: translate3d(0, -2px, 0) scale(1.00); }
+          100%{ opacity:0; transform: translate3d(0, -18px, 0) scale(1.06); }
+        }
+.bb-hud {
           position: absolute;
           top: 100%;
           left: 50%;
