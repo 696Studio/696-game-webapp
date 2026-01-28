@@ -2222,7 +2222,7 @@ const hpPct = useMemo(() => {
           data-bb-slot={slotKey}
           className="bb-motion-layer bb-card-root"
           data-fx-motion="1"
-          style={{ willChange: "transform" }}
+          style={{ willChange: "transform", overflow: "visible" }}
         >
       <div className="bb-fx-anchor">
         
@@ -2330,7 +2330,7 @@ const hpPct = useMemo(() => {
             </div>
         </div>
       {renderUnit && dmg && (
-        <div className="bb-dmg-hud" aria-hidden="true">
+        <div key={`dmghud-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmg-hud" aria-hidden="true">
           <span className="bb-dmg-hud-pill">{dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}</span>
         </div>
       )}
@@ -2352,6 +2352,43 @@ const hpPct = useMemo(() => {
       </div>
 
       <style jsx>{`
+        .bb-dmg-hud {
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 100%;
+          margin-bottom: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          pointer-events: none;
+          z-index: 31;
+        }
+
+        .bb-dmg-hud-pill {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 2px 6px;
+          border-radius: 10px;
+          background: rgba(130, 18, 22, 0.92);
+          border: 1.4px solid rgba(255, 120, 120, 0.55);
+          color: rgba(255, 255, 255, 0.96);
+          font-size: 9px;
+          font-weight: 900;
+          line-height: 1;
+          letter-spacing: 0.02em;
+          text-shadow:
+            -1px 0 rgba(0,0,0,0.55),
+            1px 0 rgba(0,0,0,0.55),
+            0 -1px rgba(0,0,0,0.55),
+            0 1px rgba(0,0,0,0.55);
+          box-shadow:
+            0 2px 10px rgba(0,0,0,0.35),
+            0 0 10px rgba(255, 80, 80, 0.22);
+          animation: dmgFloat 820ms var(--ease-out) both;
+        }
+
         .bb-hud {
           display: inline-flex;
           align-items: center;
@@ -3042,10 +3079,9 @@ const hpPct = useMemo(() => {
           100% { opacity: 0; }
         }
         @keyframes dmgFloat {
-          0%   { opacity: 0; transform: translate3d(0, 8px, 0) scale(0.92); }
-          18%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1.07); }
-          40%  { opacity: 1; transform: translate3d(0, -2px, 0) scale(1.00); }
-          100% { opacity: 0; transform: translate3d(0, -18px, 0) scale(1.06); }
+          0%   { opacity: 0; transform: translate3d(-50%, -30%, 0) scale(0.96); }
+          20%  { opacity: 1; transform: translate3d(-50%, -46%, 0) scale(1.02); }
+          100% { opacity: 0; transform: translate3d(-50%, -70%, 0) scale(1.06); }
         }
         @keyframes deathFade {
           0%   { opacity: 0; }
@@ -3503,43 +3539,6 @@ const hpPct = useMemo(() => {
           width: 100%;
           max-width: 150px;
           margin: 0 auto;
-        }
-
-        .bb-dmg-hud {
-          position: absolute;
-          left: 0;
-          right: 0;
-          bottom: 100%;
-          margin-bottom: 6px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          pointer-events: none;
-          z-index: 31;
-        }
-
-        .bb-dmg-hud-pill {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 2px 6px;
-          border-radius: 10px;
-          background: rgba(130, 18, 22, 0.92);
-          border: 1.4px solid rgba(255, 120, 120, 0.55);
-          color: rgba(255, 255, 255, 0.96);
-          font-size: 9px;
-          font-weight: 900;
-          line-height: 1;
-          letter-spacing: 0.02em;
-          text-shadow:
-            -1px 0 rgba(0,0,0,0.55),
-            1px 0 rgba(0,0,0,0.55),
-            0 -1px rgba(0,0,0,0.55),
-            0 1px rgba(0,0,0,0.55);
-          box-shadow:
-            0 2px 10px rgba(0,0,0,0.35),
-            0 0 10px rgba(255, 80, 80, 0.22);
-          animation: dmgFloat 820ms var(--ease-out) both;
         }
 
         .bb-hud {
