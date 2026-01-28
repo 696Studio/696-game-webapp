@@ -1387,6 +1387,14 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         if (!tid && (side === "p1" || side === "p2") && Number.isFinite(slot)) {
           const bySlot = side === "p1" ? slotMapP1[slot] : slotMapP2[slot];
           if (bySlot?.instanceId) tid = String(bySlot.instanceId);
+
+          // If the slot has just transitioned (death/spawn), the current slot map can be stale.
+          // Use last known instanceId for that side+slot to keep damage targeting stable.
+          if (!tid) {
+            const k = `${side}:${slot}`;
+            const last = lastInstBySlotRef.current?.[k];
+            if (last) tid = String(last);
+          }
         }
 
         if (tid) {
@@ -1949,7 +1957,7 @@ const arrowAttacks = useMemo(() => {
   }, [timeline, t]);
 
   const damageFxByInstance = useMemo(() => {
-    const windowSec = 0.9;
+    const windowSec = 1.6;
     const fromT = Math.max(0, t - windowSec);
     const map: Record<string, DamageFx[]> = {};
 
@@ -1971,6 +1979,13 @@ const arrowAttacks = useMemo(() => {
         if (!tid && (side === "p1" || side === "p2") && Number.isFinite(slot)) {
           const bySlot = side === "p1" ? p1UnitsBySlot[slot] : p2UnitsBySlot[slot];
           if (bySlot?.instanceId) tid = String(bySlot.instanceId);
+
+          // Fallback to last known instance id for the slot (important when state updates remove the unit early).
+          if (!tid) {
+            const k = `${side}:${slot}`;
+            const last = lastInstBySlotRef.current?.[k];
+            if (last) tid = String(last);
+          }
         }
 
         if (!tid) continue;
