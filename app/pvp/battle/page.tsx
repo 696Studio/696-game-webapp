@@ -594,6 +594,10 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   }>({ show: false, ax: 0, ay: 0, bx: 0, by: 0 });
 
   const attackArrowTimeoutRef = useRef<number | null>(null);
+  // Attack lock: ensure only one lunge animation runs at a time (prevents overlapping lunges and "chaos" on fast timelines).
+  const attackLockRef = useRef(false);
+  const queuedAttackRef = useRef<{ fromId: string; toId: string } | null>(null);
+
   const [arrowAnimTick, setArrowAnimTick] = useState(0);
 
   // Animation loop for dash flow and pulse.
@@ -808,6 +812,14 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
 
   const lungeByInstanceIds = useCallback((fromId: string, toId: string) => {
     // FINAL: Detach → Fixed Overlay → Return (original DOM, no clones)
+    // LOCK: if an attack animation is already running, queue the latest request and run it after return.
+    if (attackLockRef.current) {
+      queuedAttackRef.current = { fromId, toId };
+      return;
+    }
+    attackLockRef.current = true;
+
+    try {
     try { (window as any).__bbAtkTick = ((window as any).__bbAtkTick || 0) + 1; } catch {}
 
     const fromCard = unitElByIdRef.current[fromId];
@@ -817,9 +829,10 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
     if (!attackerRoot || !targetRoot) {
       bbDbgSet(`#${(window as any).__bbAtkTick || 0} ATTACK ${fromId} -> ${toId}
 foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
+      attackLockRef.current = false;
       return;
     }
-    if (attackerRoot === targetRoot) return;
+    if (attackerRoot === targetRoot) { attackLockRef.current = false; return; }
 
     // Cancel WAAPI animations if any, so transform/transition is deterministic.
     attackerRoot.getAnimations?.().forEach((anim) => anim.cancel());
@@ -953,6 +966,17 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
           } catch {}
 
           restoreStyles();
+
+          // Unlock and run the latest queued attack (if any).
+          attackLockRef.current = false;
+          const q = queuedAttackRef.current;
+          if (q && q.fromId && q.toId) {
+            queuedAttackRef.current = null;
+            // Schedule next tick to avoid nested layout reads during return.
+            window.setTimeout(() => {
+              lungeByInstanceIds(q.fromId, q.toId);
+            }, 0);
+          }
         };
 
         if (isIOS && typeof (attackerRoot as any).animate === "function") {
@@ -1005,6 +1029,13 @@ foundAttacker=${!!attackerRoot} foundTarget=${!!targetRoot}`);
 
       });
     });
+
+    } catch (err) {
+      // Safety: never leave the lock stuck on unexpected runtime errors.
+      attackLockRef.current = false;
+      queuedAttackRef.current = null;
+      try { console.error("lungeByInstanceIds failed", err); } catch {}
+    }
   }, []);
 
   const lastInstBySlotRef = useRef<Record<string, string>>({});
@@ -1581,6 +1612,22 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     if (!hasReveal) return;
     if (!lastEnd) return;
+
+    // "Honest" round end: only show after the last combat event in this round has actually happened.
+    // This prevents cases where round_end exists in timeline but visuals still show living units mid-combat.
+    let lastCombatT = -1;
+    for (const ev of timeline as any[]) {
+      const e: any = ev;
+      if ((e as any).round !== roundN) continue;
+      const et = Number(e.t ?? 0);
+      if (!(et <= t)) break;
+      if (e.type === "attack" || e.type === "damage" || e.type === "death" || e.type === "heal" || e.type === "turn_start") {
+        if (et > lastCombatT) lastCombatT = et;
+      }
+    }
+    const endT = Number((lastEnd as any)?.t ?? 0);
+    if (lastCombatT >= 0 && t < Math.max(endT, lastCombatT)) return;
+
 
     const r = (lastEnd.round ?? roundN) as any;
 
