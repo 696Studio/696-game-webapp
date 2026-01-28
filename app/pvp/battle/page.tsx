@@ -2,7 +2,6 @@
 // @ts-nocheck
 
 import React, {Suspense, useEffect, useMemo, useRef, useState, useCallback} from "react";
-import { createPortal } from "react-dom";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameSessionContext } from "../../context/GameSessionContext";
 import CardArt from "../../components/CardArt";
@@ -1950,7 +1949,7 @@ const arrowAttacks = useMemo(() => {
   }, [timeline, t]);
 
   const damageFxByInstance = useMemo(() => {
-    const windowSec = 0.45;
+    const windowSec = 0.9;
     const fromT = Math.max(0, t - windowSec);
     const map: Record<string, DamageFx[]> = {};
 
@@ -1979,7 +1978,7 @@ const arrowAttacks = useMemo(() => {
       }
     }
     return map;
-  }, [timeline, t]);
+  }, [timeline, t, p1UnitsBySlot, p2UnitsBySlot]);
 
   const deathFxByInstance = useMemo(() => {
     const windowSec = 0.65;
@@ -2333,6 +2332,14 @@ const hpPct = useMemo(() => {
         
         {isDyingUi ? <div className="bb-death" /> : null}
       </div>
+      {renderUnit && dmg && (
+        <div className="bb-dmg-hud" aria-hidden="true">
+          <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
+          <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat bb-dmgfloat--above">
+            {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
+          </div>
+        </div>
+      )}
       <div
         ref={(el) => {
           if (el && renderUnit?.instanceId) unitElByIdRef.current[renderUnit.instanceId] = el;
@@ -2379,17 +2386,7 @@ const hpPct = useMemo(() => {
                     {atk.isTo && <div key={`impact-${atk.t}-${renderUnit.instanceId}`} className="bb-impact" />}
                   </div>
                 )}
-
-                {renderUnit && dmg && (
-                  <>
-                    <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
-                    <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
-                      {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
-                    </div>
-                  </>
-                )}
-
-                {isDying && <div className="bb-death" />}
+{isDying && <div className="bb-death" />}
               </div>
             )}
 
@@ -2502,6 +2499,24 @@ const hpPct = useMemo(() => {
           flex: 0 1 auto;
           min-width: 0;
         }
+
+        .bb-dmg-hud {
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: -10px;
+          display: flex;
+          align-items: flex-start;
+          justify-content: center;
+          pointer-events: none;
+          z-index: 60;
+        }
+
+        /* Allow the same dmg float to be used above the card */
+        .bb-dmgfloat--above {
+          white-space: nowrap;
+        }
+
 
         .bb-hud-sep {
           display: inline-block;
