@@ -2278,9 +2278,6 @@ const hpPct = useMemo(() => {
                 {renderUnit && dmg && (
                   <>
                     <div key={`dmgflash-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgflash" />
-                    <div key={`dmgfloat-${dmg.t}-${renderUnit.instanceId}`} className="bb-dmgfloat">
-                      {dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}
-                    </div>
                   </>
                 )}
 
@@ -2332,6 +2329,12 @@ const hpPct = useMemo(() => {
 
             </div>
         </div>
+      {renderUnit && dmg && (
+        <div className="bb-dmg-hud" aria-hidden="true">
+          <span className="bb-dmg-hud-pill">{dmg.blocked ? "BLOCK" : `-${Math.max(0, Math.floor(dmg.amount))}`}</span>
+        </div>
+      )}
+
       {renderUnit && (
         <div className="bb-hud" aria-hidden="true">
           <span className="bb-hud-item">
@@ -3039,12 +3042,10 @@ const hpPct = useMemo(() => {
           100% { opacity: 0; }
         }
         @keyframes dmgFloat {
-          0%   { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.96); }
-          20%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1.02); }
-          100% { opacity: 0; transform: translate3d(0, -16px, 0) scale(1.06); }
-        }
-          20%  { opacity: 1; transform: translate3d(-50%, -46%, 0) scale(1.02); }
-          100% { opacity: 0; transform: translate3d(-50%, -70%, 0) scale(1.06); }
+          0%   { opacity: 0; transform: translate3d(0, 8px, 0) scale(0.92); }
+          18%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1.07); }
+          40%  { opacity: 1; transform: translate3d(0, -2px, 0) scale(1.00); }
+          100% { opacity: 0; transform: translate3d(0, -18px, 0) scale(1.06); }
         }
         @keyframes deathFade {
           0%   { opacity: 0; }
@@ -3504,6 +3505,43 @@ const hpPct = useMemo(() => {
           margin: 0 auto;
         }
 
+        .bb-dmg-hud {
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 100%;
+          margin-bottom: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          pointer-events: none;
+          z-index: 31;
+        }
+
+        .bb-dmg-hud-pill {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 2px 6px;
+          border-radius: 10px;
+          background: rgba(130, 18, 22, 0.92);
+          border: 1.4px solid rgba(255, 120, 120, 0.55);
+          color: rgba(255, 255, 255, 0.96);
+          font-size: 9px;
+          font-weight: 900;
+          line-height: 1;
+          letter-spacing: 0.02em;
+          text-shadow:
+            -1px 0 rgba(0,0,0,0.55),
+            1px 0 rgba(0,0,0,0.55),
+            0 -1px rgba(0,0,0,0.55),
+            0 1px rgba(0,0,0,0.55);
+          box-shadow:
+            0 2px 10px rgba(0,0,0,0.35),
+            0 0 10px rgba(255, 80, 80, 0.22);
+          animation: dmgFloat 820ms var(--ease-out) both;
+        }
+
         .bb-hud {
           position: absolute;
           top: 100%;
@@ -3636,8 +3674,6 @@ const hpPct = useMemo(() => {
           mix-blend-mode: screen;
         }
 
-        .bb-motion-layer { overflow: visible; }
-
         .bb-dmgflash {
           position: absolute;
           inset: 0;
@@ -3648,31 +3684,19 @@ const hpPct = useMemo(() => {
         }
         .bb-dmgfloat {
           position: absolute;
-          inset: 0;
-          display: flex;
-          align-items: flex-start;
-          justify-content: center;
-          pointer-events: none;
-          z-index: 9;
-
-          /* show the number above the card (no translate(-50%)) */
-          margin-top: -22px;
-
+          left: 50%;
+          top: 46%;
+          transform: translate(-50%, -50%);
           padding: 6px 10px;
           border-radius: 999px;
           border: 1px solid rgba(255,255,255,0.22);
           background: rgba(0,0,0,0.42);
-
+          backdrop-filter: blur(8px);
           font-weight: 900;
-          font-size: 18px;
-          letter-spacing: 0.2px;
-          text-shadow:
-            0 1px 0 rgba(0,0,0,0.65),
-            0 0 6px rgba(0,0,0,0.55),
-            -1px 0 0 rgba(0,0,0,0.55),
-            1px 0 0 rgba(0,0,0,0.55),
-            0 -1px 0 rgba(0,0,0,0.55),
-            0 2px 10px rgba(0,0,0,0.35);
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          font-size: 11px;
+          animation: dmgFloat 320ms ease-out both;
         }
 
         .bb-death {
