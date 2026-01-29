@@ -1502,8 +1502,18 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         s1 = Number((e as any).p1 ?? 0);
         s2 = Number((e as any).p2 ?? 0);
       } else if (e.type === "round_end") {
-        rr = (e as any).round ?? rr;
-        rw = (e as any).winner ?? null;
+        // Some logs may emit round_end early due to server-side time limits.
+        // Client rule: accept round_end ONLY when one side has zero living units at this moment.
+        const aliveNow1 = Object.values(slotMapP1).filter(
+          (u: any) => u && (u as any).alive !== false && Number((u as any).hp ?? 0) > 0
+        ).length;
+        const aliveNow2 = Object.values(slotMapP2).filter(
+          (u: any) => u && (u as any).alive !== false && Number((u as any).hp ?? 0) > 0
+        ).length;
+        if (aliveNow1 === 0 || aliveNow2 === 0) {
+          // Do NOT overwrite rr here; rr comes from round_start/reveal and should not jump due to bad logs.
+          rw = (e as any).winner ?? null;
+        }
       }
     }
 
@@ -1601,17 +1611,16 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       if (e.type === "round_end") hasEnd = true;
     }
 
-    // "Honest" end: only treat round_end as end when one side has no living units.
-    if (hasEnd) {
-      const countAliveUnits = (bySlot: any) =>
-        Object.values(bySlot ?? {}).filter(
-          (u: any) => u && (u as any).alive !== false && Number((u as any).hp ?? 0) > 0
-        ).length;
+    // Client rule: round ends only when one side has zero living units.
+    // Allow this check only after reveal/score/end markers, to avoid early "end" before spawns are applied.
+    const countAliveUnits = (bySlot: any) =>
+      Object.values(bySlot ?? {}).filter(
+        (u: any) => u && (u as any).alive !== false && Number((u as any).hp ?? 0) > 0
+      ).length;
 
-      const a1 = countAliveUnits(p1UnitsBySlot);
-      const a2 = countAliveUnits(p2UnitsBySlot);
-      if (a1 === 0 || a2 === 0) return "end";
-    }
+    const a1 = countAliveUnits(p1UnitsBySlot);
+    const a2 = countAliveUnits(p2UnitsBySlot);
+    if ((hasReveal || hasScore || hasEnd) && (a1 === 0 || a2 === 0)) return "end";
 
     if (hasScore) return "score";
     if (hasReveal) return "reveal";
@@ -1624,18 +1633,15 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     //
     // Anti-flash: do not show until REVEAL for THIS round has been reached.
     let hasReveal = false;
-    let lastEnd: any = null;
 
     for (const ev of timeline as any[]) {
       const e: any = ev;
       if ((e as any).round !== roundN) continue;
       if (typeof e.t === "number" && e.t > t) break;
       if (e.type === "reveal") hasReveal = true;
-      if (e.type === "round_end") lastEnd = e;
     }
 
     if (!hasReveal) return;
-    if (!lastEnd) return;
 
     // "Honest" round end: only show after the last combat event in this round has actually happened.
     // This prevents cases where round_end exists in timeline but visuals still show living units mid-combat.
@@ -1659,18 +1665,20 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     ).length;
     if (!(alive1 === 0 || alive2 === 0)) return;
 
-    const endT = Number((lastEnd as any)?.t ?? 0);
+    const endT = t;
     if (lastCombatT >= 0 && t < Math.max(endT, lastCombatT)) return;
 
 
-    const r = (lastEnd.round ?? roundN) as any;
+    const r = (roundN) as any;
 
-    // Winner field can be "p1" | "p2" | "draw", but some logs may store user_id.
-    let w: any =
-      (lastEnd.winner ?? (lastEnd as any).win ?? (lastEnd as any).w ?? null) ??
-      null;
+    // Winner derivation (client-side strict):
+    // If one side has zero living units, the other side wins. If both are zero -> draw.
+    let w: any = null;
+    if (alive1 === 0 && alive2 === 0) w = "draw";
+    else if (alive1 === 0) w = "p2";
+    else if (alive2 === 0) w = "p1";
 
-    // Fallback to roundWinner state (still only triggers on round_end).
+    // Fallback: if still unknown, use roundWinner (from timeline) if available.
     if (!w && roundWinner) w = roundWinner;
 
     // Fallback: derive from the latest score event in THIS round up to this time (still only triggers on round_end).
@@ -1679,7 +1687,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       for (let i = timeline.length - 1; i >= 0; i--) {
         const e: any = (timeline as any[])[i];
         if ((e as any).round !== roundN) continue;
-        if (e?.type === "score" && typeof e.t === "number" && e.t <= (lastEnd.t ?? t)) {
+        if (e?.type === "score" && typeof e.t === "number" && e.t <= (endT ?? t)) {
           lastScore = e;
           break;
         }
@@ -1702,7 +1710,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     if (!w) return;
 
-    const sig = `${r}:${w}:${lastEnd.t}`;
+    const sig = `${r}:${w}:${Math.floor(endT * 1000)}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
