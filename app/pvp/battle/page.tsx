@@ -1387,14 +1387,6 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         if (!tid && (side === "p1" || side === "p2") && Number.isFinite(slot)) {
           const bySlot = side === "p1" ? slotMapP1[slot] : slotMapP2[slot];
           if (bySlot?.instanceId) tid = String(bySlot.instanceId);
-
-          // If the slot has just transitioned (death/spawn), the current slot map can be stale.
-          // Use last known instanceId for that side+slot to keep damage targeting stable.
-          if (!tid) {
-            const k = `${side}:${slot}`;
-            const last = lastInstBySlotRef.current?.[k];
-            if (last) tid = String(last);
-          }
         }
 
         if (tid) {
@@ -1957,43 +1949,66 @@ const arrowAttacks = useMemo(() => {
   }, [timeline, t]);
 
   const damageFxByInstance = useMemo(() => {
-    const windowSec = 1.6;
+    // Build damage popups that are RELIABLE across round boundaries.
+    // Important: some "damage" events may not include instanceId and only provide side+slot.
+    // If we map side+slot using the *current* slot state, we can show damage on the wrong card,
+    // especially when we are close to round transitions (window overlaps previous round).
+    //
+    // So: we reconstruct slot occupancy as-of each event time by scanning the timeline up to `t`.
+    const windowSec = 0.9;
     const fromT = Math.max(0, t - windowSec);
     const map: Record<string, DamageFx[]> = {};
 
-    for (const e of timeline) {
-      if (e.t < fromT) continue;
-      if (e.t > t) break;
-      if (e.type === "damage") {
-        const ref =
-          readUnitRefFromEvent(e, "target") ||
-          readUnitRefFromEvent(e, "unit") ||
-          readUnitRefFromEvent(e, "to");
+    // Track current slot occupancy while we scan.
+    const slotMapP1: Record<number, string | null> = { 0: null, 1: null, 2: null, 3: null, 4: null };
+    const slotMapP2: Record<number, string | null> = { 0: null, 1: null, 2: null, 3: null, 4: null };
 
-        const side = (ref?.side ?? (e as any)?.target?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
-        const slot = Number(ref?.slot ?? (e as any)?.target?.slot ?? (e as any)?.slot ?? NaN);
-        let tid = String(ref?.instanceId ?? (e as any)?.target?.instanceId ?? "");
-        const amount = Number((e as any)?.amount ?? 0);
-        const blocked = Boolean((e as any)?.blocked ?? false);
+    for (const ev of timeline as any[]) {
+      const e: any = ev;
+      const et = Number(e?.t ?? 0);
+      if (et > t) break;
 
-        if (!tid && (side === "p1" || side === "p2") && Number.isFinite(slot)) {
-          const bySlot = side === "p1" ? p1UnitsBySlot[slot] : p2UnitsBySlot[slot];
-          if (bySlot?.instanceId) tid = String(bySlot.instanceId);
-
-          // Fallback to last known instance id for the slot (important when state updates remove the unit early).
-          if (!tid) {
-            const k = `${side}:${slot}`;
-            const last = lastInstBySlotRef.current?.[k];
-            if (last) tid = String(last);
-          }
-        }
-
-        if (!tid) continue;
-        (map[tid] ||= []).push({ t: e.t, amount, blocked });
+      if (e?.type === "round_start") {
+        // Clear per-round occupancy so slot fallbacks never leak across rounds.
+        slotMapP1[0] = slotMapP1[1] = slotMapP1[2] = slotMapP1[3] = slotMapP1[4] = null;
+        slotMapP2[0] = slotMapP2[1] = slotMapP2[2] = slotMapP2[3] = slotMapP2[4] = null;
       }
+
+      if (e?.type === "spawn") {
+        const ref = readUnitRefFromEvent(e, "unit");
+        if (ref?.instanceId && (ref.side === "p1" || ref.side === "p2") && Number.isFinite(ref.slot)) {
+          const sid = String(ref.instanceId);
+          if (ref.side === "p1") slotMapP1[ref.slot] = sid;
+          else slotMapP2[ref.slot] = sid;
+        }
+      }
+
+      if (e?.type !== "damage") continue;
+      if (et < fromT) continue;
+
+      const ref =
+        readUnitRefFromEvent(e, "target") ||
+        readUnitRefFromEvent(e, "to") ||
+        // Some logs store the target under "unit" (ambiguous), keep as last fallback.
+        readUnitRefFromEvent(e, "unit");
+
+      const side = (ref?.side ?? e?.target?.side ?? e?.side) as "p1" | "p2" | undefined;
+      const slot = Number(ref?.slot ?? e?.target?.slot ?? e?.slot ?? NaN);
+      let tid = String(ref?.instanceId ?? e?.target?.instanceId ?? "");
+
+      const amount = Number(e?.amount ?? 0);
+      const blocked = Boolean(e?.blocked ?? false);
+
+      if (!tid && (side === "p1" || side === "p2") && Number.isFinite(slot)) {
+        tid = String((side === "p1" ? slotMapP1[slot] : slotMapP2[slot]) ?? "");
+      }
+
+      if (!tid) continue;
+      (map[tid] ||= []).push({ t: et, amount, blocked });
     }
+
     return map;
-  }, [timeline, t, p1UnitsBySlot, p2UnitsBySlot]);
+  }, [timeline, t]);
 
   const deathFxByInstance = useMemo(() => {
     const windowSec = 0.65;
