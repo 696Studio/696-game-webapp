@@ -2752,67 +2752,66 @@ const hpPct = useMemo(() => {
           z-index: 60;
         }
 
-        /* Premium, impactful float above card (works on Telegram WebView) */
+        /* Hearthstone-style aggressive floating damage above the card */
         .bb-dmgfloat--above {
           left: 0;
           right: 0;
-          top: -22px;
+          top: -28px;
           text-align: center;
           white-space: nowrap;
-          /* Pop-in + gentle up transition */
-          animation: dmgFloatAbove 980ms cubic-bezier(0.24, 1, 0.32, 1) both;
-          opacity: 0.96;
-          /* Readable, premium style */
           display: inline-block;
+          font-size: 2.25rem;
           font-weight: 800;
-          font-size: 18px;
-          letter-spacing: 0.01em;
-          color: #fff;
-          background: linear-gradient(90deg, #31e1fa 2%, #85ffe0 42%, #e4ffff 98%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          /* Elegant border effect for legibility */
+          font-family: 'Inter', Arial, sans-serif;
+          color: #fff5ee;
+          letter-spacing: 0.5px;
+          padding: 2px 18px;
+          border-radius: 22px;
+          background: linear-gradient(90deg, #1b0007 55%, #260006 100%);
+          box-shadow: 0 0 0 3px #5b071040, 0 3px 14px #71031344;
+          outline: 2px solid #a01c217a;
+          outline-offset: -3px;
+
+          /* Bold red/orange text glow, multiple shadows for punch */
           text-shadow:
-            0 1px 3px #24628855,
-            0 0.5px 0.5px #12e9ef90,
-            0 0 0.5px #fff,
-            0 2px 8px #15e2ff40,
+            0 2px 4px #70131e,
+            0 0 8px #ff1919,
+            0 0 12px #ff7139,
+            0 0 22px #e01005cc,
+            0 0 2px #951f1c,
             0 0 0.5px #fff;
-          /* Soft outline style for crisp effect */
-          border-radius: 6px;
-          padding: 1.5px 7px 2px 7px;
-          box-shadow:
-            0 2px 10px 0 #1cf0ff38,
-            0 0 1.5px #fff6,
-            0 0 0.5px #45ffe737;
-          /* Impactful slight bounce/pop effect on entry */
-          transform: scale(0.85) translateY(6px);
-          animation-name: dmgFloatAbovePop;
+          
+          /* Hearthstone "punch" and aggressive short presence */
+          animation: bbDmgHSImpact 0.95s cubic-bezier(.25,1.3,.44,1) both;
+          pointer-events: none;
+          user-select: none;
         }
-        @keyframes dmgFloatAbovePop {
+
+        @keyframes bbDmgHSImpact {
           0% {
-            opacity: 0.10;
-            transform: scale(0.90) translateY(22px);
+            opacity: 0;
+            transform: scale(0.50) translateY(8px);
+            filter: none;
           }
-          12% {
+          13% {
             opacity: 1;
-            transform: scale(1.07) translateY(6px);
+            transform: scale(1.22) translateY(-2px);
           }
-          26% {
-            opacity: 1;
-            transform: scale(1.00) translateY(0px);
+          28% {
+            transform: scale(0.98) translateY(-6px);
           }
-          60% {
-            opacity: 1;
-            transform: scale(0.96) translateY(-3px);
+          56% {
+            transform: scale(1.06) translateY(-8px);
           }
-          92% {
-            opacity: 0.88;
-            transform: scale(0.94) translateY(-13px);
+          77% {
+            transform: scale(1.00) translateY(-10px);
+          }
+          85% {
+            opacity: 0.96;
           }
           100% {
-            opacity: 0.00;
-            transform: scale(0.94) translateY(-16px);
+            opacity: 0;
+            transform: scale(0.83) translateY(-17px);
           }
         }
 
