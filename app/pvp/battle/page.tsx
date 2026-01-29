@@ -556,6 +556,16 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const prevPhaseRef = useRef<null | string>(null);
   const roundBannerTimeoutRef = useRef<number | null>(null);
 
+  const [matchBanner, setMatchBanner] = useState<{
+    visible: boolean;
+    tick: number;
+    text: string;
+    tone: "p1" | "p2" | "draw";
+  }>({ visible: false, tick: 0, text: "", tone: "draw" });
+
+  const matchBannerTimeoutRef = useRef<number | null>(null);
+  const matchBannerShownRef = useRef<boolean>(false);
+
   const [activeInstance, setActiveInstance] = useState<string | null>(null);
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
@@ -1645,6 +1655,9 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         }
 
         // Stop playback at the end of the queue.
+        // Also bump t to durationSec so the existing "match result" UI condition (t >= durationSec) can trigger reliably.
+        // This is safe: it only advances after the last event has been processed.
+        setT((prev) => Math.max(prev, durationSec || prev));
         setPlaying(false);
       }
     };
@@ -1808,11 +1821,95 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     }, 900);
   }, [t, timeline, youSide, roundN, roundWinner, match, p1UnitsBySlot, p2UnitsBySlot]);
 
+  useEffect(() => {
+    if (playing) {
+      // allow showing again on next match/session
+      matchBannerShownRef.current = false;
+      return;
+    }
+    if (!match) return;
+    if (matchBannerShownRef.current) return;
+
+    const mapWinnerToSide = (w: any): ("p1" | "p2" | "draw" | null) => {
+      if (!w) return null;
+      if (w === "draw" || w === "tie") return "draw";
+      if (w === "p1" || w === "p2") return w;
+      if (match && w === match.p1_user_id) return "p1";
+      if (match && w === match.p2_user_id) return "p2";
+      return null;
+    };
+
+    let winnerSide: "p1" | "p2" | "draw" | null = mapWinnerToSide(match.winner_user_id);
+
+    // If backend winner not present yet, derive from rounds data (best-of-3).
+    if (!winnerSide) {
+      let p1w = 0;
+      let p2w = 0;
+
+      if (Array.isArray(rounds) && rounds.length) {
+        for (const r of rounds as any[]) {
+          const w = mapWinnerToSide((r as any)?.winner ?? (r as any)?.w ?? null);
+          if (w === "p1") p1w += 1;
+          if (w === "p2") p2w += 1;
+        }
+      }
+
+      // Fallback: count round_end winners from timeline (in case rounds[] is missing).
+      if (p1w === 0 && p2w === 0) {
+        for (const ev of timeline as any[]) {
+          if ((ev as any)?.type !== "round_end") continue;
+          const w = mapWinnerToSide((ev as any)?.winner ?? (ev as any)?.win ?? (ev as any)?.w ?? null);
+          if (w === "p1") p1w += 1;
+          if (w === "p2") p2w += 1;
+        }
+      }
+
+      if (p1w === p2w) winnerSide = "draw";
+      else winnerSide = p1w > p2w ? "p1" : "p2";
+    }
+
+    if (!winnerSide) return;
+
+    let tone: "p1" | "p2" | "draw" = "draw";
+    let text = "DRAW";
+
+    if (winnerSide === "draw") {
+      tone = "draw";
+      text = "DRAW";
+    } else if (winnerSide === youSide) {
+      tone = "p1";
+      text = "YOU WIN";
+    } else {
+      tone = "p2";
+      text = "YOU LOSE";
+    }
+
+    matchBannerShownRef.current = true;
+    setMatchBanner((b) => ({ visible: true, tick: b.tick + 1, text, tone }));
+
+    if (matchBannerTimeoutRef.current != null) window.clearTimeout(matchBannerTimeoutRef.current);
+    matchBannerTimeoutRef.current = window.setTimeout(() => {
+      setMatchBanner((b) => ({ ...b, visible: false }));
+      matchBannerTimeoutRef.current = null;
+    }, 2200);
+  }, [playing, match, youSide, rounds, timeline]);
+
   const finalWinnerLabel = useMemo(() => {
     if (!match) return "…";
-    if (!match.winner_user_id) return "Ничья";
-    return "Есть победитель";
-  }, [match]);
+
+    const mapWinnerToSide = (w: any): ("p1" | "p2" | "draw" | null) => {
+      if (!w) return null;
+      if (w === "draw" || w === "tie") return "draw";
+      if (w === "p1" || w === "p2") return w;
+      if (w === match.p1_user_id) return "p1";
+      if (w === match.p2_user_id) return "p2";
+      return null;
+    };
+
+    const ws = mapWinnerToSide(match.winner_user_id);
+    if (!ws || ws === "draw") return "Ничья";
+    return ws === youSide ? "Ты победил" : "Победил соперник";
+  }, [match, youSide]);
 
   const revealed = phase === "reveal" || phase === "score" || phase === "end";
   const scored = phase === "score" || phase === "end";
@@ -4434,6 +4531,18 @@ const hpPct = useMemo(() => {
               >
                 <div className="title">ROUND END</div>
                 <div className="sub">{roundBanner.text}</div>
+              </div>
+            </div>
+          )}
+
+          {matchBanner.visible && (
+            <div className="round-banner-wrap" aria-hidden="true">
+              <div
+                key={matchBanner.tick}
+                className={["round-banner", "match-banner", matchBanner.tone === "p1" ? "tone-p1" : matchBanner.tone === "p2" ? "tone-p2" : "tone-draw"].join(" ")}
+              >
+                <div className="title">MATCH END</div>
+                <div className="sub">{matchBanner.text}</div>
               </div>
             </div>
           )}
