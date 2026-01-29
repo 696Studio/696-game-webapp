@@ -2752,37 +2752,38 @@ const hpPct = useMemo(() => {
           z-index: 60;
         }
 
-        /* Hearthstone-style aggressive floating damage above the card */
+        /* Hearthstone-style floating damage above the card, scaled down for subtlety */
         .bb-dmgfloat--above {
           left: 0;
           right: 0;
-          top: -28px;
+          top: -20px;
           text-align: center;
           white-space: nowrap;
           display: inline-block;
-          font-size: 2.25rem;
+          font-size: 1.22rem; /* Smaller visible number */
           font-weight: 800;
           font-family: 'Inter', Arial, sans-serif;
-          color: #fff5ee;
-          letter-spacing: 0.5px;
-          padding: 2px 18px;
-          border-radius: 22px;
-          background: linear-gradient(90deg, #1b0007 55%, #260006 100%);
-          box-shadow: 0 0 0 3px #5b071040, 0 3px 14px #71031344;
-          outline: 2px solid #a01c217a;
-          outline-offset: -3px;
+          color: #fff9f5;
+          letter-spacing: 0.1px;
+          padding: 1.5px 10px;
+          border-radius: 13px;
+          background: linear-gradient(90deg, #2b0612 60%, #32000a 100%);
+          box-shadow:
+            0 0 0 1.5px #72092135,
+            0 2px 9px #73020232;
+          outline: 1.5px solid #c230407a;
+          outline-offset: -2px;
 
-          /* Bold red/orange text glow, multiple shadows for punch */
+          /* Bold red glow for punch, layered shadows for emphasis */
           text-shadow:
-            0 2px 4px #70131e,
-            0 0 8px #ff1919,
-            0 0 12px #ff7139,
-            0 0 22px #e01005cc,
-            0 0 2px #951f1c,
-            0 0 0.5px #fff;
+            0 1px 4px #7c2626cc,
+            0 0 3px #ff4444ee,
+            0 0 5px #ff1919a0,
+            0 0 9px #c90016bc,
+            0 0 1px #ff4235aa;
           
-          /* Hearthstone "punch" and aggressive short presence */
-          animation: bbDmgHSImpact 0.95s cubic-bezier(.25,1.3,.44,1) both;
+          /* Hearthstone-style pop-in and float */
+          animation: bbDmgHSImpact 0.92s cubic-bezier(.25,1.20,.50,1.08) both;
           pointer-events: none;
           user-select: none;
         }
@@ -2790,28 +2791,25 @@ const hpPct = useMemo(() => {
         @keyframes bbDmgHSImpact {
           0% {
             opacity: 0;
-            transform: scale(0.50) translateY(8px);
-            filter: none;
+            transform: scale(0.65) translateY(7px);
           }
-          13% {
+          17% {
             opacity: 1;
-            transform: scale(1.22) translateY(-2px);
+            transform: scale(1.12) translateY(-2px);
           }
-          28% {
-            transform: scale(0.98) translateY(-6px);
+          31% {
+            transform: scale(0.93) translateY(-7px);
           }
-          56% {
-            transform: scale(1.06) translateY(-8px);
+          60% {
+            transform: scale(1.02) translateY(-11px);
           }
-          77% {
-            transform: scale(1.00) translateY(-10px);
-          }
-          85% {
-            opacity: 0.96;
+          80% {
+            transform: scale(0.97) translateY(-14px);
+            opacity: 0.93;
           }
           100% {
             opacity: 0;
-            transform: scale(0.83) translateY(-17px);
+            transform: scale(0.83) translateY(-18px);
           }
         }
 
