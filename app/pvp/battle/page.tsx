@@ -560,6 +560,16 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   const [p1UnitsBySlot, setP1UnitsBySlot] = useState<Record<number, UnitView | null>>({});
   const [p2UnitsBySlot, setP2UnitsBySlot] = useState<Record<number, UnitView | null>>({});
 
+  // Refs for async event-driven playback (avoid stale closures)
+  const p1UnitsBySlotRef = useRef<Record<number, UnitView | null>>({});
+  const p2UnitsBySlotRef = useRef<Record<number, UnitView | null>>({});
+  const roundWinnerRef = useRef<string | null>(null);
+
+  useEffect(() => { p1UnitsBySlotRef.current = p1UnitsBySlot; }, [p1UnitsBySlot]);
+  useEffect(() => { p2UnitsBySlotRef.current = p2UnitsBySlot; }, [p2UnitsBySlot]);
+  useEffect(() => { roundWinnerRef.current = roundWinner; }, [roundWinner]);
+
+
   const arenaRef = useRef<HTMLDivElement | null>(null);
 
   const onArenaPointerDownCapture = (ev: React.PointerEvent) => {
@@ -1600,13 +1610,42 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         });
 
         // Waits tuned for readability; scaled by rate.
-        const baseMs = hasAttack ? 520 : hasDamageOrDeath ? 260 : 90;
-        const ms = Math.max(40, Math.floor(baseMs / Math.max(0.5, rate)));
+        // Goal: "duel" pacing (windup → impact → breath), without any wall-clock time limit behavior.
+        const baseMs = hasAttack ? 820 : hasDamageOrDeath ? 420 : 140;
 
-        // If attack animation is currently locked, give it a bit more room.
+        // If this tick includes round_end, give players time to read the result.
+        const hasRoundEnd = batch.some((b) => (b as any)?.type === "round_end");
+
+        // If attack animation is currently locked, add a small safety buffer.
+        const lockBuffer = attackLockRef.current ? 160 : 0;
+
+        const ms = Math.max(60, Math.floor((baseMs + (hasRoundEnd ? 650 : 0) + lockBuffer) / Math.max(0.5, rate)));
+
         await new Promise<void>((res) => window.setTimeout(() => res(), ms));
 
         i += 1;
+      }
+    
+
+      // If we reached the end of the event queue, finalize the round/match outcome on the client.
+      // This prevents "hang at the end" when backend timeline misses a late round_end or when
+      // the strict end rules suppressed an early round_end.
+      if (!cancelled) {
+        const countAliveUnits = (bySlot: Record<number, UnitView | null>) =>
+          Object.values(bySlot ?? {}).filter(
+            (u: any) => u && (u as any).alive !== false && Number((u as any).hp ?? 0) > 0
+          ).length;
+
+        const a1 = countAliveUnits(p1UnitsBySlotRef.current);
+        const a2 = countAliveUnits(p2UnitsBySlotRef.current);
+
+        if ((a1 === 0 || a2 === 0) && !roundWinnerRef.current) {
+          const w = a1 === a2 ? "draw" : a1 > a2 ? "p1" : "p2";
+          setRoundWinner(w);
+        }
+
+        // Stop playback at the end of the queue.
+        setPlaying(false);
       }
     };
 
