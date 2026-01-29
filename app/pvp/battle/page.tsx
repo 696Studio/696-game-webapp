@@ -2752,16 +2752,68 @@ const hpPct = useMemo(() => {
           z-index: 60;
         }
 
-        /* Allow the same dmg float to be used above the card */
+        /* Premium, impactful float above card (works on Telegram WebView) */
         .bb-dmgfloat--above {
-          /* Damage number HUD above the card (like top stat chip) */
           left: 0;
           right: 0;
           top: -22px;
-          transform: none;
           text-align: center;
           white-space: nowrap;
-          animation: dmgFloatAbove 980ms ease-out both;
+          /* Pop-in + gentle up transition */
+          animation: dmgFloatAbove 980ms cubic-bezier(0.24, 1, 0.32, 1) both;
+          opacity: 0.96;
+          /* Readable, premium style */
+          display: inline-block;
+          font-weight: 800;
+          font-size: 18px;
+          letter-spacing: 0.01em;
+          color: #fff;
+          background: linear-gradient(90deg, #31e1fa 2%, #85ffe0 42%, #e4ffff 98%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          /* Elegant border effect for legibility */
+          text-shadow:
+            0 1px 3px #24628855,
+            0 0.5px 0.5px #12e9ef90,
+            0 0 0.5px #fff,
+            0 2px 8px #15e2ff40,
+            0 0 0.5px #fff;
+          /* Soft outline style for crisp effect */
+          border-radius: 6px;
+          padding: 1.5px 7px 2px 7px;
+          box-shadow:
+            0 2px 10px 0 #1cf0ff38,
+            0 0 1.5px #fff6,
+            0 0 0.5px #45ffe737;
+          /* Impactful slight bounce/pop effect on entry */
+          transform: scale(0.85) translateY(6px);
+          animation-name: dmgFloatAbovePop;
+        }
+        @keyframes dmgFloatAbovePop {
+          0% {
+            opacity: 0.10;
+            transform: scale(0.90) translateY(22px);
+          }
+          12% {
+            opacity: 1;
+            transform: scale(1.07) translateY(6px);
+          }
+          26% {
+            opacity: 1;
+            transform: scale(1.00) translateY(0px);
+          }
+          60% {
+            opacity: 1;
+            transform: scale(0.96) translateY(-3px);
+          }
+          92% {
+            opacity: 0.88;
+            transform: scale(0.94) translateY(-13px);
+          }
+          100% {
+            opacity: 0.00;
+            transform: scale(0.94) translateY(-16px);
+          }
         }
 
 
