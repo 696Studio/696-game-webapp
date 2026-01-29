@@ -276,11 +276,22 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
+
+// Normalize slot indexes coming from backend logs.
+// Some logs may use 1..5 slots instead of 0..4. We convert 1..5 -> 0..4.
+// If slots are already 0..4, we keep them.
+function normalizeSlotIndex(raw: any): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return NaN;
+  if (n >= 1 && n <= 5) return n - 1;
+  return n;
+}
+
 function readUnitRefFromEvent(e: any, key: "unit" | "target" | "from" | "to" = "unit"): UnitRef | null {
   const obj = e?.[key];
   if (obj && typeof obj === "object") {
     const side = obj.side as "p1" | "p2";
-    const slot = Number(obj.slot ?? 0);
+    const slot = normalizeSlotIndex(obj.slot ?? 0);
     const instanceId = String(obj.instanceId ?? "");
     if ((side === "p1" || side === "p2") && Number.isFinite(slot) && instanceId) {
       return { side, slot, instanceId };
@@ -288,7 +299,7 @@ function readUnitRefFromEvent(e: any, key: "unit" | "target" | "from" | "to" = "
   }
 
   const side = e?.side as "p1" | "p2";
-  const slot = Number(e?.slot ?? 0);
+  const slot = normalizeSlotIndex(e?.slot ?? 0);
   const instanceId = String(e?.instanceId ?? "");
   if ((side === "p1" || side === "p2") && Number.isFinite(slot) && instanceId) {
     return { side, slot, instanceId };
@@ -1378,7 +1389,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           readUnitRefFromEvent(e, "to");
 
         const side = (ref?.side ?? (e as any)?.target?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
-        const slot = Number(ref?.slot ?? (e as any)?.target?.slot ?? (e as any)?.slot ?? NaN);
+        const slot = normalizeSlotIndex(ref?.slot ?? (e as any)?.target?.slot ?? (e as any)?.slot ?? NaN);
         let tid = String(ref?.instanceId ?? (e as any)?.target?.instanceId ?? "");
         const amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
@@ -1405,7 +1416,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
           readUnitRefFromEvent(e, "to");
 
         const side = (ref?.side ?? (e as any)?.target?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
-        const slot = Number(ref?.slot ?? (e as any)?.target?.slot ?? (e as any)?.slot ?? NaN);
+        const slot = normalizeSlotIndex(ref?.slot ?? (e as any)?.target?.slot ?? (e as any)?.slot ?? NaN);
         let tid = String(ref?.instanceId ?? (e as any)?.target?.instanceId ?? "");
         const amount = Number((e as any)?.amount ?? 0);
         const hp = (e as any)?.hp;
@@ -1435,7 +1446,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
         if (!tid) {
           const side = (ref?.side ?? (e as any)?.target?.side ?? (e as any)?.side) as "p1" | "p2" | undefined;
-          const slot = Number(ref?.slot ?? (e as any)?.target?.slot ?? (e as any)?.slot ?? NaN);
+          const slot = normalizeSlotIndex(ref?.slot ?? (e as any)?.target?.slot ?? (e as any)?.slot ?? NaN);
           if ((side === "p1" || side === "p2") && Number.isFinite(slot)) {
             const bySlot = side === "p1" ? slotMapP1[slot] : slotMapP2[slot];
             if (bySlot?.instanceId) tid = String(bySlot.instanceId);
@@ -1993,7 +2004,7 @@ const arrowAttacks = useMemo(() => {
         readUnitRefFromEvent(e, "unit");
 
       const side = (ref?.side ?? e?.target?.side ?? e?.side) as "p1" | "p2" | undefined;
-      const slot = Number(ref?.slot ?? e?.target?.slot ?? e?.slot ?? NaN);
+      const slot = normalizeSlotIndex(ref?.slot ?? e?.target?.slot ?? e?.slot ?? NaN);
       let tid = String(ref?.instanceId ?? e?.target?.instanceId ?? "");
 
       const amount = Number(e?.amount ?? 0);
