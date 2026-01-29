@@ -1502,18 +1502,8 @@ const x = (r.left - arenaRect.left) + r.width / 2;
         s1 = Number((e as any).p1 ?? 0);
         s2 = Number((e as any).p2 ?? 0);
       } else if (e.type === "round_end") {
-        // Some logs may emit round_end early due to server-side time limits.
-        // Client rule: accept round_end ONLY when one side has zero living units at this moment.
-        const aliveNow1 = Object.values(slotMapP1).filter(
-          (u: any) => u && (u as any).alive !== false && Number((u as any).hp ?? 0) > 0
-        ).length;
-        const aliveNow2 = Object.values(slotMapP2).filter(
-          (u: any) => u && (u as any).alive !== false && Number((u as any).hp ?? 0) > 0
-        ).length;
-        if (aliveNow1 === 0 || aliveNow2 === 0) {
-          // Do NOT overwrite rr here; rr comes from round_start/reveal and should not jump due to bad logs.
-          rw = (e as any).winner ?? null;
-        }
+        rr = (e as any).round ?? rr;
+        rw = (e as any).winner ?? null;
       }
     }
 
@@ -1558,36 +1548,75 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
   useEffect(() => {
     if (!match) return;
+    if (!playing) return;
 
-    const step = (now: number) => {
-      if (!playing) return;
+    let cancelled = false;
 
-      if (startAtRef.current == null) {
-        startAtRef.current = now - (t / Math.max(0.0001, rate)) * 1000;
+    // Event-driven playback: we advance through the timeline by EVENTS (and small waits),
+    // not by a continuous wall-clock timer. This removes "time limit" behavior and makes
+    // the fight feel like a real sequence of turns.
+    const run = async () => {
+      // Build sorted list of distinct t-stamps (timeline still acts as an event queue).
+      const ts: number[] = [];
+      let lastT = Number.NaN;
+      for (const e of timeline as any[]) {
+        const et = Number((e as any)?.t ?? 0);
+        if (!Number.isFinite(et)) continue;
+        if (Number.isNaN(lastT) || et !== lastT) {
+          ts.push(et);
+          lastT = et;
+        }
       }
 
-      const elapsedWall = (now - startAtRef.current) / 1000;
-      const elapsed = elapsedWall * rate;
+      // If timeline has no t, just stop.
+      if (!ts.length) return;
 
-      const nextT = Math.min(durationSec, Math.max(0, elapsed));
-      setT(nextT);
+      // Start from current t (resume)
+      let i = 0;
+      while (i < ts.length && ts[i] < t) i++;
 
-      if (nextT >= durationSec) {
-        // End of replay: freeze on the final state (no auto-rewind / no forced pause button).
+      // If we're past the end, clamp to last.
+      if (i >= ts.length) {
+        setT(ts[ts.length - 1]);
         return;
       }
 
-      rafRef.current = window.requestAnimationFrame(step);
+      while (!cancelled && i < ts.length) {
+        const curT = ts[i];
+        setT(curT);
+
+        // Gather batch at this t to decide wait time.
+        const batch: any[] = [];
+        for (const ev of timeline as any[]) {
+          const et = Number((ev as any)?.t ?? 0);
+          if (et === curT) batch.push(ev);
+          if (et > curT) break;
+        }
+
+        const hasAttack = batch.some((b) => (b as any)?.type === "attack");
+        const hasDamageOrDeath = batch.some((b) => {
+          const tp = (b as any)?.type;
+          return tp === "damage" || tp === "death" || tp === "heal" || tp === "shield";
+        });
+
+        // Waits tuned for readability; scaled by rate.
+        const baseMs = hasAttack ? 520 : hasDamageOrDeath ? 260 : 90;
+        const ms = Math.max(40, Math.floor(baseMs / Math.max(0.5, rate)));
+
+        // If attack animation is currently locked, give it a bit more room.
+        await new Promise<void>((res) => window.setTimeout(() => res(), ms));
+
+        i += 1;
+      }
     };
 
-    if (playing) rafRef.current = window.requestAnimationFrame(step);
+    run();
 
     return () => {
-      if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
+      cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [match, playing, durationSec, rate]);
+  }, [match, playing, rate, timeline, roundN]);
 
   useEffect(() => {
     startAtRef.current = null;
@@ -1611,16 +1640,17 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       if (e.type === "round_end") hasEnd = true;
     }
 
-    // Client rule: round ends only when one side has zero living units.
-    // Allow this check only after reveal/score/end markers, to avoid early "end" before spawns are applied.
-    const countAliveUnits = (bySlot: any) =>
-      Object.values(bySlot ?? {}).filter(
-        (u: any) => u && (u as any).alive !== false && Number((u as any).hp ?? 0) > 0
-      ).length;
+    // "Honest" end: only treat round_end as end when one side has no living units.
+    if (hasEnd) {
+      const countAliveUnits = (bySlot: any) =>
+        Object.values(bySlot ?? {}).filter(
+          (u: any) => u && (u as any).alive !== false && Number((u as any).hp ?? 0) > 0
+        ).length;
 
-    const a1 = countAliveUnits(p1UnitsBySlot);
-    const a2 = countAliveUnits(p2UnitsBySlot);
-    if ((hasReveal || hasScore || hasEnd) && (a1 === 0 || a2 === 0)) return "end";
+      const a1 = countAliveUnits(p1UnitsBySlot);
+      const a2 = countAliveUnits(p2UnitsBySlot);
+      if (a1 === 0 || a2 === 0) return "end";
+    }
 
     if (hasScore) return "score";
     if (hasReveal) return "reveal";
@@ -1633,15 +1663,18 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     //
     // Anti-flash: do not show until REVEAL for THIS round has been reached.
     let hasReveal = false;
+    let lastEnd: any = null;
 
     for (const ev of timeline as any[]) {
       const e: any = ev;
       if ((e as any).round !== roundN) continue;
       if (typeof e.t === "number" && e.t > t) break;
       if (e.type === "reveal") hasReveal = true;
+      if (e.type === "round_end") lastEnd = e;
     }
 
     if (!hasReveal) return;
+    if (!lastEnd) return;
 
     // "Honest" round end: only show after the last combat event in this round has actually happened.
     // This prevents cases where round_end exists in timeline but visuals still show living units mid-combat.
@@ -1665,20 +1698,18 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     ).length;
     if (!(alive1 === 0 || alive2 === 0)) return;
 
-    const endT = t;
+    const endT = Number((lastEnd as any)?.t ?? 0);
     if (lastCombatT >= 0 && t < Math.max(endT, lastCombatT)) return;
 
 
-    const r = (roundN) as any;
+    const r = (lastEnd.round ?? roundN) as any;
 
-    // Winner derivation (client-side strict):
-    // If one side has zero living units, the other side wins. If both are zero -> draw.
-    let w: any = null;
-    if (alive1 === 0 && alive2 === 0) w = "draw";
-    else if (alive1 === 0) w = "p2";
-    else if (alive2 === 0) w = "p1";
+    // Winner field can be "p1" | "p2" | "draw", but some logs may store user_id.
+    let w: any =
+      (lastEnd.winner ?? (lastEnd as any).win ?? (lastEnd as any).w ?? null) ??
+      null;
 
-    // Fallback: if still unknown, use roundWinner (from timeline) if available.
+    // Fallback to roundWinner state (still only triggers on round_end).
     if (!w && roundWinner) w = roundWinner;
 
     // Fallback: derive from the latest score event in THIS round up to this time (still only triggers on round_end).
@@ -1687,7 +1718,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       for (let i = timeline.length - 1; i >= 0; i--) {
         const e: any = (timeline as any[])[i];
         if ((e as any).round !== roundN) continue;
-        if (e?.type === "score" && typeof e.t === "number" && e.t <= (endT ?? t)) {
+        if (e?.type === "score" && typeof e.t === "number" && e.t <= (lastEnd.t ?? t)) {
           lastScore = e;
           break;
         }
@@ -1710,7 +1741,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
 
     if (!w) return;
 
-    const sig = `${r}:${w}:${Math.floor(endT * 1000)}`;
+    const sig = `${r}:${w}:${lastEnd.t}`;
     if (sig === prevEndSigRef.current) return;
     prevEndSigRef.current = sig;
 
