@@ -2544,7 +2544,14 @@ const hpPct = useMemo(() => {
 
         /* Allow the same dmg float to be used above the card */
         .bb-dmgfloat--above {
+          /* Damage number HUD above the card (like top stat chip) */
+          left: 0;
+          right: 0;
+          top: -22px;
+          transform: none;
+          text-align: center;
           white-space: nowrap;
+          animation: dmgFloatAbove 980ms ease-out both;
         }
 
 
@@ -3192,6 +3199,13 @@ const hpPct = useMemo(() => {
           0%   { opacity: 0; transform: translate3d(-50%, -30%, 0) scale(0.96); }
           20%  { opacity: 1; transform: translate3d(-50%, -46%, 0) scale(1.02); }
           100% { opacity: 0; transform: translate3d(-50%, -70%, 0) scale(1.06); }
+        }
+
+        @keyframes dmgFloatAbove {
+          0%   { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.92); }
+          18%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1.06); }
+          55%  { opacity: 1; transform: translate3d(0, -2px, 0) scale(1.00); }
+          100% { opacity: 0; transform: translate3d(0, -18px, 0) scale(1.04); }
         }
         @keyframes deathFade {
           0%   { opacity: 0; }
