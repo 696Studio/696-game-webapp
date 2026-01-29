@@ -470,9 +470,25 @@ const uiDebugOn = HIDE_VISUAL_DEBUG ? false : uiDebug;
   }, [match?.log]);
 
   const durationSec = useMemo(() => {
+    // IMPORTANT: battle playback must be driven by the actual timeline length (not a fixed duration_sec),
+    // otherwise playback can jump to the end early and trigger round_end while units still look alive.
+    try {
+      const tlRaw = logObj?.timeline;
+      const tl = parseMaybeJson(tlRaw);
+      if (Array.isArray(tl) && tl.length) {
+        let lastT = 0;
+        for (const e of tl as any[]) {
+          const tt = Number((e as any)?.t ?? 0);
+          if (Number.isFinite(tt)) lastT = Math.max(lastT, tt);
+        }
+        if (Number.isFinite(lastT) && lastT > 0) {
+          return Math.min(600, Math.max(5, Math.ceil(lastT + 0.35)));
+        }
+      }
+    } catch {}
     const d = Number(logObj?.duration_sec ?? 30);
     if (!Number.isFinite(d) || d <= 0) return 30;
-    return Math.min(240, Math.max(10, Math.floor(d)));
+    return Math.min(600, Math.max(10, Math.floor(d)));
   }, [logObj]);
 
   const timeline: TimelineEvent[] = useMemo(() => {
@@ -1216,11 +1232,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
     return { enemy, you };
   }, [arenaBox]);
 
-  function seek(nextT: number) {
-    const clamped = Math.max(0, Math.min(durationSec, Number(nextT) || 0));
-    setT(clamped);
-    startAtRef.current = null;
-  }
+  // (UI seek removed) Playback is automatic and driven by timeline.
 
   useEffect(() => {
     if (!matchId) {
@@ -1551,7 +1563,7 @@ const x = (r.left - arenaRect.left) + r.width / 2;
       setT(nextT);
 
       if (nextT >= durationSec) {
-        setPlaying(false);
+        // End of replay: freeze on the final state (no auto-rewind / no forced pause button).
         return;
       }
 
@@ -4060,52 +4072,13 @@ const hpPct = useMemo(() => {
           <div className="board-hud">
             <div className="hud-left">
               <div className="hud-title">BATTLE</div>
-              <div className="mt-1 font-extrabold uppercase tracking-[0.22em] text-base">
-                Поле боя • {fmtTime(t)} / {fmtTime(durationSec)}
-              </div>
-
-              <div
-                className="mt-2 battle-progress"
-                role="slider"
-                aria-label="Seek"
-                onClick={(e) => {
-                  const el = e.currentTarget as HTMLDivElement;
-                  const rect = el.getBoundingClientRect();
-                  const x = e.clientX - rect.left;
-                  const pct = rect.width > 0 ? x / rect.width : 0;
-                  seek(pct * durationSec);
-                }}
-              >
-                <div style={{ width: `${progressPct}%` }} />
-              </div>
-
-              <div className="scrub-row">
-                <input type="range" min={0} max={durationSec} step={0.05} value={t} onChange={(e) => seek(Number(e.target.value))} />
-
-                <button className={["rate-pill", rate === 0.5 ? "is-on" : ""].join(" ")} onClick={() => setRate(0.5)} type="button">
-                  0.5x
-                </button>
-                <button className={["rate-pill", rate === 1 ? "is-on" : ""].join(" ")} onClick={() => setRate(1)} type="button">
-                  1x
-                </button>
-                <button className={["rate-pill", rate === 2 ? "is-on" : ""].join(" ")} onClick={() => setRate(2)} type="button">
-                  2x
-                </button>
-              </div>
-
               <div className="hud-sub">
                 <span className="hud-pill">{phase === "start" ? "ROUND START" : phase === "reveal" ? "REVEAL" : phase === "score" ? "SCORE" : "ROUND END"}</span>
                 <span className="hud-pill">
-                  Раунд{" "}
-                  <b className="tabular-nums">
-                    {roundN}/{roundCount}
-                  </b>
+                  Раунд <b className="tabular-nums">{roundN}/{roundCount}</b>
                 </span>
                 <span className="hud-pill">
                   Match <b className="tabular-nums">{String(match.id).slice(0, 8)}…</b>
-                </span>
-                <span className="hud-pill">
-                  tl <b className="tabular-nums">{timeline.length}</b>
                 </span>
                 <span className="hud-pill">
                   side <b className="tabular-nums">{youSide.toUpperCase()}</b>
@@ -4114,19 +4087,6 @@ const hpPct = useMemo(() => {
             </div>
 
             <div className="hud-actions">
-              <button onClick={() => setPlaying((p) => !p)} className="ui-btn ui-btn-ghost" type="button">
-                {playing ? "Пауза" : "▶"}
-              </button>
-              <button
-                onClick={() => {
-                  setPlaying(true);
-                  seek(0);
-                }}
-                className="ui-btn ui-btn-ghost"
-                type="button"
-              >
-                ↺
-              </button>
               <button onClick={() => router.push("/pvp")} className="ui-btn ui-btn-ghost" type="button">
                 Назад
               </button>
